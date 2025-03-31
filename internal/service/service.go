@@ -104,11 +104,76 @@ func (sm *ServiceManager) uninstallDarwin() error {
 }
 
 func (sm *ServiceManager) installLinux() error {
-	// TODO: Implement systemd service installation
-	return fmt.Errorf("Linux service installation not yet implemented")
+	// Create systemd service file
+	serviceContent := fmt.Sprintf(`[Unit]
+Description=GiraffeCloud Tunnel Service
+After=network.target
+
+[Service]
+Type=simple
+User=%s
+ExecStart=%s connect
+Restart=always
+RestartSec=10
+StandardOutput=append:/var/log/giraffecloud/tunnel.log
+StandardError=append:/var/log/giraffecloud/tunnel.log
+
+[Install]
+WantedBy=multi-user.target`, os.Getenv("USER"), sm.executablePath)
+
+	// Create log directory
+	if err := os.MkdirAll("/var/log/giraffecloud", 0755); err != nil {
+		return fmt.Errorf("failed to create log directory: %w", err)
+	}
+
+	// Write service file
+	servicePath := "/etc/systemd/system/giraffecloud.service"
+	if err := os.WriteFile(servicePath, []byte(serviceContent), 0644); err != nil {
+		return fmt.Errorf("failed to write service file: %w", err)
+	}
+
+	// Reload systemd daemon
+	cmd := exec.Command("sudo", "systemctl", "daemon-reload")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to reload systemd daemon: %w", err)
+	}
+
+	// Enable and start the service
+	cmd = exec.Command("sudo", "systemctl", "enable", "giraffecloud")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to enable service: %w", err)
+	}
+
+	cmd = exec.Command("sudo", "systemctl", "start", "giraffecloud")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to start service: %w", err)
+	}
+
+	return nil
 }
 
 func (sm *ServiceManager) uninstallLinux() error {
-	// TODO: Implement systemd service uninstallation
-	return fmt.Errorf("Linux service uninstallation not yet implemented")
+	// Stop and disable the service
+	cmd := exec.Command("sudo", "systemctl", "stop", "giraffecloud")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to stop service: %w", err)
+	}
+
+	cmd = exec.Command("sudo", "systemctl", "disable", "giraffecloud")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to disable service: %w", err)
+	}
+
+	// Remove service file
+	if err := os.Remove("/etc/systemd/system/giraffecloud.service"); err != nil {
+		return fmt.Errorf("failed to remove service file: %w", err)
+	}
+
+	// Reload systemd daemon
+	cmd = exec.Command("sudo", "systemctl", "daemon-reload")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to reload systemd daemon: %w", err)
+	}
+
+	return nil
 }
