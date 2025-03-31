@@ -3,12 +3,19 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"giraffecloud/internal/config"
+	"giraffecloud/internal/logging"
 	"giraffecloud/internal/service"
 	"giraffecloud/internal/tunnel"
 
 	"github.com/spf13/cobra"
+)
+
+var (
+	logger *logging.Logger
 )
 
 var rootCmd = &cobra.Command{
@@ -24,19 +31,44 @@ var connectCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg, err := config.LoadConfig()
 		if err != nil {
-			fmt.Printf("Error loading config: %v\n", err)
+			logger.Error("Failed to load config: %v", err)
 			os.Exit(1)
 		}
+
+		// Initialize logger
+		logger, err = logging.NewLogger(&cfg.Logging)
+		if err != nil {
+			fmt.Printf("Failed to initialize logger: %v\n", err)
+			os.Exit(1)
+		}
+		defer logger.Close()
+
+		logger.Info("Starting GiraffeCloud tunnel")
+		logger.Debug("Configuration loaded: %+v", cfg)
 
 		t := tunnel.NewTunnel(cfg)
 		if err := t.Connect(); err != nil {
-			fmt.Printf("Error connecting to GiraffeCloud: %v\n", err)
+			logger.Error("Failed to connect to GiraffeCloud: %v", err)
 			os.Exit(1)
 		}
 
-		fmt.Println("Successfully connected to GiraffeCloud")
-		// TODO: Implement signal handling for graceful shutdown
-		select {}
+		logger.Info("Successfully connected to GiraffeCloud")
+
+		// Set up signal handling
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+		// Wait for signal
+		sig := <-sigChan
+		logger.Info("Received signal %v, shutting down...", sig)
+
+		// Graceful shutdown
+		if err := t.Disconnect(); err != nil {
+			logger.Error("Error during shutdown: %v", err)
+			os.Exit(1)
+		}
+
+		logger.Info("Shutdown complete")
 	},
 }
 
@@ -50,18 +82,34 @@ var installCmd = &cobra.Command{
 	Use:   "install",
 	Short: "Install GiraffeCloud as a system service",
 	Run: func(cmd *cobra.Command, args []string) {
+		cfg, err := config.LoadConfig()
+		if err != nil {
+			fmt.Printf("Error loading config: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Initialize logger
+		logger, err = logging.NewLogger(&cfg.Logging)
+		if err != nil {
+			fmt.Printf("Failed to initialize logger: %v\n", err)
+			os.Exit(1)
+		}
+		defer logger.Close()
+
+		logger.Info("Installing GiraffeCloud service")
+
 		sm, err := service.NewServiceManager()
 		if err != nil {
-			fmt.Printf("Error creating service manager: %v\n", err)
+			logger.Error("Failed to create service manager: %v", err)
 			os.Exit(1)
 		}
 
 		if err := sm.Install(); err != nil {
-			fmt.Printf("Error installing service: %v\n", err)
+			logger.Error("Failed to install service: %v", err)
 			os.Exit(1)
 		}
 
-		fmt.Println("Successfully installed GiraffeCloud service")
+		logger.Info("Successfully installed GiraffeCloud service")
 	},
 }
 
@@ -69,18 +117,34 @@ var uninstallCmd = &cobra.Command{
 	Use:   "uninstall",
 	Short: "Uninstall GiraffeCloud system service",
 	Run: func(cmd *cobra.Command, args []string) {
+		cfg, err := config.LoadConfig()
+		if err != nil {
+			fmt.Printf("Error loading config: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Initialize logger
+		logger, err = logging.NewLogger(&cfg.Logging)
+		if err != nil {
+			fmt.Printf("Failed to initialize logger: %v\n", err)
+			os.Exit(1)
+		}
+		defer logger.Close()
+
+		logger.Info("Uninstalling GiraffeCloud service")
+
 		sm, err := service.NewServiceManager()
 		if err != nil {
-			fmt.Printf("Error creating service manager: %v\n", err)
+			logger.Error("Failed to create service manager: %v", err)
 			os.Exit(1)
 		}
 
 		if err := sm.Uninstall(); err != nil {
-			fmt.Printf("Error uninstalling service: %v\n", err)
+			logger.Error("Failed to uninstall service: %v", err)
 			os.Exit(1)
 		}
 
-		fmt.Println("Successfully uninstalled GiraffeCloud service")
+		logger.Info("Successfully uninstalled GiraffeCloud service")
 	},
 }
 
