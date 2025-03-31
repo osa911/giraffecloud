@@ -25,3 +25,9 @@ go.work.sum
 .env
 
 .vscode/
+
+# web
+internal/web/node_modules/
+internal/web/.next/
+internal/web/.yarn/
+internal/web/.pnp*
