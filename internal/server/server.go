@@ -2,14 +2,12 @@ package server
 
 import (
 	"os"
-	"time"
 
 	"giraffecloud/internal/api/handlers"
 	"giraffecloud/internal/api/middleware"
 	"giraffecloud/internal/db"
 
 	"github.com/gin-gonic/gin"
-	"go.uber.org/ratelimit"
 )
 
 // Server represents the HTTP server
@@ -40,8 +38,11 @@ func (s *Server) Start() error {
 		port = "8080"
 	}
 
-	// Create rate limiter
-	limiter := ratelimit.New(10, ratelimit.Per(time.Second))
+	// Create rate limiter configuration
+	rateLimitConfig := middleware.RateLimitConfig{
+		RPS:   10, // 10 requests per second
+		Burst: 20, // Allow bursts of up to 20 requests
+	}
 
 	// Create validation middleware
 	validationMiddleware := middleware.NewValidationMiddleware()
@@ -52,7 +53,7 @@ func (s *Server) Start() error {
 
 	// Add global middleware
 	s.router.Use(middleware.CORS())
-	s.router.Use(middleware.RateLimitMiddleware(limiter))
+	s.router.Use(middleware.RateLimitMiddleware(rateLimitConfig))
 
 	// Public routes
 	public := s.router.Group("/api/v1")
