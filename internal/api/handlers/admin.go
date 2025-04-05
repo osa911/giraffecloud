@@ -20,8 +20,7 @@ func NewAdminHandler(db *gorm.DB) *AdminHandler {
 
 type UpdateUserRequest struct {
 	Name         string `json:"name"`
-	Organization string `json:"organization"`
-	Role         string `json:"role"`
+	Role         models.Role `json:"role"`
 	IsActive     bool   `json:"isActive"`
 }
 
@@ -80,11 +79,8 @@ func (h *AdminHandler) UpdateUser(c *gin.Context) {
 	if req.Name != "" {
 		user.Name = req.Name
 	}
-	if req.Organization != "" {
-		user.Organization = req.Organization
-	}
 	if req.Role != "" {
-		user.Role = models.UserRole(req.Role)
+		user.Role = req.Role
 	}
 	user.IsActive = req.IsActive
 
