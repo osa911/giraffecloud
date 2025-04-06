@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"net/http"
+	"sync"
 	"time"
 
 	"giraffecloud/internal/api/constants"
@@ -16,6 +17,68 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
+
+// Simple in-memory session cache
+type sessionCache struct {
+	sync.RWMutex
+	cache       map[string]*sessionCacheEntry
+	initialized bool
+}
+
+type sessionCacheEntry struct {
+	userResponse *auth.UserResponse
+	expiry       time.Time
+}
+
+// Global session cache with 5-minute TTL
+var sessionCacheStore = &sessionCache{
+	cache: make(map[string]*sessionCacheEntry),
+}
+
+// getFromCache attempts to retrieve a cached session
+func (sc *sessionCache) getFromCache(key string) *auth.UserResponse {
+	sc.RLock()
+	defer sc.RUnlock()
+
+	if entry, found := sc.cache[key]; found {
+		if time.Now().Before(entry.expiry) {
+			return entry.userResponse
+		}
+		// Entry expired, remove it
+		delete(sc.cache, key)
+	}
+	return nil
+}
+
+// addToCache adds a session to the cache with 2-minute TTL
+func (sc *sessionCache) addToCache(key string, user *auth.UserResponse) {
+	sc.Lock()
+	defer sc.Unlock()
+
+	sc.cache[key] = &sessionCacheEntry{
+		userResponse: user,
+		expiry:       time.Now().Add(2 * time.Minute),
+	}
+
+	// Clean expired entries periodically (every 100 adds)
+	if !sc.initialized || len(sc.cache)%100 == 0 {
+		go sc.cleanExpired()
+		sc.initialized = true
+	}
+}
+
+// cleanExpired removes expired entries from cache
+func (sc *sessionCache) cleanExpired() {
+	sc.Lock()
+	defer sc.Unlock()
+
+	now := time.Now()
+	for key, entry := range sc.cache {
+		if now.After(entry.expiry) {
+			delete(sc.cache, key)
+		}
+	}
+}
 
 type AuthHandler struct {
 	db *gorm.DB
@@ -256,27 +319,49 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 
 // GetSession checks if the user has a valid session
 func (h *AuthHandler) GetSession(c *gin.Context) {
-	// Check for session cookie first
-	sessionCookie, err := c.Cookie(constants.CookieSession)
-	if err == nil && sessionCookie != "" {
+	// Generate cache key from IP and auth tokens
+	cacheKey := c.ClientIP()
+	authToken, _ := c.Cookie(constants.CookieAuthToken)
+	sessionCookie, _ := c.Cookie(constants.CookieSession)
+
+	if authToken != "" {
+		cacheKey += "-a-" + authToken[:10] // Use part of the token for the cache key
+	}
+	if sessionCookie != "" {
+		cacheKey += "-s-" + sessionCookie[:10] // Use part of the session cookie
+	}
+
+	// First check our cache for a quick response
+	if cachedUser := sessionCacheStore.getFromCache(cacheKey); cachedUser != nil {
+		// We have a cached valid session, return immediately
+		c.JSON(http.StatusOK, common.NewSuccessResponse(auth.SessionResponse{
+			Valid: true,
+			User:  cachedUser,
+		}))
+		return
+	}
+
+	// Cache miss - check session cookie
+	if sessionCookie != "" {
 		// Verify the session cookie
 		token, err := firebase.GetAuthClient().VerifySessionCookieAndCheckRevoked(c.Request.Context(), sessionCookie)
 		if err == nil {
-			// Session cookie is valid
+			// Session cookie is valid - only select needed fields for efficiency
 			var user models.User
-			if err := h.db.Where("firebase_uid = ?", token.UID).First(&user).Error; err == nil {
-				// Update user's last_activity field
-				h.db.Model(&user).Updates(map[string]interface{}{
-					"last_activity": time.Now(),
-				})
+			if err := h.db.Select("id, firebase_uid, email, name, role, is_active, last_activity").
+				Where("firebase_uid = ?", token.UID).First(&user).Error; err == nil {
 
-				// Auto-refresh the cookie if it's going to expire soon (within 12 hours)
-				// This requires checking the cookie expiration time
-				// Since we can't directly check cookie expiration, we'll refresh auth_token
-				// which will provide a fallback authentication method
+				// Only update last_activity if it's been more than 5 minutes
+				if time.Since(user.LastActivity) > 5*time.Minute {
+					h.db.Model(&user).UpdateColumn("last_activity", time.Now())
+				}
 
-				// Return session response using proper DTO format
+				// Return and cache session response
 				userResponse := mapper.UserToAuthUserResponse(&user)
+
+				// Cache the valid session
+				sessionCacheStore.addToCache(cacheKey, userResponse)
+
 				c.JSON(http.StatusOK, common.NewSuccessResponse(auth.SessionResponse{
 					Valid: true,
 					User:  userResponse,
@@ -287,33 +372,41 @@ func (h *AuthHandler) GetSession(c *gin.Context) {
 	}
 
 	// Check auth_token cookie as fallback
-	authToken, err := c.Cookie(constants.CookieAuthToken)
-	if err == nil && authToken != "" {
-		var session models.Session
-		if err := h.db.Where("token = ? AND is_active = ? AND expires_at > ?",
-			authToken, true, time.Now()).First(&session).Error; err == nil {
+	if authToken != "" {
+		// First check if the session exists and is active
+		type SessionData struct {
+			ID       uint      `gorm:"column:id"`
+			UserID   uint      `gorm:"column:user_id"`
+			LastUsed time.Time `gorm:"column:last_used"`
+		}
 
-			// Update session last used
-			session.LastUsed = time.Now()
-			h.db.Save(&session)
+		var sessionData SessionData
 
-			// Refresh the cookie with reset expiration
-			// This extends the client-side cookie lifetime
-			c.SetCookie(
-				constants.CookieAuthToken,
-				authToken,
-				constants.CookieDuration24h,
-				constants.CookiePathAPI,
-				"",
-				true,
-				true,
-			)
+		// Faster query by only selecting what we need and using index on token
+		err := h.db.Table("sessions").
+			Select("id, user_id, last_used").
+			Where("token = ? AND is_active = ? AND expires_at > ?",
+				authToken, true, time.Now()).
+			First(&sessionData).Error
 
-			// Fetch user
+		if err == nil {
+			// Update session last used - but only if it's been at least 5 minutes
+			if time.Since(sessionData.LastUsed) > 5*time.Minute {
+				h.db.Table("sessions").Where("id = ?", sessionData.ID).
+					UpdateColumn("last_used", time.Now())
+			}
+
+			// Fetch user with just the needed fields
 			var user models.User
-			if err := h.db.First(&user, session.UserID).Error; err == nil {
-				// Return session response using proper DTO format
+			if err := h.db.Select("id, firebase_uid, email, name, role, is_active").
+				First(&user, sessionData.UserID).Error; err == nil {
+
+				// Return and cache session response
 				userResponse := mapper.UserToAuthUserResponse(&user)
+
+				// Cache the valid session
+				sessionCacheStore.addToCache(cacheKey, userResponse)
+
 				c.JSON(http.StatusOK, common.NewSuccessResponse(auth.SessionResponse{
 					Valid: true,
 					User:  userResponse,
@@ -323,7 +416,7 @@ func (h *AuthHandler) GetSession(c *gin.Context) {
 		}
 	}
 
-	// If we get here, no valid session was found
+	// If we get here, no valid session was found - also cache this negative result
 	c.JSON(http.StatusOK, common.NewSuccessResponse(auth.SessionResponse{
 		Valid: false,
 	}))
