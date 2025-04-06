@@ -50,6 +50,7 @@ func Initialize() (*gorm.DB, error) {
 	env := getEnvOrDefault("ENV", "development")
 
 	// Debug log environment variables
+	fmt.Printf("==== Initializing Database ====\n")
 	fmt.Printf("Database environment variables:\n")
 	fmt.Printf("DB_HOST: %s\n", os.Getenv("DB_HOST"))
 	fmt.Printf("DB_PORT: %s\n", os.Getenv("DB_PORT"))
