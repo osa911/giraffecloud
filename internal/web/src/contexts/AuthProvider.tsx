@@ -2,18 +2,22 @@
 
 import React, { createContext, useContext, useState, useEffect } from "react";
 import {
+  getAuth,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut,
   onIdTokenChanged,
   GoogleAuthProvider,
   signInWithPopup,
+  onAuthStateChanged,
   AuthError,
+  User as FirebaseUser,
 } from "firebase/auth";
-import { apiClient } from "@/services/api";
-import { auth as firebaseAuth } from "@/services/firebase";
-import { usePathname, useRouter } from "next/navigation";
-import { handleTokenChanged } from "@/services/auth-utils";
+import { useRouter } from "next/navigation";
+import clientApi from "@/services/api/clientApiClient";
+import { auth as firebaseAuth } from "@/services/firebaseService";
+import { handleTokenChanged } from "@/services/authClientService";
+import { handleLoginSuccess, handleLogout } from "@/lib/actions";
 
 export type User = {
   id: number;
@@ -43,100 +47,69 @@ type AuthContextType = {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
-  children,
-}) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
-  const pathname = usePathname();
-  const router = useRouter();
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error("useAuth must be used within an AuthProvider");
+  }
+  return context;
+};
 
-  const updateUser = (user: User | null) => {
-    setUser(user);
-  };
+type AuthProviderProps = {
+  children: React.ReactNode;
+  initialUser: User | null;
+};
 
-  // Check session status when component mounts
+export function AuthProvider({ children, initialUser }: AuthProviderProps) {
+  const [user, setUser] = useState<User | null>(initialUser);
+  const [loading, setLoading] = useState(false);
+
+  /**
+   * Handle refresh token changes
+   */
   useEffect(() => {
-    const checkSession = async () => {
-      setLoading(true);
-      try {
-        console.log("Checking session validity");
-        const sessionData = await apiClient().get<{
-          valid: boolean;
-          user?: User;
-        }>("/auth/session");
-
-        console.log("Session result", sessionData);
-        if (sessionData.valid && sessionData.user) {
-          console.log("Session is valid, setting user");
-          updateUser(sessionData.user);
-        } else {
-          console.log("No valid session found");
-          updateUser(null);
-
-          // If not on auth pages, redirect to login
-          if (!["/auth/login", "/auth/register", "/"].includes(pathname)) {
-            router.push("/auth/login");
-          }
-        }
-      } catch (error) {
-        console.error("Error checking session:", error);
-        updateUser(null);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    void checkSession();
-  }, [pathname]);
-
-  // Set up session refresh when authenticated
-  useEffect(() => {
-    if (!user) return;
-
-    // Listen for ID token changes and refresh the session cookie when needed
     const unsubscribe = onIdTokenChanged(firebaseAuth, async (firebaseUser) => {
       if (firebaseUser) {
-        // When the ID token changes, refresh the session cookie
         await handleTokenChanged(firebaseUser);
       }
     });
 
-    // Clean up listener when component unmounts
     return () => unsubscribe();
-  }, [user]);
+  }, []);
 
-  /**
-   * If the user is authenticated and on the login or register page, redirect to the dashboard
-   */
-  useEffect(() => {
-    if (user && ["/auth/login", "/auth/register"].includes(pathname)) {
-      router.push("/dashboard");
-    }
-  }, [user, pathname, router]);
+  const updateUser = (updatedUser: User | null) => {
+    setUser(updatedUser);
+  };
 
   // Helper function to login with token
-  const handleLoginWithToken = async (token: string) => {
+  const handleLoginWithToken = async (token: string): Promise<User> => {
     try {
-      console.log("Logging in with token");
-
-      // The response contains a nested user object
-      const loginResponse = await apiClient().post<LoginResponse>(
+      setLoading(true);
+      const loginResponse = await clientApi().post<LoginResponse>(
         "/auth/login",
         {
           token: token,
         }
       );
-      console.log("Login successful", loginResponse);
-      updateUser(loginResponse.user);
+
+      // Set user data in cookie via server action
+      await handleLoginSuccess(loginResponse.user);
+
+      setUser(loginResponse.user);
+
+      return loginResponse.user;
     } catch (error) {
       console.error("Error during login:", error);
-      updateUser(null);
+      setUser(null);
+      throw error;
+    } finally {
+      setLoading(false);
     }
   };
 
   const signUp = async (email: string, password: string, name: string) => {
     try {
+      setLoading(true);
       // Create user in Firebase
       const userCredential = await createUserWithEmailAndPassword(
         firebaseAuth,
@@ -151,22 +124,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         firebase_uid: userCredential.user.uid,
       };
 
-      console.log("Sending registration request:", registerData);
-      const response = await apiClient().post<RegisterResponse>(
+      const response = await clientApi().post<RegisterResponse>(
         "/auth/register",
         registerData
       );
+      // Set user data in cookie via server action
+      await handleLoginSuccess(response.user);
 
-      console.log("Registration successful");
-      updateUser(response.user);
+      setUser(response.user);
     } catch (error: any) {
       console.error("Error signing up:", error);
       throw error;
+    } finally {
+      setLoading(false);
     }
   };
 
   const signIn = async (email: string, password: string) => {
     try {
+      setLoading(true);
       const userCredential = await signInWithEmailAndPassword(
         firebaseAuth,
         email,
@@ -180,15 +156,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     } catch (error) {
       console.error("Error signing in:", error);
       throw error;
+    } finally {
+      setLoading(false);
     }
   };
 
   const signInWithGoogle = async () => {
     const provider = new GoogleAuthProvider();
     try {
+      setLoading(true);
       const userCredential = await signInWithPopup(firebaseAuth, provider);
       const idToken = await userCredential.user.getIdToken();
-      console.log("Google sign-in successful");
 
       // Login to sync with backend
       await handleLoginWithToken(idToken);
@@ -203,27 +181,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       }
       console.error("Error signing in with Google:", error);
       throw error;
+    } finally {
+      setLoading(false);
     }
   };
 
   const logout = async () => {
     try {
+      setLoading(true);
       // First, try to notify the backend about logout
       try {
-        await apiClient().post("/auth/logout");
-        console.log("Backend notified of logout");
+        await clientApi().post("/auth/logout");
       } catch (error) {
         console.error("Error notifying backend of logout:", error);
         // Continue with logout even if backend notification fails
       }
 
+      // Clear cookie via server action
+      await handleLogout();
+
       // Then sign out from Firebase
       await signOut(firebaseAuth);
-      updateUser(null);
-      router.push("/auth/login");
+      setUser(null);
     } catch (error) {
       console.error("Error signing out:", error);
       throw error;
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -242,12 +226,4 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       {children}
     </AuthContext.Provider>
   );
-};
-
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error("useAuth must be used within an AuthProvider");
-  }
-  return context;
-};
+}

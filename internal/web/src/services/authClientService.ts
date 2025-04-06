@@ -1,5 +1,5 @@
-import { User as FirebaseUser, getIdToken } from "firebase/auth";
-import { apiClient } from "@/services/api";
+import { User as FirebaseUser } from "firebase/auth";
+import clientApi from "@/services/api/clientApiClient";
 
 /**
  * Refreshes the session cookie with the backend when needed
@@ -7,15 +7,13 @@ import { apiClient } from "@/services/api";
  * @param user Current Firebase user
  * @returns Promise that resolves to true if successful
  */
-export async function refreshSessionIfNeeded(
-  user: FirebaseUser
-): Promise<boolean> {
+async function refreshSessionIfNeeded(user: FirebaseUser): Promise<boolean> {
   try {
     // Get the current ID token from Firebase (will be fresh due to Firebase's auto-refresh)
     const idToken = await user.getIdToken();
 
     // Call the backend to refresh the session cookie
-    await apiClient().post("/auth/verify-token", {
+    await clientApi().post("/auth/verify-token", {
       id_token: idToken,
     });
 

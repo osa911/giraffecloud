@@ -2,22 +2,11 @@ import axios, {
   AxiosInstance,
   InternalAxiosRequestConfig,
   AxiosResponse,
-  AxiosRequestConfig,
 } from "axios";
 import toast from "react-hot-toast";
+import baseApiClient, { BaseApiClientParams } from "../baseClientService";
 
 const baseURL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
-
-// Define the standard API response structure
-export interface APIResponse<T> {
-  success: boolean;
-  data?: T;
-  error?: {
-    code: string;
-    message: string;
-    details?: any;
-  };
-}
 
 export const axiosClient: AxiosInstance = axios.create({
   baseURL,
@@ -62,8 +51,8 @@ axiosClient.interceptors.response.use(
       error.config?.url
     );
 
+    // Handle unauthorized access
     if (error.response?.status === 401) {
-      // Handle unauthorized access
       // Don't redirect if we're already on an auth page
       const currentPath = window.location.pathname;
       const isAuthPage =
@@ -89,63 +78,9 @@ axiosClient.interceptors.response.use(
   }
 );
 
-type ApiClientParams = {
-  prefix?: string;
-  version?: string;
+// Create and export the client API client
+const apiClient = (params?: BaseApiClientParams) => {
+  return baseApiClient(axiosClient, params);
 };
-export const apiClient = (params?: ApiClientParams) => {
-  const { prefix = "api", version = "v1" } = params || {};
-  const baseURL = `/${prefix}/${version}`;
 
-  return {
-    get: async <T>(
-      endpoint: string,
-      config?: AxiosRequestConfig
-    ): Promise<T> => {
-      const url = `${baseURL}${endpoint}`;
-      const response = await axiosClient.get<APIResponse<T>>(url, config);
-
-      // Return just the data from the response envelope
-      return response.data.data as T;
-    },
-
-    post: async <T>(
-      endpoint: string,
-      data?: any,
-      config?: AxiosRequestConfig
-    ): Promise<T> => {
-      const url = `${baseURL}${endpoint}`;
-      const response = await axiosClient.post<APIResponse<T>>(
-        url,
-        data,
-        config
-      );
-
-      // Return just the data from the response envelope
-      return response.data.data as T;
-    },
-
-    put: async <T>(
-      endpoint: string,
-      data?: any,
-      config?: AxiosRequestConfig
-    ): Promise<T> => {
-      const url = `${baseURL}${endpoint}`;
-      const response = await axiosClient.put<APIResponse<T>>(url, data, config);
-
-      // Return just the data from the response envelope
-      return response.data.data as T;
-    },
-
-    delete: async <T>(
-      endpoint: string,
-      config?: AxiosRequestConfig
-    ): Promise<T> => {
-      const url = `${baseURL}${endpoint}`;
-      const response = await axiosClient.delete<APIResponse<T>>(url, config);
-
-      // Return just the data from the response envelope
-      return response.data.data as T;
-    },
-  };
-};
+export default apiClient;
