@@ -2,7 +2,15 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Container, Box, Typography, TextField, Button } from "@mui/material";
+import {
+  Container,
+  Box,
+  Typography,
+  TextField,
+  Button,
+  Divider,
+  Alert,
+} from "@mui/material";
 import Link from "@/components/Link";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -10,19 +18,39 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const [error, setError] = useState("");
+  const { signIn, signInWithGoogle } = useAuth();
   const router = useRouter();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setError("");
     try {
-      await login(email, password);
+      await signIn(email, password);
       router.push("/dashboard");
     } catch (error) {
-      // Error is handled by the API interceptor
+      setError("Failed to sign in. Please check your credentials.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setGoogleLoading(true);
+    setError("");
+    try {
+      await signInWithGoogle();
+      router.push("/dashboard");
+    } catch (error: any) {
+      if (error.message === "popup-closed") {
+        setError("Sign in was cancelled.");
+      } else {
+        setError("Failed to sign in with Google.");
+      }
+    } finally {
+      setGoogleLoading(false);
     }
   };
 
@@ -40,6 +68,11 @@ export default function Login() {
         <Typography variant="h4" component="h1" gutterBottom align="center">
           Login to GiraffeCloud
         </Typography>
+        {error && (
+          <Alert severity="error" sx={{ mt: 2 }}>
+            {error}
+          </Alert>
+        )}
         <Box component="form" onSubmit={handleSubmit} sx={{ mt: 4 }}>
           <TextField
             margin="normal"
@@ -73,6 +106,16 @@ export default function Login() {
             disabled={loading}
           >
             {loading ? "Signing in..." : "Sign In"}
+          </Button>
+          <Divider sx={{ my: 2 }}>OR</Divider>
+          <Button
+            fullWidth
+            variant="outlined"
+            onClick={handleGoogleSignIn}
+            sx={{ mb: 2 }}
+            disabled={googleLoading}
+          >
+            {googleLoading ? "Signing in..." : "Sign in with Google"}
           </Button>
           <Box sx={{ textAlign: "center" }}>
             <Link href="/auth/register" variant="body2">

@@ -1,32 +1,12 @@
-import { forwardRef } from "react";
-import { useRouter } from "next/navigation";
 import { Link as MuiLink, LinkProps as MuiLinkProps } from "@mui/material";
+import NextLink from "next/link";
 
-export interface LinkProps extends Omit<MuiLinkProps, "href"> {
-  href: string;
-  scroll?: boolean;
-}
-
-const Link = forwardRef<HTMLAnchorElement, LinkProps>(
-  ({ href, children, scroll = true, ...props }, ref) => {
-    const router = useRouter();
-
-    return (
-      <MuiLink
-        ref={ref}
-        href={href}
-        onClick={(e) => {
-          e.preventDefault();
-          router.push(href, { scroll });
-        }}
-        {...props}
-      >
-        {children}
-      </MuiLink>
-    );
-  }
-);
-
-Link.displayName = "Link";
+/**
+ * For future updates, see:
+ * https://gist.github.com/kachar/028b6994eb6b160e2475c1bb03e33e6a
+ */
+const Link = (props: MuiLinkProps<"a">) => {
+  return <MuiLink component={NextLink} {...props} />;
+};
 
 export default Link;

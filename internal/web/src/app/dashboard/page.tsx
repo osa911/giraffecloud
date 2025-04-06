@@ -10,7 +10,6 @@ import {
   CardContent,
   CardHeader,
 } from "@mui/material";
-import { api } from "@/services/api";
 
 interface DashboardStats {
   totalTunnels: number;
@@ -29,8 +28,8 @@ export default function Dashboard() {
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const response = await api.get("/dashboard/stats");
-        setStats(response.data);
+        // const response = await api.get("/dashboard/stats");
+        // setStats(response.data);
       } catch (error) {
         // Error is handled by the API interceptor
       } finally {
@@ -47,7 +46,7 @@ export default function Dashboard() {
         Dashboard
       </Typography>
       <Grid container spacing={3}>
-        <Grid item xs={12} md={4}>
+        <Grid size={{ xs: 12, md: 4 }}>
           <Card>
             <CardHeader title="Total Tunnels" />
             <CardContent>
@@ -57,7 +56,7 @@ export default function Dashboard() {
             </CardContent>
           </Card>
         </Grid>
-        <Grid item xs={12} md={4}>
+        <Grid size={{ xs: 12, md: 4 }}>
           <Card>
             <CardHeader title="Active Tunnels" />
             <CardContent>
@@ -67,7 +66,7 @@ export default function Dashboard() {
             </CardContent>
           </Card>
         </Grid>
-        <Grid item xs={12} md={4}>
+        <Grid size={{ xs: 12, md: 4 }}>
           <Card>
             <CardHeader title="Total Traffic" />
             <CardContent>

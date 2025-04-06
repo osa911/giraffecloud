@@ -10,23 +10,26 @@ import {
   Grid,
   Avatar,
 } from "@mui/material";
-import { useAuth } from "@/contexts/AuthContext";
-import { api } from "@/services/api";
+import { useAuth, User } from "@/contexts/AuthContext";
+import { apiClient } from "@/services/api";
+import toast from "react-hot-toast";
 
 export default function Profile() {
-  const { user } = useAuth();
+  const { user, updateUser } = useAuth();
   const [name, setName] = useState(user?.name || "");
-  const [email, setEmail] = useState(user?.email || "");
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     try {
-      await api.put("/user/profile", { name, email });
-      // Profile update is handled by the auth context
+      const updatedUser = await apiClient().put<User>("/user/profile", {
+        name,
+      });
+      updateUser(updatedUser);
+      toast.success("Profile updated successfully");
     } catch (error) {
-      // Error is handled by the API interceptor
+      toast.error("Failed to update profile");
     } finally {
       setLoading(false);
     }
@@ -39,7 +42,7 @@ export default function Profile() {
       </Typography>
       <Paper sx={{ p: 3 }}>
         <Grid container spacing={3}>
-          <Grid item xs={12} md={4}>
+          <Grid size={{ xs: 12, md: 4 }}>
             <Box sx={{ textAlign: "center" }}>
               <Avatar
                 sx={{
@@ -55,7 +58,7 @@ export default function Profile() {
               <Typography color="text.secondary">{user?.email}</Typography>
             </Box>
           </Grid>
-          <Grid item xs={12} md={8}>
+          <Grid size={{ xs: 12, md: 8 }}>
             <Box component="form" onSubmit={handleSubmit}>
               <TextField
                 margin="normal"
@@ -67,17 +70,6 @@ export default function Profile() {
                 autoComplete="name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-              />
-              <TextField
-                margin="normal"
-                required
-                fullWidth
-                id="email"
-                label="Email Address"
-                name="email"
-                autoComplete="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
               />
               <Button
                 type="submit"

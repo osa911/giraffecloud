@@ -2,7 +2,15 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Container, Box, Typography, TextField, Button } from "@mui/material";
+import {
+  Container,
+  Box,
+  Typography,
+  TextField,
+  Button,
+  Divider,
+  Alert,
+} from "@mui/material";
 import Link from "@/components/Link";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -11,17 +19,32 @@ export default function Register() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const { register } = useAuth();
+  const [error, setError] = useState("");
+  const { signUp, signInWithGoogle } = useAuth();
   const router = useRouter();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setError("");
     try {
-      await register(email, password, name);
+      await signUp(email, password, name);
       router.push("/dashboard");
     } catch (error) {
-      // Error is handled by the API interceptor
+      setError("Failed to create an account.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleSignUp = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      await signInWithGoogle();
+      router.push("/dashboard");
+    } catch (error) {
+      setError("Failed to sign up with Google.");
     } finally {
       setLoading(false);
     }
@@ -41,6 +64,11 @@ export default function Register() {
         <Typography variant="h4" component="h1" gutterBottom align="center">
           Create an Account
         </Typography>
+        {error && (
+          <Alert severity="error" sx={{ mt: 2 }}>
+            {error}
+          </Alert>
+        )}
         <Box component="form" onSubmit={handleSubmit} sx={{ mt: 4 }}>
           <TextField
             margin="normal"
@@ -85,6 +113,16 @@ export default function Register() {
             disabled={loading}
           >
             {loading ? "Creating account..." : "Sign Up"}
+          </Button>
+          <Divider sx={{ my: 2 }}>OR</Divider>
+          <Button
+            fullWidth
+            variant="outlined"
+            onClick={handleGoogleSignUp}
+            sx={{ mb: 2 }}
+            disabled={loading}
+          >
+            Sign up with Google
           </Button>
           <Box sx={{ textAlign: "center" }}>
             <Link href="/auth/login" variant="body2">

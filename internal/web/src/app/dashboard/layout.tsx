@@ -25,12 +25,12 @@ import {
   Person as ProfileIcon,
 } from "@mui/icons-material";
 import { useAuth } from "@/contexts/AuthContext";
+import Link from "@/components/Link";
 
 const drawerWidth = 240;
 
 const menuItems = [
   { text: "Dashboard", icon: <DashboardIcon />, path: "/dashboard" },
-  { text: "Tunnels", icon: <TunnelIcon />, path: "/dashboard/tunnels" },
   { text: "Profile", icon: <ProfileIcon />, path: "/dashboard/profile" },
 ];
 
@@ -69,15 +69,12 @@ export default function DashboardLayout({
       </Toolbar>
       <List>
         {menuItems.map((item) => (
-          <ListItem
-            button
-            key={item.text}
-            onClick={() => router.push(item.path)}
-            selected={pathname === item.path}
-          >
-            <ListItemIcon>{item.icon}</ListItemIcon>
-            <ListItemText primary={item.text} />
-          </ListItem>
+          <Link key={item.text} href={item.path}>
+            <ListItem>
+              <ListItemIcon>{item.icon}</ListItemIcon>
+              <ListItemText primary={item.text} />
+            </ListItem>
+          </Link>
         ))}
       </List>
     </div>

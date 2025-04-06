@@ -1,28 +1,40 @@
+import React from "react";
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
-import { Toaster } from "react-hot-toast";
+import { AppRouterCacheProvider } from "@mui/material-nextjs/v15-appRouter";
 import { AuthProvider } from "@/contexts/AuthContext";
-import "@/styles/globals.css";
+import { ThemeProvider } from "@mui/material/styles";
+import CssBaseline from "@mui/material/CssBaseline";
+import theme from "@/styles/theme";
+import { Toaster } from "react-hot-toast";
 
-const inter = Inter({ subsets: ["latin"] });
+const inter = Inter({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-inter",
+  weight: ["300", "400", "500", "700"],
+});
 
 export const metadata: Metadata = {
   title: "GiraffeCloud",
-  description: "Secure and efficient reverse tunnel service",
+  description: "Secure tunnel service for your applications",
 };
 
-export default function RootLayout({
-  children,
-}: {
+type RootLayoutProps = {
   children: React.ReactNode;
-}) {
+};
+
+export default function RootLayout({ children }: RootLayoutProps) {
   return (
-    <html lang="en">
-      <body className={inter.className}>
-        <AuthProvider>
-          {children}
-          <Toaster position="top-right" />
-        </AuthProvider>
+    <html lang="en" className={inter.className}>
+      <body>
+        <AppRouterCacheProvider>
+          <ThemeProvider theme={theme}>
+            <CssBaseline />
+            <AuthProvider>{children}</AuthProvider>
+            <Toaster />
+          </ThemeProvider>
+        </AppRouterCacheProvider>
       </body>
     </html>
   );
