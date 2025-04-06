@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"net/http"
-	"strings"
 	"time"
 
 	"giraffecloud/internal/api/constants"
@@ -25,65 +24,46 @@ func NewAuthMiddleware() *AuthMiddleware {
 // RequireAuth middleware
 func (m *AuthMiddleware) RequireAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Check for session cookie
-		sessionCookie, err := c.Cookie("session")
-		var uid string
+		var user models.User
+		var authenticated bool
 
+		// First check for session cookie (Firebase session cookie)
+		sessionCookie, err := c.Cookie(constants.CookieSession)
 		if err == nil && sessionCookie != "" {
 			// Verify the session cookie
-			sessionToken, err := firebase.GetAuthClient().VerifySessionCookieAndCheckRevoked(c.Request.Context(), sessionCookie)
+			token, err := firebase.GetAuthClient().VerifySessionCookieAndCheckRevoked(c.Request.Context(), sessionCookie)
 			if err == nil {
-				uid = sessionToken.UID
-			}
-			// Continue to try the Authorization header if session cookie is invalid
-		}
-
-		// If no valid session cookie, try Authorization header
-		if uid == "" {
-			authHeader := c.GetHeader("Authorization")
-			if authHeader == "" {
-				response := common.NewErrorResponse(common.ErrCodeUnauthorized, "Authentication required", nil)
-				c.JSON(http.StatusUnauthorized, response)
-				c.Abort()
-				return
-			}
-
-			// Extract token from Bearer header
-			parts := strings.Split(authHeader, " ")
-			if len(parts) != 2 || parts[0] != "Bearer" {
-				response := common.NewErrorResponse(common.ErrCodeUnauthorized, "Invalid authorization header format", nil)
-				c.JSON(http.StatusUnauthorized, response)
-				c.Abort()
-				return
-			}
-
-			token := parts[1]
-			tokenLen := len(token)
-			if tokenLen < 20 {
-				response := common.NewErrorResponse(common.ErrCodeUnauthorized, "Invalid token format: token too short", nil)
-				c.JSON(http.StatusUnauthorized, response)
-				c.Abort()
-				return
-			}
-
-			// Verify the Firebase token
-			uid, err = firebase.VerifyToken(c.Request.Context(), token)
-			if err != nil {
-				response := common.NewErrorResponse(common.ErrCodeUnauthorized, "Invalid token: "+err.Error(), nil)
-				c.JSON(http.StatusUnauthorized, response)
-				c.Abort()
-				return
+				// Look up user by Firebase UID
+				if err := db.DB.Where("firebase_uid = ?", token.UID).First(&user).Error; err == nil {
+					authenticated = true
+				}
 			}
 		}
 
-		// Get user from database
-		var user models.User
-		result := db.DB.Where("firebase_uid = ?", uid).First(&user)
-		if result.Error != nil {
-			response := common.NewErrorResponse(common.ErrCodeUnauthorized, "User not found in database", gin.H{
-				"firebase_uid": uid,
-				"message":      "You are authenticated with Firebase, but your user record is not found in our database. Please try logging in again.",
-			})
+		// If not authenticated, check for auth_token cookie (our API token)
+		if !authenticated {
+			authToken, err := c.Cookie(constants.CookieAuthToken)
+			if err == nil && authToken != "" {
+				// Look up session
+				var session models.Session
+				if err := db.DB.Where("token = ? AND is_active = ? AND expires_at > ?",
+					authToken, true, time.Now()).First(&session).Error; err == nil {
+
+					// Update session last used
+					session.LastUsed = time.Now()
+					db.DB.Save(&session)
+
+					// Lookup user
+					if err := db.DB.First(&user, session.UserID).Error; err == nil {
+						authenticated = true
+					}
+				}
+			}
+		}
+
+		// If user was not authenticated by any method
+		if !authenticated {
+			response := common.NewErrorResponse(common.ErrCodeUnauthorized, "Authentication required, please log in again", nil)
 			c.JSON(http.StatusUnauthorized, response)
 			c.Abort()
 			return

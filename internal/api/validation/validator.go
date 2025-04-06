@@ -4,6 +4,8 @@ import (
 	"net/url"
 	"regexp"
 
+	"giraffecloud/internal/api/constants"
+
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
 )
@@ -80,7 +82,7 @@ func ValidateRequest(v *validator.Validate) gin.HandlerFunc {
 		var validationErrors []ValidationError
 
 		// Get the validation struct from context
-		if val, exists := c.Get("validate"); exists {
+		if val, exists := c.Get(constants.ContextKeyValidate); exists {
 			if err = v.Struct(val); err != nil {
 				validationErrors = FormatValidationError(err)
 				c.JSON(400, gin.H{

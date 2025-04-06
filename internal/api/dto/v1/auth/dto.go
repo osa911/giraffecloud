@@ -35,3 +35,8 @@ type UserResponse struct {
 	Name  string `json:"name"`
 	Role  string `json:"role"`
 }
+
+// VerifyTokenRequest represents the request for verifying a Firebase ID token
+type VerifyTokenRequest struct {
+	IDToken string `json:"id_token" binding:"required"`
+}

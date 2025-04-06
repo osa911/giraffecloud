@@ -2,7 +2,7 @@ import { initializeApp, getApps } from "firebase/app";
 import {
   getAuth,
   setPersistence,
-  browserLocalPersistence,
+  browserSessionPersistence,
 } from "firebase/auth";
 
 const firebaseConfig = {
@@ -20,9 +20,11 @@ const app =
   getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 const auth = getAuth(app);
 
-// Set persistence to local (explicit)
-// This avoids aggressive token refreshing on page load
-// Firebase will still persist the auth state, but won't auto-renew tokens until needed
-setPersistence(auth, browserLocalPersistence);
+// Set persistence to session only (not localStorage)
+// This improves security by not persisting tokens in localStorage
+setPersistence(auth, browserSessionPersistence);
+
+// Note: Firebase automatically handles token refreshes under the hood
+// The Firebase JS SDK will refresh tokens about 5 minutes before they expire
 
 export { app, auth };

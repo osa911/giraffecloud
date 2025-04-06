@@ -5,7 +5,7 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut,
-  onAuthStateChanged,
+  onIdTokenChanged,
   GoogleAuthProvider,
   signInWithPopup,
   AuthError,
@@ -13,6 +13,7 @@ import {
 import { apiClient } from "@/services/api";
 import { auth as firebaseAuth } from "@/services/firebase";
 import { usePathname, useRouter } from "next/navigation";
+import { handleTokenChanged } from "@/services/auth-utils";
 
 export type User = {
   id: number;
@@ -50,66 +51,60 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const pathname = usePathname();
   const router = useRouter();
 
-  const updateUser = (user: User) => {
+  const updateUser = (user: User | null) => {
     setUser(user);
   };
 
-  // Check the user's authentication state when the component mounts
+  // Check session status when component mounts
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(
-      firebaseAuth,
-      async (firebaseUser) => {
-        setLoading(true);
+    const checkSession = async () => {
+      setLoading(true);
+      try {
+        console.log("Checking session validity");
+        const sessionData = await apiClient().get<{
+          valid: boolean;
+          user?: User;
+        }>("/auth/session");
 
-        if (firebaseUser) {
-          try {
-            console.log("Firebase user authenticated:", firebaseUser.email);
-
-            // Get the ID token and store it
-            const idToken = await firebaseUser.getIdToken(true);
-            localStorage.setItem("firebase_token", idToken);
-            console.log("Token stored in localStorage");
-
-            // First check if session is valid
-            try {
-              console.log("Checking session validity");
-              const sessionData = await apiClient().get<{
-                valid: boolean;
-                user?: User;
-              }>("/auth/session");
-
-              console.log("Session result", sessionData);
-              if (sessionData.valid && sessionData.user) {
-                console.log("Session is valid, setting user");
-                setUser(sessionData.user);
-              } else {
-                console.log("Session is invalid, attempting login");
-                // Try to log in to create/sync the user in our database
-                await handleLoginWithToken(idToken);
-              }
-            } catch (error) {
-              console.error("Error checking session:", error);
-              // Try to log in automatically
-              await handleLoginWithToken(idToken);
-            }
-          } catch (error) {
-            console.error("Error handling auth state:", error);
-            setUser(null);
-          }
+        console.log("Session result", sessionData);
+        if (sessionData.valid && sessionData.user) {
+          console.log("Session is valid, setting user");
+          updateUser(sessionData.user);
         } else {
-          // No Firebase user
-          console.log("No Firebase user detected, logging out");
-          localStorage.removeItem("firebase_token");
-          setUser(null);
-          router.push("/auth/login");
-        }
+          console.log("No valid session found");
+          updateUser(null);
 
+          // If not on auth pages, redirect to login
+          if (!["/auth/login", "/auth/register", "/"].includes(pathname)) {
+            router.push("/auth/login");
+          }
+        }
+      } catch (error) {
+        console.error("Error checking session:", error);
+        updateUser(null);
+      } finally {
         setLoading(false);
       }
-    );
+    };
 
+    void checkSession();
+  }, [pathname]);
+
+  // Set up session refresh when authenticated
+  useEffect(() => {
+    if (!user) return;
+
+    // Listen for ID token changes and refresh the session cookie when needed
+    const unsubscribe = onIdTokenChanged(firebaseAuth, async (firebaseUser) => {
+      if (firebaseUser) {
+        // When the ID token changes, refresh the session cookie
+        await handleTokenChanged(firebaseUser);
+      }
+    });
+
+    // Clean up listener when component unmounts
     return () => unsubscribe();
-  }, []);
+  }, [user]);
 
   /**
    * If the user is authenticated and on the login or register page, redirect to the dashboard
@@ -133,10 +128,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       );
       console.log("Login successful", loginResponse);
-      setUser(loginResponse.user);
+      updateUser(loginResponse.user);
     } catch (error) {
       console.error("Error during login:", error);
-      setUser(null);
+      updateUser(null);
     }
   };
 
@@ -148,9 +143,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         email,
         password
       );
-
-      const idToken = await userCredential.user.getIdToken();
-      localStorage.setItem("firebase_token", idToken);
 
       // Create user in backend
       const registerData = {
@@ -166,7 +158,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       );
 
       console.log("Registration successful");
-      setUser(response.user);
+      updateUser(response.user);
     } catch (error: any) {
       console.error("Error signing up:", error);
       throw error;
@@ -182,7 +174,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       );
 
       const idToken = await userCredential.user.getIdToken();
-      localStorage.setItem("firebase_token", idToken);
 
       // Login to sync with backend
       await handleLoginWithToken(idToken);
@@ -197,8 +188,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     try {
       const userCredential = await signInWithPopup(firebaseAuth, provider);
       const idToken = await userCredential.user.getIdToken();
-      localStorage.setItem("firebase_token", idToken);
-      console.log("Google sign-in successful, token stored");
+      console.log("Google sign-in successful");
 
       // Login to sync with backend
       await handleLoginWithToken(idToken);
@@ -229,8 +219,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
       // Then sign out from Firebase
       await signOut(firebaseAuth);
-      localStorage.removeItem("firebase_token");
-      setUser(null);
+      updateUser(null);
       router.push("/auth/login");
     } catch (error) {
       console.error("Error signing out:", error);

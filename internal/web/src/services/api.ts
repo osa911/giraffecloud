@@ -25,7 +25,7 @@ export const axiosClient: AxiosInstance = axios.create({
     "Content-Type": "application/json",
     Accept: "application/json",
   },
-  withCredentials: false,
+  withCredentials: true, // Enable sending cookies with requests
 });
 
 // Request interceptor to add auth token
@@ -41,18 +41,9 @@ axiosClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
       ? JSON.stringify(config.data).substring(0, 100) + "..."
       : "(no data)",
     headers: Object.keys(config.headers || {}),
+    withCredentials: config.withCredentials,
   });
 
-  if (typeof window !== "undefined") {
-    // Get token from localStorage (support both firebase_token and token for backward compatibility)
-    const token = localStorage.getItem("firebase_token");
-    if (token) {
-      console.debug("Using token authentication, token length:", token.length);
-      config.headers.Authorization = `Bearer ${token}`;
-    } else {
-      console.debug("No token found in localStorage");
-    }
-  }
   return config;
 });
 
@@ -73,8 +64,6 @@ axiosClient.interceptors.response.use(
 
     if (error.response?.status === 401) {
       // Handle unauthorized access
-      localStorage.removeItem("firebase_token");
-
       // Don't redirect if we're already on an auth page
       const currentPath = window.location.pathname;
       const isAuthPage =

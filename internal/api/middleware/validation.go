@@ -29,7 +29,7 @@ func NewValidationMiddleware() *ValidationMiddleware {
 // validateRequest is a helper function to validate a request against a struct
 func (m *ValidationMiddleware) validateRequest(c *gin.Context, obj interface{}, contextKey string) bool {
 	// Get raw body from context
-	rawBody, exists := c.Get("raw_body")
+	rawBody, exists := c.Get(constants.ContextKeyRawBody)
 	if !exists {
 		c.JSON(http.StatusInternalServerError, common.NewErrorResponse(
 			common.ErrCodeInternalServer,
@@ -145,6 +145,16 @@ func (m *ValidationMiddleware) ValidateUpdateTunnelRequest() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var tunnelReq tunnel.UpdateTunnelRequest
 		if m.validateRequest(c, &tunnelReq, constants.ContextKeyUpdateTunnel) {
+			c.Next()
+		}
+	}
+}
+
+// ValidateVerifyTokenRequest validates token verification request
+func (m *ValidationMiddleware) ValidateVerifyTokenRequest() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var verifyReq auth.VerifyTokenRequest
+		if m.validateRequest(c, &verifyReq, constants.ContextKeyVerifyToken) {
 			c.Next()
 		}
 	}

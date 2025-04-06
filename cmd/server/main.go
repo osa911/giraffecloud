@@ -6,6 +6,7 @@ import (
 	"giraffecloud/internal/config/firebase"
 	"giraffecloud/internal/db"
 	"giraffecloud/internal/server"
+	"giraffecloud/internal/tasks"
 )
 
 func main() {
@@ -22,6 +23,11 @@ func main() {
 	if err := firebase.InitializeFirebase(); err != nil {
 		log.Fatalf("Failed to initialize Firebase: %v", err)
 	}
+
+	// Start session cleanup task
+	sessionCleanup := tasks.NewSessionCleanup(database)
+	sessionCleanup.Start()
+	log.Println("Started session cleanup task")
 
 	// Initialize server
 	srv := server.NewServer(database)

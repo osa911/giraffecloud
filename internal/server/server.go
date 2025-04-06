@@ -65,6 +65,7 @@ func (s *Server) Start() error {
 		public.POST("/auth/login", validationMiddleware.ValidateLoginRequest(), authHandler.Login)
 		public.POST("/auth/logout", authHandler.Logout)
 		public.GET("/auth/session", authHandler.GetSession)
+		public.POST("/auth/verify-token", validationMiddleware.ValidateVerifyTokenRequest(), authHandler.VerifyToken)
 	}
 
 	// Protected routes

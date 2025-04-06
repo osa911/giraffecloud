@@ -3,10 +3,9 @@ package middleware
 import (
 	"bytes"
 	"io"
-	"log"
 	"net/http"
 
-	"giraffecloud/internal/api/dto/common"
+	"giraffecloud/internal/api/constants"
 
 	"github.com/gin-gonic/gin"
 )
@@ -24,44 +23,59 @@ const (
 // SetBodyValidation sets the body validation option for a route
 func SetBodyValidation(option BodyValidationOption) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.Set("body_validation", option)
+		c.Set(constants.ContextKeyBodyValidation, option)
 		c.Next()
 	}
 }
 
-// PreserveRequestBody middleware reads and preserves the request body so it can be read multiple times
-// It does not validate or reject empty bodies by default
+// BodyReaderOption defines options for body reader middleware
+type BodyReaderOption struct {
+	MaxBodySize int64
+}
+
+// PreserveRequestBody middleware reads the request body once and restores it
+// This allows validators and controllers to both read the body
 func PreserveRequestBody() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		method := c.Request.Method
-		path := c.Request.URL.Path
-
-		// Only process request methods that may have a body
-		if method == http.MethodPost ||
-		   method == http.MethodPut ||
-		   method == http.MethodPatch {
-
-			log.Printf("Processing %s request to %s", method, path)
-
-			// Read raw body
-			bodyBytes, err := io.ReadAll(c.Request.Body)
-			if err != nil && err != io.EOF {
-				log.Printf("Error reading request body for %s %s: %v", method, path, err)
-				response := common.NewErrorResponse(common.ErrCodeBadRequest, "Error reading request body", err)
-				c.JSON(http.StatusBadRequest, response)
-				c.Abort()
-				return
-			}
-
-			bodySize := len(bodyBytes)
-			log.Printf("Request body size for %s %s: %d bytes", method, path, bodySize)
-
-			// Store the raw body in the context for further use
-			c.Set("raw_body", bodyBytes)
-
-			// Restore the body for the next middlewares/handlers
-			c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+		// Get the configured options or use defaults
+		option := BodyReaderOption{
+			MaxBodySize: 10 * 1024 * 1024, // 10 MB default
 		}
+
+		// Store options in context for potential use later
+		c.Set(constants.ContextKeyBodyValidation, option)
+
+		// Only process POST, PUT, PATCH and DELETE requests with request body
+		if c.Request.Body == nil || (c.Request.Method != "POST" && c.Request.Method != "PUT" && c.Request.Method != "PATCH" && c.Request.Method != "DELETE") {
+			c.Next()
+			return
+		}
+
+		var bodyBytes []byte
+		bodyBytes, err := io.ReadAll(c.Request.Body)
+
+		if err != nil {
+			c.AbortWithError(http.StatusBadRequest, err)
+			return
+		}
+
+		// Check for content length or malformed requests
+		if (c.Request.ContentLength == 0 && len(bodyBytes) > 0) || (c.Request.ContentLength > 0 && int64(len(bodyBytes)) != c.Request.ContentLength) {
+			c.AbortWithStatus(http.StatusBadRequest)
+			return
+		}
+
+		// Check max body size (configurable)
+		if int64(len(bodyBytes)) > option.MaxBodySize {
+			c.AbortWithStatus(http.StatusRequestEntityTooLarge)
+			return
+		}
+
+		// Restore the body for subsequent middleware
+		c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+
+		// Store body in context for potential use later
+		c.Set(constants.ContextKeyRawBody, bodyBytes)
 
 		c.Next()
 	}
