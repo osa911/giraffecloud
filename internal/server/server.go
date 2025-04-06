@@ -53,6 +53,7 @@ func (s *Server) Start() error {
 
 	// Add global middleware
 	s.router.Use(middleware.CORS())
+	s.router.Use(middleware.PreserveRequestBody())
 	s.router.Use(middleware.RateLimitMiddleware(rateLimitConfig))
 
 	// Public routes
@@ -74,13 +75,25 @@ func (s *Server) Start() error {
 		protected.PUT("/user/profile", validationMiddleware.ValidateUpdateProfileRequest(), userHandler.UpdateProfile)
 		protected.DELETE("/user/profile", userHandler.DeleteProfile)
 
+		// Create tunnel handler
+		tunnelHandler := handlers.NewTunnelHandler(s.db.DB)
+
+		// Tunnel routes with validation
+		protected.GET("/tunnels", tunnelHandler.ListTunnels)
+		protected.POST("/tunnels", validationMiddleware.ValidateCreateTunnelRequest(), tunnelHandler.CreateTunnel)
+		protected.GET("/tunnels/:id", tunnelHandler.GetTunnel)
+		protected.PUT("/tunnels/:id", validationMiddleware.ValidateUpdateTunnelRequest(), tunnelHandler.UpdateTunnel)
+		protected.DELETE("/tunnels/:id", tunnelHandler.DeleteTunnel)
+		protected.POST("/tunnels/:id/start", tunnelHandler.StartTunnel)
+		protected.POST("/tunnels/:id/stop", tunnelHandler.StopTunnel)
+
 		// Admin routes
 		admin := protected.Group("/admin")
 		admin.Use(middleware.RequireAdmin())
 		{
 			admin.GET("/users", userHandler.ListUsers)
 			admin.GET("/users/:id", userHandler.GetUser)
-			admin.PUT("/users/:id", userHandler.UpdateUser)
+			admin.PUT("/users/:id", validationMiddleware.ValidateUpdateUserRequest(), userHandler.UpdateUser)
 			admin.DELETE("/users/:id", userHandler.DeleteUser)
 		}
 	}

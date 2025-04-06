@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"time"
 
+	"giraffecloud/internal/api/dto/common"
+
 	"github.com/gin-gonic/gin"
 	"golang.org/x/time/rate"
 )
@@ -26,9 +28,8 @@ func RateLimitMiddleware(config RateLimitConfig) gin.HandlerFunc {
 		// Check if we can make a request
 		if !limiter.Allow() {
 			// If not, return 429 Too Many Requests
-			c.JSON(http.StatusTooManyRequests, gin.H{
-				"error": "Rate limit exceeded. Please try again later.",
-			})
+			response := common.NewErrorResponse(common.ErrCodeTooManyRequests, "Rate limit exceeded. Please try again later.", nil)
+			c.JSON(http.StatusTooManyRequests, response)
 			c.Abort()
 			return
 		}

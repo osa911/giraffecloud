@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"giraffecloud/internal/api/dto/common"
 	"giraffecloud/internal/models"
 
 	"github.com/gin-gonic/gin"
@@ -23,11 +24,14 @@ func (h *SessionHandler) ListSessions(c *gin.Context) {
 
 	var sessions []models.Session
 	if err := h.db.Where("user_id = ? AND is_active = ?", userID, true).Find(&sessions).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch sessions"})
+		response := common.NewErrorResponse(common.ErrCodeInternalServer, "Failed to fetch sessions", err)
+		c.JSON(http.StatusInternalServerError, response)
 		return
 	}
 
-	c.JSON(http.StatusOK, sessions)
+	// Return as a proper response
+	response := common.NewSuccessResponse(gin.H{"sessions": sessions})
+	c.JSON(http.StatusOK, response)
 }
 
 func (h *SessionHandler) RevokeSession(c *gin.Context) {
@@ -37,28 +41,33 @@ func (h *SessionHandler) RevokeSession(c *gin.Context) {
 	// Convert sessionID to uint
 	sessionIDUint, err := strconv.ParseUint(sessionID, 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid session ID"})
+		response := common.NewErrorResponse(common.ErrCodeBadRequest, "Invalid session ID", nil)
+		c.JSON(http.StatusBadRequest, response)
 		return
 	}
 
 	var session models.Session
 	if err := h.db.First(&session, sessionIDUint).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Session not found"})
+		response := common.NewErrorResponse(common.ErrCodeNotFound, "Session not found", nil)
+		c.JSON(http.StatusNotFound, response)
 		return
 	}
 
 	// Check if session belongs to user
 	if session.UserID != userID {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Not authorized to revoke this session"})
+		response := common.NewErrorResponse(common.ErrCodeForbidden, "Not authorized to revoke this session", nil)
+		c.JSON(http.StatusForbidden, response)
 		return
 	}
 
 	// Deactivate session
 	session.IsActive = false
 	if err := h.db.Save(&session).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to revoke session"})
+		response := common.NewErrorResponse(common.ErrCodeInternalServer, "Failed to revoke session", err)
+		c.JSON(http.StatusInternalServerError, response)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Session revoked successfully"})
+	response := common.NewMessageResponse("Session revoked successfully")
+	c.JSON(http.StatusOK, response)
 }

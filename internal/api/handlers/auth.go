@@ -1,12 +1,13 @@
 package handlers
 
 import (
-	"bytes"
-	"io"
 	"net/http"
 	"strings"
 	"time"
 
+	"giraffecloud/internal/api/dto/common"
+	"giraffecloud/internal/api/dto/v1/auth"
+	"giraffecloud/internal/api/mapper"
 	"giraffecloud/internal/config/firebase"
 	"giraffecloud/internal/models"
 
@@ -22,38 +23,25 @@ func NewAuthHandler(db *gorm.DB) *AuthHandler {
 	return &AuthHandler{db: db}
 }
 
-type LoginRequest struct {
-	Token string `json:"token" binding:"required"`
-}
-
-type RegisterRequest struct {
-	Email        string `json:"email" binding:"required,email"`
-	Name         string `json:"name" binding:"required"`
-	FirebaseUID  string `json:"firebase_uid" binding:"required"`
-}
-
 func (h *AuthHandler) Login(c *gin.Context) {
-	var req LoginRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Invalid request format",
-			"details": err.Error(),
-		})
+	// Get login data from context (set by ValidateLoginRequest middleware)
+	loginData, exists := c.Get("login")
+	if !exists {
+		c.JSON(http.StatusInternalServerError, common.NewErrorResponse(common.ErrCodeInternalServer, "Login data not found in context. Ensure validation middleware is applied.", nil))
 		return
 	}
 
-	// Make sure the token is present
-	if req.Token == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Token is required",
-		})
+	// Extract token from login data
+	loginPtr, ok := loginData.(*auth.LoginRequest)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, common.NewErrorResponse(common.ErrCodeInternalServer, "Invalid login data format", nil))
 		return
 	}
 
 	// Verify the Firebase token
-	decodedToken, err := firebase.GetAuthClient().VerifyIDToken(c.Request.Context(), req.Token)
+	decodedToken, err := firebase.GetAuthClient().VerifyIDToken(c.Request.Context(), loginPtr.Token)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token: " + err.Error()})
+		c.JSON(http.StatusUnauthorized, common.NewErrorResponse(common.ErrCodeUnauthorized, "Invalid token", err))
 		return
 	}
 
@@ -82,11 +70,11 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			}
 
 			if err := h.db.Create(&user).Error; err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user"})
+				c.JSON(http.StatusInternalServerError, common.NewErrorResponse(common.ErrCodeInternalServer, "Failed to create user", err))
 				return
 			}
 		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
+			c.JSON(http.StatusInternalServerError, common.NewErrorResponse(common.ErrCodeInternalServer, "Database error", result.Error))
 			return
 		}
 	}
@@ -95,119 +83,71 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	user.LastLogin = time.Now()
 	user.LastLoginIP = c.ClientIP()
 	if err := h.db.Save(&user).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user"})
+		c.JSON(http.StatusInternalServerError, common.NewErrorResponse(common.ErrCodeInternalServer, "Failed to update user", err))
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"user": gin.H{
-			"id":           user.ID,
-			"email":        user.Email,
-			"name":         user.Name,
-			"role":         user.Role,
-		},
-	})
+	// Return response using mapper and proper DTO format
+	userResponse := mapper.UserToAuthUserResponse(&user)
+	c.JSON(http.StatusOK, common.NewSuccessResponse(auth.LoginResponse{
+		User: *userResponse,
+	}))
 }
 
 func (h *AuthHandler) Register(c *gin.Context) {
-	// Get registration data from context
+	// Get registration data from context (set by ValidateRegisterRequest middleware)
 	registerData, exists := c.Get("register")
 	if !exists {
-		// If not found in context, try to read from the request body
-		// Read raw request body
-		body, err := io.ReadAll(c.Request.Body)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Error reading request body"})
-			return
-		}
-
-		// Check if body is empty
-		if len(body) == 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Empty request body"})
-			return
-		}
-
-		// Restore the body so it can be read by ShouldBindJSON
-		c.Request.Body = io.NopCloser(bytes.NewBuffer(body))
-
-		var req RegisterRequest
-		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-
-		// Use this request data
-		registerData = req
+		c.JSON(http.StatusInternalServerError, common.NewErrorResponse(common.ErrCodeInternalServer, "Registration data not found in context. Ensure validation middleware is applied.", nil))
+		return
 	}
 
-	// Convert to the correct type
-	var req RegisterRequest
-	if r, ok := registerData.(struct {
-		Email        string `json:"email" binding:"required,email"`
-		Name         string `json:"name" binding:"required"`
-		FirebaseUID  string `json:"firebase_uid" binding:"required"`
-	}); ok {
-		req = RegisterRequest{
-			Email:        r.Email,
-			Name:         r.Name,
-			FirebaseUID:  r.FirebaseUID,
-		}
-	} else if r, ok := registerData.(RegisterRequest); ok {
-		req = r
-	} else {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
+	// Extract and convert to RegisterRequest
+	registerPtr, ok := registerData.(*auth.RegisterRequest)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, common.NewErrorResponse(common.ErrCodeInternalServer, "Invalid registration data format", nil))
 		return
 	}
 
 	// Check if user exists with the same Firebase UID
 	var existingFirebaseUser models.User
-	if err := h.db.Where("firebase_uid = ?", req.FirebaseUID).First(&existingFirebaseUser).Error; err == nil {
-		// Return the existing user
-		c.JSON(http.StatusOK, gin.H{
-			"user": gin.H{
-				"id":           existingFirebaseUser.ID,
-				"email":        existingFirebaseUser.Email,
-				"name":         existingFirebaseUser.Name,
-				"role":         existingFirebaseUser.Role,
-				"is_active":    existingFirebaseUser.IsActive,
-			},
-			"message": "User already registered",
-		})
+	if err := h.db.Where("firebase_uid = ?", registerPtr.FirebaseUID).First(&existingFirebaseUser).Error; err == nil {
+		// Return the existing user using mapper with proper DTO format
+		userResponse := mapper.UserToAuthUserResponse(&existingFirebaseUser)
+		c.JSON(http.StatusOK, common.NewSuccessResponse(auth.RegisterResponse{
+			User: *userResponse,
+		}))
 		return
 	}
 
 	// Check if user exists in our database with the same email
 	var existingUser models.User
-	if err := h.db.Where("email = ?", req.Email).First(&existingUser).Error; err == nil {
-		c.JSON(http.StatusConflict, gin.H{"error": "Email already registered"})
+	if err := h.db.Where("email = ?", registerPtr.Email).First(&existingUser).Error; err == nil {
+		c.JSON(http.StatusConflict, common.NewErrorResponse(common.ErrCodeConflict, "Email already registered", nil))
 		return
 	}
 
 	// Create user in database
 	user := models.User{
-		FirebaseUID: req.FirebaseUID,
-		Email:      req.Email,
-		Name:       req.Name,
-		Role:       models.RoleUser,
-		IsActive:   true,
-		LastLogin:  time.Now(),
+		FirebaseUID: registerPtr.FirebaseUID,
+		Email:       registerPtr.Email,
+		Name:        registerPtr.Name,
+		Role:        models.RoleUser,
+		IsActive:    true,
+		LastLogin:   time.Now(),
 		LastLoginIP: c.ClientIP(),
 	}
 
 	if err := h.db.Create(&user).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user"})
+		c.JSON(http.StatusInternalServerError, common.NewErrorResponse(common.ErrCodeInternalServer, "Failed to create user", err))
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{
-		"user": gin.H{
-			"id":           user.ID,
-			"email":        user.Email,
-			"name":         user.Name,
-			"role":         user.Role,
-			"is_active":    user.IsActive,
-		},
-	})
+	// Return response using mapper with proper DTO format
+	userResponse := mapper.UserToAuthUserResponse(&user)
+	c.JSON(http.StatusCreated, common.NewSuccessResponse(auth.RegisterResponse{
+		User: *userResponse,
+	}))
 }
 
 func (h *AuthHandler) Logout(c *gin.Context) {
@@ -215,7 +155,7 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	authHeader := c.GetHeader("Authorization")
 	if authHeader == "" {
 		// No token provided, still return success since user is effectively logged out
-		c.JSON(http.StatusOK, gin.H{"message": "Logged out successfully"})
+		c.JSON(http.StatusOK, common.NewMessageResponse("Logged out successfully"))
 		return
 	}
 
@@ -223,7 +163,7 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	parts := strings.Split(authHeader, " ")
 	if len(parts) != 2 || parts[0] != "Bearer" {
 		// Invalid token format, still return success
-		c.JSON(http.StatusOK, gin.H{"message": "Logged out successfully"})
+		c.JSON(http.StatusOK, common.NewMessageResponse("Logged out successfully"))
 		return
 	}
 
@@ -233,7 +173,7 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	uid, err := firebase.VerifyToken(c.Request.Context(), token)
 	if err != nil {
 		// Token verification failed, still return success
-		c.JSON(http.StatusOK, gin.H{"message": "Logged out successfully"})
+		c.JSON(http.StatusOK, common.NewMessageResponse("Logged out successfully"))
 		return
 	}
 
@@ -241,14 +181,13 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	var user models.User
 	result := h.db.Where("firebase_uid = ?", uid).First(&user)
 	if result.Error == nil {
-		// Update user's last_logout field (you would need to add this field to your User model)
-		// This is optional, but can be useful for tracking user activity
+		// Update user's last_activity field
 		h.db.Model(&user).Updates(map[string]interface{}{
 			"last_activity": time.Now(),
 		})
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Logged out successfully"})
+	c.JSON(http.StatusOK, common.NewMessageResponse("Logged out successfully"))
 }
 
 // GetSession checks if the user has a valid session
@@ -257,23 +196,29 @@ func (h *AuthHandler) GetSession(c *gin.Context) {
 	authHeader := c.GetHeader("Authorization")
 	if authHeader == "" {
 		// No token provided
-		c.JSON(http.StatusOK, gin.H{"valid": false})
+		c.JSON(http.StatusOK, common.NewSuccessResponse(auth.SessionResponse{
+			Valid: false,
+		}))
 		return
 	}
 
 	// Extract token from Bearer header
 	parts := strings.Split(authHeader, " ")
 	if len(parts) != 2 || parts[0] != "Bearer" {
-		c.JSON(http.StatusOK, gin.H{"valid": false})
+		c.JSON(http.StatusOK, common.NewSuccessResponse(auth.SessionResponse{
+			Valid: false,
+		}))
 		return
 	}
 
 	token := parts[1]
 
-	// Verify the Firebase token
+	// Try to verify the token
 	uid, err := firebase.VerifyToken(c.Request.Context(), token)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"valid": false})
+		c.JSON(http.StatusOK, common.NewSuccessResponse(auth.SessionResponse{
+			Valid: false,
+		}))
 		return
 	}
 
@@ -281,18 +226,21 @@ func (h *AuthHandler) GetSession(c *gin.Context) {
 	var user models.User
 	result := h.db.Where("firebase_uid = ?", uid).First(&user)
 	if result.Error != nil {
-		c.JSON(http.StatusOK, gin.H{"valid": false})
+		c.JSON(http.StatusOK, common.NewSuccessResponse(auth.SessionResponse{
+			Valid: false,
+		}))
 		return
 	}
 
-	// Session is valid, return the user
-	c.JSON(http.StatusOK, gin.H{
-		"valid": true,
-		"user": gin.H{
-			"id":           user.ID,
-			"email":        user.Email,
-			"name":         user.Name,
-			"role":         user.Role,
-		},
+	// Update user's last_activity field
+	h.db.Model(&user).Updates(map[string]interface{}{
+		"last_activity": time.Now(),
 	})
+
+	// Return session response using proper DTO format
+	userResponse := mapper.UserToAuthUserResponse(&user)
+	c.JSON(http.StatusOK, common.NewSuccessResponse(auth.SessionResponse{
+		Valid: true,
+		User:  userResponse,
+	}))
 }

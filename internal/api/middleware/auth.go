@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"giraffecloud/internal/api/dto/common"
 	"giraffecloud/internal/config/firebase"
 	"giraffecloud/internal/db"
 	"giraffecloud/internal/models"
@@ -32,7 +33,8 @@ func RequireAuth() gin.HandlerFunc {
 		if uid == "" {
 			authHeader := c.GetHeader("Authorization")
 			if authHeader == "" {
-				c.JSON(http.StatusUnauthorized, gin.H{"error": "Authentication required"})
+				response := common.NewErrorResponse(common.ErrCodeUnauthorized, "Authentication required", nil)
+				c.JSON(http.StatusUnauthorized, response)
 				c.Abort()
 				return
 			}
@@ -40,7 +42,8 @@ func RequireAuth() gin.HandlerFunc {
 			// Extract token from Bearer header
 			parts := strings.Split(authHeader, " ")
 			if len(parts) != 2 || parts[0] != "Bearer" {
-				c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid authorization header format"})
+				response := common.NewErrorResponse(common.ErrCodeUnauthorized, "Invalid authorization header format", nil)
+				c.JSON(http.StatusUnauthorized, response)
 				c.Abort()
 				return
 			}
@@ -48,7 +51,8 @@ func RequireAuth() gin.HandlerFunc {
 			token := parts[1]
 			tokenLen := len(token)
 			if tokenLen < 20 {
-				c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token format: token too short"})
+				response := common.NewErrorResponse(common.ErrCodeUnauthorized, "Invalid token format: token too short", nil)
+				c.JSON(http.StatusUnauthorized, response)
 				c.Abort()
 				return
 			}
@@ -56,7 +60,8 @@ func RequireAuth() gin.HandlerFunc {
 			// Verify the Firebase token
 			uid, err = firebase.VerifyToken(c.Request.Context(), token)
 			if err != nil {
-				c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token: " + err.Error()})
+				response := common.NewErrorResponse(common.ErrCodeUnauthorized, "Invalid token: "+err.Error(), nil)
+				c.JSON(http.StatusUnauthorized, response)
 				c.Abort()
 				return
 			}
@@ -66,12 +71,11 @@ func RequireAuth() gin.HandlerFunc {
 		var user models.User
 		result := db.DB.Where("firebase_uid = ?", uid).First(&user)
 		if result.Error != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"error":        "User not found in database",
+			response := common.NewErrorResponse(common.ErrCodeUnauthorized, "User not found in database", gin.H{
 				"firebase_uid": uid,
-				"code":         "USER_NOT_FOUND",
 				"message":      "You are authenticated with Firebase, but your user record is not found in our database. Please try logging in again.",
 			})
+			c.JSON(http.StatusUnauthorized, response)
 			c.Abort()
 			return
 		}
@@ -80,13 +84,15 @@ func RequireAuth() gin.HandlerFunc {
 		user.LastLogin = time.Now()
 		user.LastLoginIP = c.ClientIP()
 		if err := db.DB.Save(&user).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user"})
+			response := common.NewErrorResponse(common.ErrCodeInternalServer, "Failed to update user", err)
+			c.JSON(http.StatusInternalServerError, response)
 			c.Abort()
 			return
 		}
 
-		// Set user in context
+		// Set user and userID in context
 		c.Set("user", user)
+		c.Set("userID", user.ID)
 		c.Next()
 	}
 }
@@ -96,20 +102,23 @@ func RequireAdmin() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		user, exists := c.Get("user")
 		if !exists {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "User not found in context"})
+			response := common.NewErrorResponse(common.ErrCodeUnauthorized, "User not found in context", nil)
+			c.JSON(http.StatusUnauthorized, response)
 			c.Abort()
 			return
 		}
 
 		u, ok := user.(models.User)
 		if !ok {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid user type in context"})
+			response := common.NewErrorResponse(common.ErrCodeInternalServer, "Invalid user type in context", nil)
+			c.JSON(http.StatusInternalServerError, response)
 			c.Abort()
 			return
 		}
 
 		if u.Role != models.RoleAdmin {
-			c.JSON(http.StatusForbidden, gin.H{"error": "Admin access required"})
+			response := common.NewErrorResponse(common.ErrCodeForbidden, "Admin access required", nil)
+			c.JSON(http.StatusForbidden, response)
 			c.Abort()
 			return
 		}

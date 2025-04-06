@@ -18,8 +18,6 @@ type Tunnel struct {
 	LastActive  time.Time
 	LastError   string
 	IsEnabled   bool `gorm:"default:true"`
-	TeamID      uint
-	Team        Team `gorm:"foreignKey:TeamID"`
 }
 
 type Protocol string

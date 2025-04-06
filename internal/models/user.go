@@ -26,8 +26,6 @@ type User struct {
 	LastLoginIP  string    `gorm:"type:varchar(45)"` // IPv6 addresses can be up to 45 characters
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
-	Teams        []Team    `gorm:"many2many:team_users;"`
-	TeamUsers    []TeamUser
 }
 
 // BeforeCreate is a GORM hook that runs before creating a new user

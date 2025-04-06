@@ -26,8 +26,6 @@ func main() {
 	// Run migrations
 	if err := database.AutoMigrate(
 		&models.User{},
-		&models.Team{},
-		&models.TeamUser{},
 		&models.Tunnel{},
 		&models.Session{},
 	); err != nil {

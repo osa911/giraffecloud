@@ -2,7 +2,11 @@ package handlers
 
 import (
 	"net/http"
+	"strconv"
 
+	"giraffecloud/internal/api/dto/common"
+	"giraffecloud/internal/api/dto/v1/user"
+	"giraffecloud/internal/api/mapper"
 	"giraffecloud/internal/models"
 
 	"github.com/gin-gonic/gin"
@@ -17,155 +21,179 @@ func NewUserHandler(db *gorm.DB) *UserHandler {
 	return &UserHandler{db: db}
 }
 
-type UpdateProfileRequest struct {
-	Name string `json:"name"`
-}
-
 func (h *UserHandler) GetProfile(c *gin.Context) {
-	user, exists := c.Get("user")
+	userModel, exists := c.Get("user")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not found in context"})
+		c.JSON(http.StatusUnauthorized, common.NewErrorResponse(common.ErrCodeUnauthorized, "User not found in context", nil))
 		return
 	}
 
-	u, ok := user.(models.User)
+	u, ok := userModel.(models.User)
 	if !ok {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid user type in context"})
+		c.JSON(http.StatusInternalServerError, common.NewErrorResponse(common.ErrCodeInternalServer, "Invalid user type in context", nil))
 		return
 	}
 
-	// Return user data
-	c.JSON(http.StatusOK, gin.H{
-		"id":        u.ID,
-		"email":     u.Email,
-		"name":      u.Name,
-		"role":      u.Role,
-		"lastLogin": u.LastLogin,
-		"createdAt": u.CreatedAt,
-		"updatedAt": u.UpdatedAt,
-	})
+	// Convert to response DTO using mapper
+	userResponse := mapper.UserToUserResponse(&u)
+
+	// Use proper DTO format with wrapped response
+	c.JSON(http.StatusOK, common.NewSuccessResponse(userResponse))
 }
 
 func (h *UserHandler) UpdateProfile(c *gin.Context) {
 	userID := c.GetUint("userID")
 
-	var req UpdateProfileRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	// Get validated profile from context instead of reading request body again
+	profileData, exists := c.Get("profile")
+	if !exists {
+		c.JSON(http.StatusBadRequest, common.NewErrorResponse(common.ErrCodeBadRequest, "Missing profile data", nil))
 		return
 	}
 
-	var user models.User
-	if err := h.db.First(&user, userID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+	// Cast to pointer type since that's what the validation middleware stores
+	profilePtr, ok := profileData.(*user.UpdateProfileRequest)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, common.NewErrorResponse(common.ErrCodeInternalServer, "Invalid profile data format", nil))
 		return
 	}
 
-	// Update fields
-	if req.Name != "" {
-		user.Name = req.Name
-	}
-
-	if err := h.db.Save(&user).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update profile"})
+	var userModel models.User
+	if err := h.db.First(&userModel, userID).Error; err != nil {
+		c.JSON(http.StatusNotFound, common.NewErrorResponse(common.ErrCodeNotFound, "User not found", nil))
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"id":        user.ID,
-		"email":     user.Email,
-		"name":      user.Name,
-		"role":      user.Role,
-		"lastLogin": user.LastLogin,
-		"updatedAt": user.UpdatedAt,
-	})
+	// Apply changes using mapper
+	mapper.ApplyUpdateProfileRequest(&userModel, profilePtr)
+
+	if err := h.db.Save(&userModel).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, common.NewErrorResponse(common.ErrCodeInternalServer, "Failed to update profile", err))
+		return
+	}
+
+	// Convert to response DTO using mapper
+	userResponse := mapper.UserToUserResponse(&userModel)
+	c.JSON(http.StatusOK, common.NewSuccessResponse(userResponse))
 }
 
 func (h *UserHandler) DeleteProfile(c *gin.Context) {
 	userID := c.GetUint("userID")
 
-	var user models.User
-	if err := h.db.First(&user, userID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+	var userModel models.User
+	if err := h.db.First(&userModel, userID).Error; err != nil {
+		c.JSON(http.StatusNotFound, common.NewErrorResponse(common.ErrCodeNotFound, "User not found", nil))
 		return
 	}
 
-	if err := h.db.Delete(&user).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete user"})
+	if err := h.db.Delete(&userModel).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, common.NewErrorResponse(common.ErrCodeInternalServer, "Failed to delete user", err))
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "User deleted successfully"})
+	c.JSON(http.StatusOK, common.NewSuccessResponse(gin.H{
+		"message": "User deleted successfully",
+	}))
 }
 
 func (h *UserHandler) ListUsers(c *gin.Context) {
+	// Parse pagination parameters
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
+
+	// Ensure reasonable defaults
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 10
+	}
+
+	offset := (page - 1) * pageSize
+
 	var users []models.User
-	if err := h.db.Find(&users).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch users"})
+	var totalCount int64
+
+	// Get total count for pagination
+	h.db.Model(&models.User{}).Count(&totalCount)
+
+	// Get users with pagination
+	if err := h.db.Offset(offset).Limit(pageSize).Find(&users).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, common.NewErrorResponse(common.ErrCodeInternalServer, "Failed to fetch users", err))
 		return
 	}
 
-	c.JSON(http.StatusOK, users)
+	// Convert to response DTOs using mapper
+	userResponses := mapper.UsersToUserResponses(users)
+
+	response := user.ListUsersResponse{
+		Users:      userResponses,
+		TotalCount: totalCount,
+		Page:       page,
+		PageSize:   pageSize,
+	}
+
+	c.JSON(http.StatusOK, common.NewSuccessResponse(response))
 }
 
 func (h *UserHandler) GetUser(c *gin.Context) {
 	id := c.Param("id")
 
-	var user models.User
-	if err := h.db.First(&user, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+	var userModel models.User
+	if err := h.db.First(&userModel, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, common.NewErrorResponse(common.ErrCodeNotFound, "User not found", nil))
 		return
 	}
 
-	c.JSON(http.StatusOK, user)
+	// Convert to response DTO using mapper
+	userResponse := mapper.UserToUserResponse(&userModel)
+	c.JSON(http.StatusOK, common.NewSuccessResponse(userResponse))
 }
 
 func (h *UserHandler) UpdateUser(c *gin.Context) {
 	id := c.Param("id")
 
-	var user models.User
-	if err := h.db.First(&user, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+	var userModel models.User
+	if err := h.db.First(&userModel, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, common.NewErrorResponse(common.ErrCodeNotFound, "User not found", nil))
 		return
 	}
 
-	var input struct {
-		Name     string      `json:"name"`
-		Role     models.Role `json:"role"`
-		IsActive bool        `json:"is_active"`
-	}
-
-	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	var updateRequest user.UpdateUserRequest
+	if err := c.ShouldBindJSON(&updateRequest); err != nil {
+		c.JSON(http.StatusBadRequest, common.NewErrorResponse(common.ErrCodeValidation, "Invalid request data", err))
 		return
 	}
 
-	user.Name = input.Name
-	user.Role = input.Role
-	user.IsActive = input.IsActive
+	// Apply changes using mapper
+	mapper.ApplyUpdateUserRequest(&userModel, &updateRequest)
 
-	if err := h.db.Save(&user).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user"})
+	if err := h.db.Save(&userModel).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, common.NewErrorResponse(common.ErrCodeInternalServer, "Failed to update user", err))
 		return
 	}
 
-	c.JSON(http.StatusOK, user)
+	// Convert to response DTO using mapper
+	userResponse := mapper.UserToUserResponse(&userModel)
+	c.JSON(http.StatusOK, common.NewSuccessResponse(userResponse))
 }
 
 func (h *UserHandler) DeleteUser(c *gin.Context) {
 	id := c.Param("id")
 
-	var user models.User
-	if err := h.db.First(&user, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+	var userModel models.User
+	if err := h.db.First(&userModel, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, common.NewErrorResponse(common.ErrCodeNotFound, "User not found", nil))
 		return
 	}
 
-	if err := h.db.Delete(&user).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete user"})
+	if err := h.db.Delete(&userModel).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, common.NewErrorResponse(common.ErrCodeInternalServer, "Failed to delete user", err))
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "User deleted successfully"})
+	c.JSON(http.StatusOK, common.NewSuccessResponse(gin.H{
+		"message": "User deleted successfully",
+	}))
 }
 

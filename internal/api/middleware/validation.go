@@ -1,11 +1,13 @@
 package middleware
 
 import (
-	"giraffecloud/internal/api/validation"
-	"io"
+	"giraffecloud/internal/api/dto/common"
+	"giraffecloud/internal/api/dto/v1/auth"
+	"giraffecloud/internal/api/dto/v1/tunnel"
+	"giraffecloud/internal/api/dto/v1/user"
 	"net/http"
 
-	"bytes"
+	"encoding/json"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
@@ -13,113 +15,136 @@ import (
 
 // ValidationMiddleware handles request validation
 type ValidationMiddleware struct {
-	validate *validator.Validate
+	validator *validator.Validate
 }
 
 // NewValidationMiddleware creates a new validation middleware
 func NewValidationMiddleware() *ValidationMiddleware {
-	validate := validator.New()
-	validation.RegisterValidators(validate)
 	return &ValidationMiddleware{
-		validate: validate,
+		validator: validator.New(),
 	}
+}
+
+// validateRequest is a helper function to validate a request against a struct
+func (m *ValidationMiddleware) validateRequest(c *gin.Context, obj interface{}, contextKey string) bool {
+	// Get raw body from context
+	rawBody, exists := c.Get("raw_body")
+	if !exists {
+		c.JSON(http.StatusInternalServerError, common.NewErrorResponse(
+			common.ErrCodeInternalServer,
+			"Request body not found in context. Ensure body reader middleware is applied.",
+			nil,
+		))
+		c.Abort()
+		return false
+	}
+
+	// Use the raw body bytes
+	bodyBytes, ok := rawBody.([]byte)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, common.NewErrorResponse(
+			common.ErrCodeInternalServer,
+			"Invalid body format in context",
+			nil,
+		))
+		c.Abort()
+		return false
+	}
+
+	// If body is empty and we need to validate a struct, return validation error
+	if len(bodyBytes) == 0 {
+		c.JSON(http.StatusBadRequest, common.NewErrorResponse(
+			common.ErrCodeValidation,
+			"Request body is empty",
+			nil,
+		))
+		c.Abort()
+		return false
+	}
+
+	// Unmarshal JSON
+	if err := json.Unmarshal(bodyBytes, obj); err != nil {
+		c.JSON(http.StatusBadRequest, common.NewErrorResponse(
+			common.ErrCodeValidation,
+			"Invalid JSON format",
+			err,
+		))
+		c.Abort()
+		return false
+	}
+
+	// Validate
+	if err := m.validator.Struct(obj); err != nil {
+		c.JSON(http.StatusBadRequest, common.NewErrorResponse(
+			common.ErrCodeValidation,
+			"Validation failed",
+			err,
+		))
+		c.Abort()
+		return false
+	}
+
+	// Set validated object in context
+	c.Set(contextKey, obj)
+	return true
 }
 
 // ValidateLoginRequest validates login request
 func (m *ValidationMiddleware) ValidateLoginRequest() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Read raw body first
-		bodyBytes, err := io.ReadAll(c.Request.Body)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": "Error reading request body",
-			})
-			c.Abort()
-			return
+		var loginReq auth.LoginRequest
+		if m.validateRequest(c, &loginReq, "login") {
+			c.Next()
 		}
-
-		// Restore body for binding
-		c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-
-		var login struct {
-			Token string `json:"token" binding:"required"`
-		}
-
-		if err := c.ShouldBindJSON(&login); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": "Invalid request body",
-				"errors": validation.FormatValidationError(err),
-				"received": string(bodyBytes),
-			})
-			c.Abort()
-			return
-		}
-
-		// Restore body again for the handler
-		c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-
-		c.Set("login", login)
-		c.Next()
 	}
 }
 
 // ValidateRegisterRequest validates registration request
 func (m *ValidationMiddleware) ValidateRegisterRequest() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Read raw body first
-		bodyBytes, err := io.ReadAll(c.Request.Body)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": "Error reading request body",
-			})
-			c.Abort()
-			return
+		var regReq auth.RegisterRequest
+		if m.validateRequest(c, &regReq, "register") {
+			c.Next()
 		}
-
-		// Restore body for binding
-		c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-
-		var register struct {
-			Email        string `json:"email" binding:"required,email"`
-			Name         string `json:"name" binding:"required"`
-			FirebaseUID  string `json:"firebase_uid" binding:"required"`
-		}
-
-		if err := c.ShouldBindJSON(&register); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": "Invalid request body",
-				"errors": validation.FormatValidationError(err),
-			})
-			c.Abort()
-			return
-		}
-
-		// Restore body again for the handler
-		c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-
-		c.Set("register", register)
-		c.Next()
 	}
 }
 
 // ValidateUpdateProfileRequest validates profile update request
 func (m *ValidationMiddleware) ValidateUpdateProfileRequest() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var profile struct {
-			Name         string `json:"name" binding:"omitempty,name"`
-			Website      string `json:"website" binding:"omitempty,url"`
+		var profileReq user.UpdateProfileRequest
+		if m.validateRequest(c, &profileReq, "updateProfile") {
+			c.Next()
 		}
+	}
+}
 
-		if err := c.ShouldBindJSON(&profile); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": "Invalid request body",
-				"errors": validation.FormatValidationError(err),
-			})
-			c.Abort()
-			return
+// ValidateUpdateUserRequest validates user update request (admin)
+func (m *ValidationMiddleware) ValidateUpdateUserRequest() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var userReq user.UpdateUserRequest
+		if m.validateRequest(c, &userReq, "updateUser") {
+			c.Next()
 		}
+	}
+}
 
-		c.Set("profile", profile)
-		c.Next()
+// ValidateCreateTunnelRequest validates tunnel creation request
+func (m *ValidationMiddleware) ValidateCreateTunnelRequest() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var tunnelReq tunnel.CreateTunnelRequest
+		if m.validateRequest(c, &tunnelReq, "createTunnel") {
+			c.Next()
+		}
+	}
+}
+
+// ValidateUpdateTunnelRequest validates tunnel update request
+func (m *ValidationMiddleware) ValidateUpdateTunnelRequest() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var tunnelReq tunnel.UpdateTunnelRequest
+		if m.validateRequest(c, &tunnelReq, "updateTunnel") {
+			c.Next()
+		}
 	}
 }
