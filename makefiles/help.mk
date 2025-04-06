@@ -1,4 +1,4 @@
-.PHONY: help setup-dev setup-prod validate-env db-init db-migrate db-rollback db-reset db-backup db-restore db-init-prod db-migrate-prod db-rollback-prod db-reset-prod db-backup-prod db-restore-prod dev dev-hot prod build test
+.PHONY: help setup-dev setup-prod validate-env db-init db-migrate db-rollback db-reset db-backup db-restore db-init-prod db-migrate-prod db-rollback-prod db-reset-prod db-backup-prod db-restore-prod dev dev-hot prod build test db-recreate
 
 help:
 	@echo "GiraffeCloud Makefile Commands"
@@ -12,6 +12,7 @@ help:
 	@echo "  db-migrate   - Run database migrations"
 	@echo "  db-rollback  - Rollback last migration"
 	@echo "  db-reset     - Reset development database"
+	@echo "  db-recreate  - Drop and recreate the development database"
 	@echo "  db-backup    - Create development database backup"
 	@echo "  db-restore   - Restore development database from backup"
 	@echo ""

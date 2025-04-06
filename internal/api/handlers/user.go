@@ -45,7 +45,7 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 	userID := c.GetUint("userID")
 
 	// Get validated profile from context instead of reading request body again
-	profileData, exists := c.Get("profile")
+	profileData, exists := c.Get("updateProfile")
 	if !exists {
 		c.JSON(http.StatusBadRequest, common.NewErrorResponse(common.ErrCodeBadRequest, "Missing profile data", nil))
 		return
