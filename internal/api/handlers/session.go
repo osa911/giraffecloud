@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"giraffecloud/internal/api/constants"
 	"giraffecloud/internal/api/dto/common"
 	"giraffecloud/internal/models"
 
@@ -20,7 +21,7 @@ func NewSessionHandler(db *gorm.DB) *SessionHandler {
 }
 
 func (h *SessionHandler) ListSessions(c *gin.Context) {
-	userID := c.GetUint("userID")
+	userID := c.GetUint(constants.ContextKeyUserID)
 
 	var sessions []models.Session
 	if err := h.db.Where("user_id = ? AND is_active = ?", userID, true).Find(&sessions).Error; err != nil {
@@ -36,7 +37,7 @@ func (h *SessionHandler) ListSessions(c *gin.Context) {
 
 func (h *SessionHandler) RevokeSession(c *gin.Context) {
 	sessionID := c.Param("id")
-	userID := c.GetUint("userID")
+	userID := c.GetUint(constants.ContextKeyUserID)
 
 	// Convert sessionID to uint
 	sessionIDUint, err := strconv.ParseUint(sessionID, 10, 32)

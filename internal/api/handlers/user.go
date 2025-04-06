@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"giraffecloud/internal/api/constants"
 	"giraffecloud/internal/api/dto/common"
 	"giraffecloud/internal/api/dto/v1/user"
 	"giraffecloud/internal/api/mapper"
@@ -22,7 +23,7 @@ func NewUserHandler(db *gorm.DB) *UserHandler {
 }
 
 func (h *UserHandler) GetProfile(c *gin.Context) {
-	userModel, exists := c.Get("user")
+	userModel, exists := c.Get(constants.ContextKeyUser)
 	if !exists {
 		c.JSON(http.StatusUnauthorized, common.NewErrorResponse(common.ErrCodeUnauthorized, "User not found in context", nil))
 		return
@@ -42,10 +43,10 @@ func (h *UserHandler) GetProfile(c *gin.Context) {
 }
 
 func (h *UserHandler) UpdateProfile(c *gin.Context) {
-	userID := c.GetUint("userID")
+	userID := c.GetUint(constants.ContextKeyUserID)
 
 	// Get validated profile from context instead of reading request body again
-	profileData, exists := c.Get("updateProfile")
+	profileData, exists := c.Get(constants.ContextKeyUpdateProfile)
 	if !exists {
 		c.JSON(http.StatusBadRequest, common.NewErrorResponse(common.ErrCodeBadRequest, "Missing profile data", nil))
 		return
@@ -78,7 +79,7 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 }
 
 func (h *UserHandler) DeleteProfile(c *gin.Context) {
-	userID := c.GetUint("userID")
+	userID := c.GetUint(constants.ContextKeyUserID)
 
 	var userModel models.User
 	if err := h.db.First(&userModel, userID).Error; err != nil {

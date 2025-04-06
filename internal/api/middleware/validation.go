@@ -1,13 +1,14 @@
 package middleware
 
 import (
+	"encoding/json"
+	"net/http"
+
+	"giraffecloud/internal/api/constants"
 	"giraffecloud/internal/api/dto/common"
 	"giraffecloud/internal/api/dto/v1/auth"
 	"giraffecloud/internal/api/dto/v1/tunnel"
 	"giraffecloud/internal/api/dto/v1/user"
-	"net/http"
-
-	"encoding/json"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
@@ -93,7 +94,7 @@ func (m *ValidationMiddleware) validateRequest(c *gin.Context, obj interface{}, 
 func (m *ValidationMiddleware) ValidateLoginRequest() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var loginReq auth.LoginRequest
-		if m.validateRequest(c, &loginReq, "login") {
+		if m.validateRequest(c, &loginReq, constants.ContextKeyLogin) {
 			c.Next()
 		}
 	}
@@ -103,7 +104,7 @@ func (m *ValidationMiddleware) ValidateLoginRequest() gin.HandlerFunc {
 func (m *ValidationMiddleware) ValidateRegisterRequest() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var regReq auth.RegisterRequest
-		if m.validateRequest(c, &regReq, "register") {
+		if m.validateRequest(c, &regReq, constants.ContextKeyRegister) {
 			c.Next()
 		}
 	}
@@ -113,7 +114,7 @@ func (m *ValidationMiddleware) ValidateRegisterRequest() gin.HandlerFunc {
 func (m *ValidationMiddleware) ValidateUpdateProfileRequest() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var profileReq user.UpdateProfileRequest
-		if m.validateRequest(c, &profileReq, "updateProfile") {
+		if m.validateRequest(c, &profileReq, constants.ContextKeyUpdateProfile) {
 			c.Next()
 		}
 	}
@@ -123,7 +124,7 @@ func (m *ValidationMiddleware) ValidateUpdateProfileRequest() gin.HandlerFunc {
 func (m *ValidationMiddleware) ValidateUpdateUserRequest() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var userReq user.UpdateUserRequest
-		if m.validateRequest(c, &userReq, "updateUser") {
+		if m.validateRequest(c, &userReq, constants.ContextKeyUpdateUser) {
 			c.Next()
 		}
 	}
@@ -133,7 +134,7 @@ func (m *ValidationMiddleware) ValidateUpdateUserRequest() gin.HandlerFunc {
 func (m *ValidationMiddleware) ValidateCreateTunnelRequest() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var tunnelReq tunnel.CreateTunnelRequest
-		if m.validateRequest(c, &tunnelReq, "createTunnel") {
+		if m.validateRequest(c, &tunnelReq, constants.ContextKeyCreateTunnel) {
 			c.Next()
 		}
 	}
@@ -143,7 +144,7 @@ func (m *ValidationMiddleware) ValidateCreateTunnelRequest() gin.HandlerFunc {
 func (m *ValidationMiddleware) ValidateUpdateTunnelRequest() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var tunnelReq tunnel.UpdateTunnelRequest
-		if m.validateRequest(c, &tunnelReq, "updateTunnel") {
+		if m.validateRequest(c, &tunnelReq, constants.ContextKeyUpdateTunnel) {
 			c.Next()
 		}
 	}

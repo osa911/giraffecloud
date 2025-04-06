@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"giraffecloud/internal/api/constants"
 	"giraffecloud/internal/api/dto/common"
 	"giraffecloud/internal/api/dto/v1/tunnel"
 	"giraffecloud/internal/api/mapper"
@@ -22,7 +23,7 @@ func NewTunnelHandler(db *gorm.DB) *TunnelHandler {
 }
 
 func (h *TunnelHandler) ListTunnels(c *gin.Context) {
-	userID := c.GetUint("userID")
+	userID := c.GetUint(constants.ContextKeyUserID)
 
 	var tunnels []models.Tunnel
 	if err := h.db.Where("user_id = ?", userID).Find(&tunnels).Error; err != nil {
@@ -44,10 +45,10 @@ func (h *TunnelHandler) ListTunnels(c *gin.Context) {
 }
 
 func (h *TunnelHandler) CreateTunnel(c *gin.Context) {
-	userID := c.GetUint("userID")
+	userID := c.GetUint(constants.ContextKeyUserID)
 
 	// Get tunnel data from context
-	tunnelData, exists := c.Get("createTunnel")
+	tunnelData, exists := c.Get(constants.ContextKeyCreateTunnel)
 	if !exists {
 		response := common.NewErrorResponse(common.ErrCodeInternalServer, "Tunnel data not found in context. Ensure validation middleware is applied.", nil)
 		c.JSON(http.StatusInternalServerError, response)
@@ -87,7 +88,7 @@ func (h *TunnelHandler) CreateTunnel(c *gin.Context) {
 
 func (h *TunnelHandler) GetTunnel(c *gin.Context) {
 	tunnelID := c.Param("id")
-	userID := c.GetUint("userID")
+	userID := c.GetUint(constants.ContextKeyUserID)
 
 	// Convert tunnelID to uint
 	tunnelIDUint, err := strconv.ParseUint(tunnelID, 10, 32)
@@ -121,7 +122,7 @@ func (h *TunnelHandler) GetTunnel(c *gin.Context) {
 
 func (h *TunnelHandler) UpdateTunnel(c *gin.Context) {
 	tunnelID := c.Param("id")
-	userID := c.GetUint("userID")
+	userID := c.GetUint(constants.ContextKeyUserID)
 
 	// Convert tunnelID to uint
 	tunnelIDUint, err := strconv.ParseUint(tunnelID, 10, 32)
@@ -132,7 +133,7 @@ func (h *TunnelHandler) UpdateTunnel(c *gin.Context) {
 	}
 
 	// Get tunnel update data from context
-	tunnelData, exists := c.Get("updateTunnel")
+	tunnelData, exists := c.Get(constants.ContextKeyUpdateTunnel)
 	if !exists {
 		response := common.NewErrorResponse(common.ErrCodeInternalServer, "Tunnel update data not found in context. Ensure validation middleware is applied.", nil)
 		c.JSON(http.StatusInternalServerError, response)
@@ -191,7 +192,7 @@ func (h *TunnelHandler) UpdateTunnel(c *gin.Context) {
 
 func (h *TunnelHandler) DeleteTunnel(c *gin.Context) {
 	tunnelID := c.Param("id")
-	userID := c.GetUint("userID")
+	userID := c.GetUint(constants.ContextKeyUserID)
 
 	// Convert tunnelID to uint
 	tunnelIDUint, err := strconv.ParseUint(tunnelID, 10, 32)
@@ -228,7 +229,7 @@ func (h *TunnelHandler) DeleteTunnel(c *gin.Context) {
 
 func (h *TunnelHandler) StartTunnel(c *gin.Context) {
 	tunnelID := c.Param("id")
-	userID := c.GetUint("userID")
+	userID := c.GetUint(constants.ContextKeyUserID)
 
 	// Convert tunnelID to uint
 	tunnelIDUint, err := strconv.ParseUint(tunnelID, 10, 32)
@@ -269,7 +270,7 @@ func (h *TunnelHandler) StartTunnel(c *gin.Context) {
 
 func (h *TunnelHandler) StopTunnel(c *gin.Context) {
 	tunnelID := c.Param("id")
-	userID := c.GetUint("userID")
+	userID := c.GetUint(constants.ContextKeyUserID)
 
 	// Convert tunnelID to uint
 	tunnelIDUint, err := strconv.ParseUint(tunnelID, 10, 32)

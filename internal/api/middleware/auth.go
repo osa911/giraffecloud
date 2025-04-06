@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"giraffecloud/internal/api/constants"
 	"giraffecloud/internal/api/dto/common"
 	"giraffecloud/internal/config/firebase"
 	"giraffecloud/internal/db"
@@ -13,8 +14,16 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// AuthMiddleware handles authentication and authorization
+type AuthMiddleware struct {}
+
+// NewAuthMiddleware creates a new auth middleware
+func NewAuthMiddleware() *AuthMiddleware {
+	return &AuthMiddleware{}
+}
+
 // RequireAuth middleware
-func RequireAuth() gin.HandlerFunc {
+func (m *AuthMiddleware) RequireAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Check for session cookie
 		sessionCookie, err := c.Cookie("session")
@@ -91,19 +100,28 @@ func RequireAuth() gin.HandlerFunc {
 		}
 
 		// Set user and userID in context
-		c.Set("user", user)
-		c.Set("userID", user.ID)
+		c.Set(constants.ContextKeyUserID, user.ID)
+		c.Set(constants.ContextKeyUser, user)
 		c.Next()
 	}
 }
 
-// RequireAdmin middleware
-func RequireAdmin() gin.HandlerFunc {
+// RequireAdmin is a middleware that ensures a user is an admin
+func (m *AuthMiddleware) RequireAdmin() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		user, exists := c.Get("user")
+		// First check if user is authenticated
+		m.RequireAuth()(c)
+
+		// If there was an error, RequireAuth would have aborted the chain
+		if c.IsAborted() {
+			return
+		}
+
+		// Get user from context
+		user, exists := c.Get(constants.ContextKeyUser)
 		if !exists {
-			response := common.NewErrorResponse(common.ErrCodeUnauthorized, "User not found in context", nil)
-			c.JSON(http.StatusUnauthorized, response)
+			response := common.NewErrorResponse(common.ErrCodeInternalServer, "User not found in context after auth", nil)
+			c.JSON(http.StatusInternalServerError, response)
 			c.Abort()
 			return
 		}

@@ -46,6 +46,7 @@ func (s *Server) Start() error {
 
 	// Create validation middleware
 	validationMiddleware := middleware.NewValidationMiddleware()
+	authMiddleware := middleware.NewAuthMiddleware()
 
 	// Create handlers
 	authHandler := handlers.NewAuthHandler(s.db.DB)
@@ -68,7 +69,7 @@ func (s *Server) Start() error {
 
 	// Protected routes
 	protected := s.router.Group("/api/v1")
-	protected.Use(middleware.RequireAuth())
+	protected.Use(authMiddleware.RequireAuth())
 	{
 		// User routes with validation
 		protected.GET("/user/profile", userHandler.GetProfile)
@@ -89,7 +90,7 @@ func (s *Server) Start() error {
 
 		// Admin routes
 		admin := protected.Group("/admin")
-		admin.Use(middleware.RequireAdmin())
+		admin.Use(authMiddleware.RequireAdmin())
 		{
 			admin.GET("/users", userHandler.ListUsers)
 			admin.GET("/users/:id", userHandler.GetUser)

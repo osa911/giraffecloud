@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"giraffecloud/internal/api/constants"
 	"giraffecloud/internal/api/dto/common"
 	"giraffecloud/internal/api/dto/v1/auth"
 	"giraffecloud/internal/api/mapper"
@@ -25,7 +26,7 @@ func NewAuthHandler(db *gorm.DB) *AuthHandler {
 
 func (h *AuthHandler) Login(c *gin.Context) {
 	// Get login data from context (set by ValidateLoginRequest middleware)
-	loginData, exists := c.Get("login")
+	loginData, exists := c.Get(constants.ContextKeyLogin)
 	if !exists {
 		c.JSON(http.StatusInternalServerError, common.NewErrorResponse(common.ErrCodeInternalServer, "Login data not found in context. Ensure validation middleware is applied.", nil))
 		return
@@ -96,7 +97,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 func (h *AuthHandler) Register(c *gin.Context) {
 	// Get registration data from context (set by ValidateRegisterRequest middleware)
-	registerData, exists := c.Get("register")
+	registerData, exists := c.Get(constants.ContextKeyRegister)
 	if !exists {
 		c.JSON(http.StatusInternalServerError, common.NewErrorResponse(common.ErrCodeInternalServer, "Registration data not found in context. Ensure validation middleware is applied.", nil))
 		return

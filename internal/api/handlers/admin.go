@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"giraffecloud/internal/api/constants"
 	"giraffecloud/internal/api/dto/common"
 	"giraffecloud/internal/api/dto/v1/user"
 	"giraffecloud/internal/api/mapper"
@@ -78,7 +79,7 @@ func (h *AdminHandler) UpdateUser(c *gin.Context) {
 	}
 
 	// Get validated user data from context
-	userData, exists := c.Get("updateUser")
+	userData, exists := c.Get(constants.ContextKeyUpdateUser)
 	if !exists {
 		response := common.NewErrorResponse(common.ErrCodeInternalServer, "User update data not found in context. Ensure validation middleware is applied.", nil)
 		c.JSON(http.StatusInternalServerError, response)
