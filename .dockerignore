@@ -1,0 +1,41 @@
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# web app
+internal/web
+
+# Build artifacts
+**/bin
+**/obj
+**/tmp
+
+# Environment files (except the production one which is copied explicitly)
+.env*
+!internal/config/env/.env.production
+
+# Go test files
+**/*_test.go
+
+# Documentation
+docs
+*.md
+LICENSE
+
+# Logs
+**/*.log
+
+# Temporary files
+**/tmp
+**/temp
+
+# Docker files
+docker-compose*
+Dockerfile*
+.dockerignore

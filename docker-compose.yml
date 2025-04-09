@@ -1,0 +1,56 @@
+version: "3.9"
+
+# Load environment variables from production env file
+x-env-file: &env-file
+  env_file:
+    - internal/config/env/.env.production
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: giraffecloud_api
+    restart: always
+    # Expose the port to the host system for Caddy running on the host
+    ports:
+      - "8080:8080"
+    volumes:
+      - api_logs:/app/logs
+    depends_on:
+      - postgres
+    networks:
+      - giraffecloud_network
+    <<: *env-file
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: giraffecloud_postgres
+    restart: always
+    # Only expose to internal network, not directly to host
+    expose:
+      - "5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - giraffecloud_network
+    environment:
+      - POSTGRES_USER=${DB_USER:-postgres}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres}
+      - POSTGRES_DB=${DB_NAME:-db_name}
+    <<: *env-file
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ${DB_NAME:-db_name}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  giraffecloud_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
+  api_logs:
+    driver: local
