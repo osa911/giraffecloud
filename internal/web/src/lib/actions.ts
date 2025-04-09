@@ -2,8 +2,79 @@
 
 import { cookies } from "next/headers";
 import { User } from "@/contexts/AuthProvider";
+import serverApi from "@/services/api/serverApiClient";
+import { redirect } from "next/navigation";
 
 const USER_DATA_COOKIE_NAME = "user_data";
+
+export type FormState = {
+  name: FormDataEntryValue | null;
+};
+
+export async function updateProfileAction(
+  prevState: FormState,
+  formData: FormData
+) {
+  const name = formData.get("name");
+  try {
+    await serverApi().put<User>("/user/profile", {
+      name,
+    });
+    return { ...prevState, name };
+  } catch (error) {
+    console.error("Error updating user:", error);
+    return { ...prevState, name };
+  }
+}
+
+export type LoginWithTokenFormState = {
+  token: string;
+};
+
+export const loginWithTokenAction = async (
+  prevState: undefined,
+  newState: LoginWithTokenFormState
+): Promise<undefined> => {
+  const token = newState.token;
+  let shouldRedirect = false;
+  try {
+    const { user } = await serverApi().post<{ user: User }>("/auth/login", {
+      token,
+    });
+    shouldRedirect = await handleLoginSuccess(user);
+  } catch (error) {
+    console.error("Error logging in:", error);
+  } finally {
+    if (shouldRedirect) {
+      redirect("/dashboard");
+    }
+  }
+};
+
+export type RegisterFormState = {
+  email: string;
+  name: string;
+  firebase_uid: string;
+};
+
+export const registerWithEmailAction = async (
+  prevState: undefined,
+  newState: RegisterFormState
+): Promise<undefined> => {
+  let shouldRedirect = false;
+  try {
+    const { user } = await serverApi().post<{
+      user: User;
+    }>("/auth/register", newState);
+    shouldRedirect = await handleLoginSuccess(user);
+  } catch (error) {
+    console.error("Error registering:", error);
+  } finally {
+    if (shouldRedirect) {
+      redirect("/dashboard");
+    }
+  }
+};
 
 /**
  * Server action to set user data in cookie

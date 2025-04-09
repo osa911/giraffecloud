@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import {
   Container,
   Box,
@@ -21,7 +20,6 @@ export default function LoginForm() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState("");
   const { signIn, signInWithGoogle } = useAuth();
-  const router = useRouter();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,8 +27,6 @@ export default function LoginForm() {
     setError("");
     try {
       await signIn(email, password);
-      router.push("/dashboard");
-      router.refresh(); // Refresh to update server components
     } catch (error) {
       setError("Failed to sign in. Please check your credentials.");
     } finally {
@@ -43,8 +39,6 @@ export default function LoginForm() {
     setError("");
     try {
       await signInWithGoogle();
-      router.push("/dashboard");
-      router.refresh(); // Refresh to update server components
     } catch (error: any) {
       if (error.message === "popup-closed") {
         setError("Sign in was cancelled.");

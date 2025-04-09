@@ -1,23 +1,32 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useActionState,
+  useTransition,
+} from "react";
 import {
-  getAuth,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut,
   onIdTokenChanged,
   GoogleAuthProvider,
   signInWithPopup,
-  onAuthStateChanged,
   AuthError,
-  User as FirebaseUser,
 } from "firebase/auth";
-import { useRouter } from "next/navigation";
 import clientApi from "@/services/api/clientApiClient";
 import { auth as firebaseAuth } from "@/services/firebaseService";
 import { handleTokenChanged } from "@/services/authClientService";
-import { handleLoginSuccess, handleLogout } from "@/lib/actions";
+import {
+  handleLogout,
+  loginWithTokenAction,
+  LoginWithTokenFormState,
+  RegisterFormState,
+  registerWithEmailAction,
+} from "@/lib/actions";
 
 export type User = {
   id: number;
@@ -27,14 +36,6 @@ export type User = {
   isActive: boolean;
 };
 
-type LoginResponse = {
-  user: User;
-};
-
-type RegisterResponse = {
-  user: User;
-};
-
 type AuthContextType = {
   user: User | null;
   loading: boolean;
@@ -42,7 +43,6 @@ type AuthContextType = {
   signIn: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
-  updateUser: (user: User) => void;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -62,8 +62,15 @@ type AuthProviderProps = {
 
 export function AuthProvider({ children, initialUser }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(initialUser);
-  const [loading, setLoading] = useState(false);
-
+  const [isPending, startTransition] = useTransition();
+  const [loginState, loginWithToken, isLoginLoading] = useActionState<
+    undefined,
+    LoginWithTokenFormState
+  >(loginWithTokenAction, undefined);
+  const [registerState, registerWithEmail, isRegisterLoading] = useActionState<
+    undefined,
+    RegisterFormState
+  >(registerWithEmailAction, undefined);
   /**
    * Handle refresh token changes
    */
@@ -77,39 +84,21 @@ export function AuthProvider({ children, initialUser }: AuthProviderProps) {
     return () => unsubscribe();
   }, []);
 
-  const updateUser = (updatedUser: User | null) => {
-    setUser(updatedUser);
-  };
-
   // Helper function to login with token
-  const handleLoginWithToken = async (token: string): Promise<User> => {
+  const handleLoginWithToken = async (token: string): Promise<void> => {
     try {
-      setLoading(true);
-      const loginResponse = await clientApi().post<LoginResponse>(
-        "/auth/login",
-        {
-          token: token,
-        }
-      );
-
-      // Set user data in cookie via server action
-      await handleLoginSuccess(loginResponse.user);
-
-      setUser(loginResponse.user);
-
-      return loginResponse.user;
+      startTransition(() => {
+        void loginWithToken({ token });
+      });
     } catch (error) {
       console.error("Error during login:", error);
       setUser(null);
       throw error;
-    } finally {
-      setLoading(false);
     }
   };
 
   const signUp = async (email: string, password: string, name: string) => {
     try {
-      setLoading(true);
       // Create user in Firebase
       const userCredential = await createUserWithEmailAndPassword(
         firebaseAuth,
@@ -118,31 +107,23 @@ export function AuthProvider({ children, initialUser }: AuthProviderProps) {
       );
 
       // Create user in backend
-      const registerData = {
+      const registerData: RegisterFormState = {
         email,
         name,
         firebase_uid: userCredential.user.uid,
       };
 
-      const response = await clientApi().post<RegisterResponse>(
-        "/auth/register",
-        registerData
-      );
-      // Set user data in cookie via server action
-      await handleLoginSuccess(response.user);
-
-      setUser(response.user);
+      startTransition(() => {
+        void registerWithEmail(registerData);
+      });
     } catch (error: any) {
       console.error("Error signing up:", error);
       throw error;
-    } finally {
-      setLoading(false);
     }
   };
 
   const signIn = async (email: string, password: string) => {
     try {
-      setLoading(true);
       const userCredential = await signInWithEmailAndPassword(
         firebaseAuth,
         email,
@@ -156,15 +137,12 @@ export function AuthProvider({ children, initialUser }: AuthProviderProps) {
     } catch (error) {
       console.error("Error signing in:", error);
       throw error;
-    } finally {
-      setLoading(false);
     }
   };
 
   const signInWithGoogle = async () => {
     const provider = new GoogleAuthProvider();
     try {
-      setLoading(true);
       const userCredential = await signInWithPopup(firebaseAuth, provider);
       const idToken = await userCredential.user.getIdToken();
 
@@ -181,16 +159,14 @@ export function AuthProvider({ children, initialUser }: AuthProviderProps) {
       }
       console.error("Error signing in with Google:", error);
       throw error;
-    } finally {
-      setLoading(false);
     }
   };
 
   const logout = async () => {
     try {
-      setLoading(true);
       // First, try to notify the backend about logout
       try {
+        // TODO: migrate to server action
         await clientApi().post("/auth/logout");
       } catch (error) {
         console.error("Error notifying backend of logout:", error);
@@ -206,8 +182,6 @@ export function AuthProvider({ children, initialUser }: AuthProviderProps) {
     } catch (error) {
       console.error("Error signing out:", error);
       throw error;
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -215,12 +189,11 @@ export function AuthProvider({ children, initialUser }: AuthProviderProps) {
     <AuthContext.Provider
       value={{
         user,
-        loading,
+        loading: isLoginLoading || isRegisterLoading,
         signUp,
         signIn,
         signInWithGoogle,
         logout,
-        updateUser,
       }}
     >
       {children}
