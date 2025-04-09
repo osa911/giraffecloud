@@ -22,8 +22,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /app/server ./cmd/server
 # Final stage
 FROM alpine:3.19
 
-# Install runtime dependencies
-RUN apk add --no-cache ca-certificates tzdata netcat-openbsd make bash
+# Install runtime dependencies including Go
+RUN apk add --no-cache ca-certificates tzdata netcat-openbsd make bash go
 
 # Set working directory
 WORKDIR /app
@@ -36,6 +36,10 @@ COPY --from=builder /app/server /app/server
 COPY Makefile /app/
 COPY makefiles/ /app/makefiles/
 COPY scripts/ /app/scripts/
+
+# Copy source code for 'go run' commands
+COPY --from=builder /app/cmd /app/cmd
+COPY --from=builder /app/go.mod /app/go.sum /app/
 
 # Copy any additional required files
 COPY internal/config/env/.env.production /app/internal/config/env/.env.production

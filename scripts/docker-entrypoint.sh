@@ -3,31 +3,50 @@ set -e
 
 echo "Starting GiraffeCloud server in Docker..."
 
+ENV_FILE="/app/internal/config/env/.env.production"
+
 # Verify we have the production env file
-if [ ! -f "/app/internal/config/env/.env.production" ]; then
-    echo "ERROR: Production environment file not found"
+if [ ! -f "$ENV_FILE" ]; then
+    echo "ERROR: Production environment file not found at $ENV_FILE"
     exit 1
 fi
 
-# Wait for PostgreSQL to be ready (optional - can be removed if not needed)
+# Wait for PostgreSQL to be ready
 if [ -n "$DB_HOST" ] && [ -n "$DB_PORT" ]; then
-    echo "Waiting for PostgreSQL to be ready..."
-    timeout=60
-    while ! nc -z $DB_HOST $DB_PORT >/dev/null 2>&1; do
-        timeout=$(($timeout - 1))
-        if [ $timeout -eq 0 ]; then
-            echo "ERROR: Timed out waiting for PostgreSQL to start"
-            exit 1
+    echo "Checking PostgreSQL connection at $DB_HOST:$DB_PORT..."
+
+    # Try to connect to PostgreSQL
+    max_retries=30
+    retries=0
+
+    # Use nc command which is more reliable than pg_isready in containers
+    until nc -z -v -w5 $DB_HOST $DB_PORT; do
+        retries=$((retries+1))
+        if [ $retries -ge $max_retries ]; then
+            echo "ERROR: Failed to connect to PostgreSQL after $retries attempts."
+            echo "The application will start anyway, but it might fail if database operations are attempted."
+            break
         fi
-        echo "Waiting for PostgreSQL... ($timeout seconds left)"
-        sleep 1
+        echo "Waiting for PostgreSQL... ($retries/$max_retries)"
+        sleep 2
     done
-    echo "PostgreSQL is ready!"
+
+    if [ $retries -lt $max_retries ]; then
+        echo "PostgreSQL is ready!"
+    fi
+else
+    echo "WARNING: DB_HOST or DB_PORT not set, skipping PostgreSQL connection check"
 fi
 
 # Create logs directory if needed
 mkdir -p /app/logs
+echo "Log directory created at /app/logs"
+
+# Load environment variables
+set -a
+source "$ENV_FILE"
+set +a
 
 # Run the production server using the Makefile
-echo "Starting production server..."
-cd /app && make prod
+echo "Starting server with Makefile..."
+cd /app && exec make prod
