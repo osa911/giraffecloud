@@ -398,7 +398,7 @@ func (h *AuthHandler) VerifyToken(c *gin.Context) {
 	// Get ID token from context (set by validation middleware)
 	verifyData, exists := c.Get(constants.ContextKeyVerifyToken)
 	if !exists {
-		utils.HandleAPIError(c, nil, http.StatusInternalServerError, common.ErrCodeInternalServer, "Verification data not found in context")
+		utils.HandleAPIError(c, nil, http.StatusNotFound, common.ErrCodeNotFound, "Verification data not found in context")
 		return
 	}
 
