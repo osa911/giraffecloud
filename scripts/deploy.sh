@@ -124,9 +124,10 @@ echo "4. Stop (stop running containers)"
 echo "5. Logs (view logs)"
 echo "6. Backup database"
 echo "7. Restore database from backup"
-echo "8. Exit"
+echo "8. Rebuild (rebuild with local changes)"
+echo "9. Exit"
 
-read -p "Enter your choice (1-8): " choice
+read -p "Enter your choice (1-9): " choice
 
 run_docker_compose() {
     # Pass the extracted environment variables to docker-compose
@@ -197,6 +198,63 @@ case $choice in
         fi
         ;;
     8)
+        echo -e "${GREEN}Rebuilding and redeploying with local changes...${NC}"
+
+        # Ask which services to rebuild
+        echo "Available services:"
+        echo "1. api"
+        echo "2. postgres"
+        echo "Enter service numbers to rebuild (space-separated, or 'all' for all services):"
+        read -r service_selection
+
+        # Stop the current containers
+        echo -e "${YELLOW}Stopping current containers...${NC}"
+        run_docker_compose down
+
+        # Build the selected services
+        if [ "$service_selection" = "all" ]; then
+            echo -e "${GREEN}Rebuilding all services...${NC}"
+            build_with_buildx --no-cache
+        else
+            # Convert selected numbers to service names
+            services_to_rebuild=""
+            for num in $service_selection; do
+                case $num in
+                    1)
+                        services_to_rebuild="$services_to_rebuild api"
+                        echo -e "${GREEN}Will rebuild: api${NC}"
+                        ;;
+                    2)
+                        services_to_rebuild="$services_to_rebuild postgres"
+                        echo -e "${GREEN}Will rebuild: postgres${NC}"
+                        ;;
+                    *)
+                        echo -e "${YELLOW}Warning: Unknown service number: $num${NC}"
+                        ;;
+                esac
+            done
+
+            if [ -n "$services_to_rebuild" ]; then
+                echo -e "${GREEN}Rebuilding selected services...${NC}"
+                if [ "$USE_BUILDX" = true ]; then
+                    run_docker_compose build --no-cache --progress=plain $services_to_rebuild
+                else
+                    run_docker_compose build --no-cache $services_to_rebuild
+                fi
+            else
+                echo -e "${RED}No valid services selected. Aborting rebuild.${NC}"
+                exit 1
+            fi
+        fi
+
+        # Start the containers
+        echo -e "${GREEN}Starting updated containers...${NC}"
+        run_docker_compose up -d
+
+        echo -e "${GREEN}Rebuild complete. Services are running.${NC}"
+        echo "API is available at http://$(hostname -I | awk '{print $1}'):8080"
+        ;;
+    9)
         echo -e "${GREEN}Exiting.${NC}"
         exit 0
         ;;
