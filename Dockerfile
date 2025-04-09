@@ -22,8 +22,16 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /app/server ./cmd/server
 # Final stage
 FROM alpine:3.19
 
-# Install runtime dependencies including Go
-RUN apk add --no-cache ca-certificates tzdata netcat-openbsd make bash go
+# Install runtime dependencies
+RUN apk add --no-cache ca-certificates tzdata netcat-openbsd make bash curl
+
+# Install Go 1.24.1 manually since apk only has older versions
+RUN echo "Installing Go 1.24.1..." && \
+    wget https://go.dev/dl/go1.24.1.linux-amd64.tar.gz && \
+    tar -C /usr/local -xzf go1.24.1.linux-amd64.tar.gz && \
+    rm go1.24.1.linux-amd64.tar.gz && \
+    ln -s /usr/local/go/bin/go /usr/local/bin/go && \
+    go version
 
 # Set working directory
 WORKDIR /app
@@ -39,6 +47,7 @@ COPY scripts/ /app/scripts/
 
 # Copy source code for 'go run' commands
 COPY --from=builder /app/cmd /app/cmd
+COPY --from=builder /app/internal /app/internal
 COPY --from=builder /app/go.mod /app/go.sum /app/
 
 # Copy any additional required files
