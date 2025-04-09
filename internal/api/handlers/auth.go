@@ -68,7 +68,7 @@ func containsOnlyDigits(s string) bool {
 
 // Get the appropriate cookie domain based on environment
 func getCookieDomain() string {
-	if os.Getenv("GO_ENV") == "production" {
+	if os.Getenv("ENV") == "production" {
 		// Get the domain from CLIENT_URL environment variable
 		clientURL := os.Getenv("CLIENT_URL")
 		if clientURL != "" {
