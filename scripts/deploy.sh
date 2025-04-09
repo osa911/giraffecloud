@@ -21,6 +21,12 @@ if ! command -v docker &> /dev/null || ! command -v docker-compose &> /dev/null;
     exit 1
 fi
 
+# Ensure buildx is available (for modern Docker builds)
+if ! docker buildx version &> /dev/null; then
+    echo -e "${YELLOW}Installing Docker Buildx...${NC}"
+    docker buildx install
+fi
+
 # Check if .env.production file exists
 if [ ! -f "$PROD_ENV" ]; then
     echo -e "${YELLOW}Production environment file not found at $PROD_ENV${NC}"
@@ -67,10 +73,16 @@ run_docker_compose() {
     DB_USER=$DB_USER DB_PASSWORD=$DB_PASSWORD DB_NAME=$DB_NAME docker-compose "$@"
 }
 
+# Use buildx for building
+build_with_buildx() {
+    echo -e "${GREEN}Building with Docker Buildx...${NC}"
+    run_docker_compose build --progress=plain
+}
+
 case $choice in
     1)
         echo -e "${GREEN}Building and starting containers...${NC}"
-        run_docker_compose build
+        build_with_buildx
         run_docker_compose up -d
         echo -e "${GREEN}Deployment complete. Services are running.${NC}"
         echo "API is available at http://$(hostname -I | awk '{print $1}'):8080"
@@ -79,7 +91,7 @@ case $choice in
         echo -e "${GREEN}Updating application...${NC}"
         git pull
         run_docker_compose down
-        run_docker_compose build
+        build_with_buildx
         run_docker_compose up -d
         echo -e "${GREEN}Update complete. Services are running.${NC}"
         ;;
