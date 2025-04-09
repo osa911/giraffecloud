@@ -2,11 +2,11 @@ package handlers
 
 import (
 	"net/http"
-	"strconv"
 
 	"giraffecloud/internal/api/constants"
 	"giraffecloud/internal/api/dto/common"
 	"giraffecloud/internal/models"
+	"giraffecloud/internal/utils"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -20,55 +20,67 @@ func NewSessionHandler(db *gorm.DB) *SessionHandler {
 	return &SessionHandler{db: db}
 }
 
-func (h *SessionHandler) ListSessions(c *gin.Context) {
+func (h *SessionHandler) GetSessions(c *gin.Context) {
 	userID := c.GetUint(constants.ContextKeyUserID)
 
 	var sessions []models.Session
 	if err := h.db.Where("user_id = ? AND is_active = ?", userID, true).Find(&sessions).Error; err != nil {
-		response := common.NewErrorResponse(common.ErrCodeInternalServer, "Failed to fetch sessions", err)
-		c.JSON(http.StatusInternalServerError, response)
+		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to get sessions")
 		return
 	}
 
-	// Return as a proper response
-	response := common.NewSuccessResponse(gin.H{"sessions": sessions})
-	c.JSON(http.StatusOK, response)
+	// Simplify sessions for response
+	var sessionResponses []gin.H
+	for _, s := range sessions {
+		sessionResponses = append(sessionResponses, gin.H{
+			"id":         s.ID,
+			"deviceName": s.DeviceName,
+			"lastUsed":   s.LastUsed,
+			"ipAddress":  s.IPAddress,
+			"createdAt":  s.CreatedAt,
+		})
+	}
+
+	c.JSON(http.StatusOK, common.NewSuccessResponse(gin.H{"sessions": sessionResponses}))
 }
 
 func (h *SessionHandler) RevokeSession(c *gin.Context) {
-	sessionID := c.Param("id")
 	userID := c.GetUint(constants.ContextKeyUserID)
-
-	// Convert sessionID to uint
-	sessionIDUint, err := strconv.ParseUint(sessionID, 10, 32)
-	if err != nil {
-		response := common.NewErrorResponse(common.ErrCodeBadRequest, "Invalid session ID", nil)
-		c.JSON(http.StatusBadRequest, response)
-		return
-	}
+	sessionID := c.Param("id")
 
 	var session models.Session
-	if err := h.db.First(&session, sessionIDUint).Error; err != nil {
-		response := common.NewErrorResponse(common.ErrCodeNotFound, "Session not found", nil)
-		c.JSON(http.StatusNotFound, response)
+	if err := h.db.Where("id = ? AND user_id = ?", sessionID, userID).First(&session).Error; err != nil {
+		utils.HandleAPIError(c, err, http.StatusNotFound, common.ErrCodeNotFound, "Session not found")
 		return
 	}
 
-	// Check if session belongs to user
-	if session.UserID != userID {
-		response := common.NewErrorResponse(common.ErrCodeForbidden, "Not authorized to revoke this session", nil)
-		c.JSON(http.StatusForbidden, response)
-		return
-	}
-
-	// Deactivate session
+	// Mark session as inactive
 	session.IsActive = false
 	if err := h.db.Save(&session).Error; err != nil {
-		response := common.NewErrorResponse(common.ErrCodeInternalServer, "Failed to revoke session", err)
-		c.JSON(http.StatusInternalServerError, response)
+		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to revoke session")
 		return
 	}
 
-	response := common.NewMessageResponse("Session revoked successfully")
-	c.JSON(http.StatusOK, response)
+	// If we're revoking the current session, also clear cookies
+	if sessionToken, err := c.Cookie(constants.CookieAuthToken); err == nil && sessionToken == session.Token {
+		c.SetCookie(constants.CookieSession, "", -1, constants.CookiePathRoot, "", true, true)
+		c.SetCookie(constants.CookieAuthToken, "", -1, constants.CookiePathAPI, "", true, true)
+	}
+
+	c.JSON(http.StatusOK, common.NewMessageResponse("Session successfully revoked"))
+}
+
+func (h *SessionHandler) RevokeAllSessions(c *gin.Context) {
+	userID := c.GetUint(constants.ContextKeyUserID)
+
+	if err := h.db.Model(&models.Session{}).Where("user_id = ?", userID).Updates(map[string]interface{}{"is_active": false}).Error; err != nil {
+		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to revoke sessions")
+		return
+	}
+
+	// Clear current cookies regardless
+	c.SetCookie(constants.CookieSession, "", -1, constants.CookiePathRoot, "", true, true)
+	c.SetCookie(constants.CookieAuthToken, "", -1, constants.CookiePathAPI, "", true, true)
+
+	c.JSON(http.StatusOK, common.NewMessageResponse("All sessions successfully revoked"))
 }

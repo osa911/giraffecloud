@@ -54,7 +54,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	// Verify the Firebase token
 	decodedToken, err := firebase.GetAuthClient().VerifyIDToken(c.Request.Context(), loginPtr.Token)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, common.NewErrorResponse(common.ErrCodeUnauthorized, "Invalid token", err))
+		utils.HandleAPIError(c, err, http.StatusUnauthorized, common.ErrCodeUnauthorized, "Invalid token")
 		return
 	}
 
@@ -72,6 +72,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 				name = fullName
 			}
 
+			// Create new user model
 			user = models.User{
 				FirebaseUID: decodedToken.UID,
 				Email:      email,
@@ -83,11 +84,11 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			}
 
 			if err := h.db.Create(&user).Error; err != nil {
-				c.JSON(http.StatusInternalServerError, common.NewErrorResponse(common.ErrCodeInternalServer, "Failed to create user", err))
+				utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to create user")
 				return
 			}
 		} else {
-			c.JSON(http.StatusInternalServerError, common.NewErrorResponse(common.ErrCodeInternalServer, "Database error", result.Error))
+			utils.HandleAPIError(c, result.Error, http.StatusInternalServerError, common.ErrCodeInternalServer, "Database error")
 			return
 		}
 	}
@@ -96,7 +97,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	user.LastLogin = time.Now()
 	user.LastLoginIP = utils.GetRealIP(c)
 	if err := h.db.Save(&user).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, common.NewErrorResponse(common.ErrCodeInternalServer, "Failed to update user", err))
+		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to update user")
 		return
 	}
 
@@ -110,14 +111,14 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	// Generate a unique device ID if not provided
 	deviceID, err := generateSecureToken(32)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, common.NewErrorResponse(common.ErrCodeInternalServer, "Failed to generate session token", err))
+		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to generate session token")
 		return
 	}
 
 	// Generate a secure session token
 	sessionToken, err := generateSecureToken(64)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, common.NewErrorResponse(common.ErrCodeInternalServer, "Failed to generate session token", err))
+		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to generate session token")
 		return
 	}
 
@@ -135,7 +136,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	if err := h.db.Create(&session).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, common.NewErrorResponse(common.ErrCodeInternalServer, "Failed to create session", err))
+		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to create session")
 		return
 	}
 
@@ -145,7 +146,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	expiresIn := time.Hour * 24 // 24 hours
 	sessionCookie, err := firebase.GetAuthClient().SessionCookie(c.Request.Context(), loginPtr.Token, expiresIn)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, common.NewErrorResponse(common.ErrCodeInternalServer, "Failed to create session cookie", err))
+		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to create session cookie")
 		return
 	}
 
@@ -183,14 +184,14 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	// Get registration data from context (set by ValidateRegisterRequest middleware)
 	registerData, exists := c.Get(constants.ContextKeyRegister)
 	if !exists {
-		c.JSON(http.StatusInternalServerError, common.NewErrorResponse(common.ErrCodeInternalServer, "Registration data not found in context. Ensure validation middleware is applied.", nil))
+		utils.HandleAPIError(c, nil, http.StatusInternalServerError, common.ErrCodeInternalServer, "Registration data not found in context. Ensure validation middleware is applied.")
 		return
 	}
 
 	// Extract and convert to RegisterRequest
 	registerPtr, ok := registerData.(*auth.RegisterRequest)
 	if !ok {
-		c.JSON(http.StatusInternalServerError, common.NewErrorResponse(common.ErrCodeInternalServer, "Invalid registration data format", nil))
+		utils.HandleAPIError(c, nil, http.StatusInternalServerError, common.ErrCodeInternalServer, "Invalid registration data format")
 		return
 	}
 
@@ -208,7 +209,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	// Check if user exists in our database with the same email
 	var existingUser models.User
 	if err := h.db.Where("email = ?", registerPtr.Email).First(&existingUser).Error; err == nil {
-		c.JSON(http.StatusConflict, common.NewErrorResponse(common.ErrCodeConflict, "Wrong credentials", nil))
+		utils.HandleAPIError(c, nil, http.StatusConflict, common.ErrCodeConflict, "Wrong credentials")
 		return
 	}
 
@@ -224,7 +225,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 
 	if err := h.db.Create(&user).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, common.NewErrorResponse(common.ErrCodeInternalServer, "Failed to create user", err))
+		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to create user")
 		return
 	}
 
@@ -397,21 +398,21 @@ func (h *AuthHandler) VerifyToken(c *gin.Context) {
 	// Get ID token from context (set by validation middleware)
 	verifyData, exists := c.Get(constants.ContextKeyVerifyToken)
 	if !exists {
-		c.JSON(http.StatusInternalServerError, common.NewErrorResponse(common.ErrCodeInternalServer, "Verification data not found in context", nil))
+		utils.HandleAPIError(c, nil, http.StatusInternalServerError, common.ErrCodeInternalServer, "Verification data not found in context")
 		return
 	}
 
 	// Extract token data
 	verifyReq, ok := verifyData.(*auth.VerifyTokenRequest)
 	if !ok {
-		c.JSON(http.StatusInternalServerError, common.NewErrorResponse(common.ErrCodeInternalServer, "Invalid verification data format", nil))
+		utils.HandleAPIError(c, nil, http.StatusInternalServerError, common.ErrCodeInternalServer, "Invalid verification data format")
 		return
 	}
 
 	// Verify the ID token
 	decodedToken, err := firebase.GetAuthClient().VerifyIDToken(c.Request.Context(), verifyReq.IDToken)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, common.NewErrorResponse(common.ErrCodeUnauthorized, "Invalid ID token", err))
+		utils.HandleAPIError(c, err, http.StatusUnauthorized, common.ErrCodeUnauthorized, "Invalid ID token")
 		return
 	}
 
@@ -419,7 +420,7 @@ func (h *AuthHandler) VerifyToken(c *gin.Context) {
 	expiresIn := time.Hour * 24 * 7 // 7 days for the session cookie
 	sessionCookie, err := firebase.GetAuthClient().SessionCookie(c.Request.Context(), verifyReq.IDToken, expiresIn)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, common.NewErrorResponse(common.ErrCodeInternalServer, "Failed to create session cookie", err))
+		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to create session cookie")
 		return
 	}
 
@@ -437,7 +438,7 @@ func (h *AuthHandler) VerifyToken(c *gin.Context) {
 	// Look up user to include in response
 	var user models.User
 	if err := h.db.Where("firebase_uid = ?", decodedToken.UID).First(&user).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, common.NewErrorResponse(common.ErrCodeInternalServer, "Failed to find user", err))
+		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to find user")
 		return
 	}
 

@@ -9,6 +9,7 @@ import (
 	"giraffecloud/internal/api/dto/v1/user"
 	"giraffecloud/internal/api/mapper"
 	"giraffecloud/internal/models"
+	"giraffecloud/internal/utils"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -25,13 +26,13 @@ func NewUserHandler(db *gorm.DB) *UserHandler {
 func (h *UserHandler) GetProfile(c *gin.Context) {
 	userModel, exists := c.Get(constants.ContextKeyUser)
 	if !exists {
-		c.JSON(http.StatusUnauthorized, common.NewErrorResponse(common.ErrCodeUnauthorized, "User not found in context", nil))
+		utils.HandleAPIError(c, nil, http.StatusUnauthorized, common.ErrCodeUnauthorized, "User not found in context")
 		return
 	}
 
 	u, ok := userModel.(models.User)
 	if !ok {
-		c.JSON(http.StatusInternalServerError, common.NewErrorResponse(common.ErrCodeInternalServer, "Invalid user type in context", nil))
+		utils.HandleAPIError(c, nil, http.StatusInternalServerError, common.ErrCodeInternalServer, "Invalid user type in context")
 		return
 	}
 
@@ -43,39 +44,50 @@ func (h *UserHandler) GetProfile(c *gin.Context) {
 }
 
 func (h *UserHandler) UpdateProfile(c *gin.Context) {
-	userID := c.GetUint(constants.ContextKeyUserID)
-
-	// Get validated profile from context instead of reading request body again
-	profileData, exists := c.Get(constants.ContextKeyUpdateProfile)
+	// Get user from context (set by auth middleware)
+	contextUser, exists := c.Get(constants.ContextKeyUser)
 	if !exists {
-		c.JSON(http.StatusBadRequest, common.NewErrorResponse(common.ErrCodeBadRequest, "Missing profile data", nil))
+		utils.HandleAPIError(c, nil, http.StatusUnauthorized, common.ErrCodeUnauthorized, "User not found in context")
 		return
 	}
 
-	// Cast to pointer type since that's what the validation middleware stores
-	profilePtr, ok := profileData.(*user.UpdateProfileRequest)
+	currentUser, ok := contextUser.(models.User)
 	if !ok {
-		c.JSON(http.StatusInternalServerError, common.NewErrorResponse(common.ErrCodeInternalServer, "Invalid profile data format", nil))
+		utils.HandleAPIError(c, nil, http.StatusInternalServerError, common.ErrCodeInternalServer, "Invalid user type in context")
 		return
 	}
 
-	var userModel models.User
-	if err := h.db.First(&userModel, userID).Error; err != nil {
-		c.JSON(http.StatusNotFound, common.NewErrorResponse(common.ErrCodeNotFound, "User not found", nil))
+	// Get profile data from context (set by validation middleware)
+	profileData, _ := c.Get(constants.ContextKeyUpdateProfile)
+	if profileData == nil {
+		utils.HandleAPIError(c, nil, http.StatusBadRequest, common.ErrCodeBadRequest, "Missing profile data")
+		return
+	}
+
+	// Extract and validate profile data
+	profileUpdate, ok := profileData.(*user.UpdateProfileRequest)
+	if !ok {
+		utils.HandleAPIError(c, nil, http.StatusInternalServerError, common.ErrCodeInternalServer, "Invalid profile data format")
+		return
+	}
+
+	// Fetch user from database to ensure we have the latest data
+	var dbUser models.User
+	if err := h.db.First(&dbUser, currentUser.ID).Error; err != nil {
+		utils.HandleAPIError(c, err, http.StatusNotFound, common.ErrCodeNotFound, "User not found")
 		return
 	}
 
 	// Apply changes using mapper
-	mapper.ApplyUpdateProfileRequest(&userModel, profilePtr)
+	mapper.ApplyUpdateProfileRequest(&dbUser, profileUpdate)
 
-	if err := h.db.Save(&userModel).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, common.NewErrorResponse(common.ErrCodeInternalServer, "Failed to update profile", err))
+	if err := h.db.Save(&dbUser).Error; err != nil {
+		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to update profile")
 		return
 	}
 
-	// Convert to response DTO using mapper
-	userResponse := mapper.UserToUserResponse(&userModel)
-	c.JSON(http.StatusOK, common.NewSuccessResponse(userResponse))
+	// Return updated user
+	c.JSON(http.StatusOK, common.NewSuccessResponse(mapper.UserToUserResponse(&dbUser)))
 }
 
 func (h *UserHandler) DeleteProfile(c *gin.Context) {
@@ -83,12 +95,12 @@ func (h *UserHandler) DeleteProfile(c *gin.Context) {
 
 	var userModel models.User
 	if err := h.db.First(&userModel, userID).Error; err != nil {
-		c.JSON(http.StatusNotFound, common.NewErrorResponse(common.ErrCodeNotFound, "User not found", nil))
+		utils.HandleAPIError(c, err, http.StatusNotFound, common.ErrCodeNotFound, "User not found")
 		return
 	}
 
 	if err := h.db.Delete(&userModel).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, common.NewErrorResponse(common.ErrCodeInternalServer, "Failed to delete user", err))
+		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to delete user")
 		return
 	}
 
@@ -120,7 +132,7 @@ func (h *UserHandler) ListUsers(c *gin.Context) {
 
 	// Get users with pagination
 	if err := h.db.Offset(offset).Limit(pageSize).Find(&users).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, common.NewErrorResponse(common.ErrCodeInternalServer, "Failed to fetch users", err))
+		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to fetch users")
 		return
 	}
 
@@ -138,63 +150,64 @@ func (h *UserHandler) ListUsers(c *gin.Context) {
 }
 
 func (h *UserHandler) GetUser(c *gin.Context) {
-	id := c.Param("id")
+	userID := c.Param("id")
 
-	var userModel models.User
-	if err := h.db.First(&userModel, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, common.NewErrorResponse(common.ErrCodeNotFound, "User not found", nil))
+	// Fetch user from database
+	var dbUser models.User
+	if err := h.db.First(&dbUser, userID).Error; err != nil {
+		utils.HandleAPIError(c, err, http.StatusNotFound, common.ErrCodeNotFound, "User not found")
 		return
 	}
 
-	// Convert to response DTO using mapper
-	userResponse := mapper.UserToUserResponse(&userModel)
-	c.JSON(http.StatusOK, common.NewSuccessResponse(userResponse))
+	// Return user
+	c.JSON(http.StatusOK, common.NewSuccessResponse(mapper.UserToUserResponse(&dbUser)))
 }
 
 func (h *UserHandler) UpdateUser(c *gin.Context) {
-	id := c.Param("id")
+	userID := c.Param("id")
 
-	var userModel models.User
-	if err := h.db.First(&userModel, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, common.NewErrorResponse(common.ErrCodeNotFound, "User not found", nil))
+	// Fetch user from database
+	var dbUser models.User
+	if err := h.db.First(&dbUser, userID).Error; err != nil {
+		utils.HandleAPIError(c, err, http.StatusNotFound, common.ErrCodeNotFound, "User not found")
 		return
 	}
 
-	var updateRequest user.UpdateUserRequest
-	if err := c.ShouldBindJSON(&updateRequest); err != nil {
-		c.JSON(http.StatusBadRequest, common.NewErrorResponse(common.ErrCodeValidation, "Invalid request data", err))
+	// Get user update data from request
+	var userUpdate user.UpdateUserRequest
+	if err := c.ShouldBindJSON(&userUpdate); err != nil {
+		utils.HandleAPIError(c, err, http.StatusBadRequest, common.ErrCodeValidation, "Invalid request data")
 		return
 	}
 
 	// Apply changes using mapper
-	mapper.ApplyUpdateUserRequest(&userModel, &updateRequest)
+	mapper.ApplyUpdateUserRequest(&dbUser, &userUpdate)
 
-	if err := h.db.Save(&userModel).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, common.NewErrorResponse(common.ErrCodeInternalServer, "Failed to update user", err))
+	if err := h.db.Save(&dbUser).Error; err != nil {
+		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to update user")
 		return
 	}
 
-	// Convert to response DTO using mapper
-	userResponse := mapper.UserToUserResponse(&userModel)
-	c.JSON(http.StatusOK, common.NewSuccessResponse(userResponse))
+	// Return updated user
+	c.JSON(http.StatusOK, common.NewSuccessResponse(mapper.UserToUserResponse(&dbUser)))
 }
 
 func (h *UserHandler) DeleteUser(c *gin.Context) {
-	id := c.Param("id")
+	userID := c.Param("id")
 
-	var userModel models.User
-	if err := h.db.First(&userModel, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, common.NewErrorResponse(common.ErrCodeNotFound, "User not found", nil))
+	// Fetch user from database
+	var dbUser models.User
+	if err := h.db.First(&dbUser, userID).Error; err != nil {
+		utils.HandleAPIError(c, err, http.StatusNotFound, common.ErrCodeNotFound, "User not found")
 		return
 	}
 
-	if err := h.db.Delete(&userModel).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, common.NewErrorResponse(common.ErrCodeInternalServer, "Failed to delete user", err))
+	// Mark user as inactive instead of deleting
+	if err := h.db.Model(&dbUser).Updates(map[string]interface{}{"is_active": false}).Error; err != nil {
+		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to delete user")
 		return
 	}
 
-	c.JSON(http.StatusOK, common.NewSuccessResponse(gin.H{
-		"message": "User deleted successfully",
-	}))
+	c.JSON(http.StatusOK, common.NewMessageResponse("User successfully deleted"))
 }
 

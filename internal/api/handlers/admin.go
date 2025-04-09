@@ -9,6 +9,7 @@ import (
 	"giraffecloud/internal/api/dto/v1/user"
 	"giraffecloud/internal/api/mapper"
 	"giraffecloud/internal/models"
+	"giraffecloud/internal/utils"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -25,8 +26,7 @@ func NewAdminHandler(db *gorm.DB) *AdminHandler {
 func (h *AdminHandler) ListUsers(c *gin.Context) {
 	var users []models.User
 	if err := h.db.Find(&users).Error; err != nil {
-		response := common.NewErrorResponse(common.ErrCodeInternalServer, "Failed to fetch users", nil)
-		c.JSON(http.StatusInternalServerError, response)
+		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to fetch users")
 		return
 	}
 
@@ -48,15 +48,13 @@ func (h *AdminHandler) GetUser(c *gin.Context) {
 	// Convert userID to uint
 	userIDUint, err := strconv.ParseUint(userID, 10, 32)
 	if err != nil {
-		response := common.NewErrorResponse(common.ErrCodeBadRequest, "Invalid user ID", nil)
-		c.JSON(http.StatusBadRequest, response)
+		utils.HandleAPIError(c, err, http.StatusBadRequest, common.ErrCodeBadRequest, "Invalid user ID")
 		return
 	}
 
 	var user models.User
 	if err := h.db.First(&user, userIDUint).Error; err != nil {
-		response := common.NewErrorResponse(common.ErrCodeNotFound, "User not found", nil)
-		c.JSON(http.StatusNotFound, response)
+		utils.HandleAPIError(c, err, http.StatusNotFound, common.ErrCodeNotFound, "User not found")
 		return
 	}
 
@@ -73,31 +71,27 @@ func (h *AdminHandler) UpdateUser(c *gin.Context) {
 	// Convert userID to uint
 	userIDUint, err := strconv.ParseUint(userID, 10, 32)
 	if err != nil {
-		response := common.NewErrorResponse(common.ErrCodeBadRequest, "Invalid user ID", nil)
-		c.JSON(http.StatusBadRequest, response)
+		utils.HandleAPIError(c, err, http.StatusBadRequest, common.ErrCodeBadRequest, "Invalid user ID")
 		return
 	}
 
 	// Get validated user data from context
 	userData, exists := c.Get(constants.ContextKeyUpdateUser)
 	if !exists {
-		response := common.NewErrorResponse(common.ErrCodeInternalServer, "User update data not found in context. Ensure validation middleware is applied.", nil)
-		c.JSON(http.StatusInternalServerError, response)
+		utils.HandleAPIError(c, nil, http.StatusInternalServerError, common.ErrCodeInternalServer, "User update data not found in context. Ensure validation middleware is applied.")
 		return
 	}
 
 	// Extract user data
 	userPtr, ok := userData.(*user.UpdateUserRequest)
 	if !ok {
-		response := common.NewErrorResponse(common.ErrCodeInternalServer, "Invalid user data format", nil)
-		c.JSON(http.StatusInternalServerError, response)
+		utils.HandleAPIError(c, nil, http.StatusInternalServerError, common.ErrCodeInternalServer, "Invalid user data format")
 		return
 	}
 
 	var user models.User
 	if err := h.db.First(&user, userIDUint).Error; err != nil {
-		response := common.NewErrorResponse(common.ErrCodeNotFound, "User not found", nil)
-		c.JSON(http.StatusNotFound, response)
+		utils.HandleAPIError(c, err, http.StatusNotFound, common.ErrCodeNotFound, "User not found")
 		return
 	}
 
@@ -105,8 +99,7 @@ func (h *AdminHandler) UpdateUser(c *gin.Context) {
 	mapper.ApplyUpdateUserRequest(&user, userPtr)
 
 	if err := h.db.Save(&user).Error; err != nil {
-		response := common.NewErrorResponse(common.ErrCodeInternalServer, "Failed to update user", nil)
-		c.JSON(http.StatusInternalServerError, response)
+		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to update user")
 		return
 	}
 
@@ -123,15 +116,13 @@ func (h *AdminHandler) DeleteUser(c *gin.Context) {
 	// Convert userID to uint
 	userIDUint, err := strconv.ParseUint(userID, 10, 32)
 	if err != nil {
-		response := common.NewErrorResponse(common.ErrCodeBadRequest, "Invalid user ID", nil)
-		c.JSON(http.StatusBadRequest, response)
+		utils.HandleAPIError(c, err, http.StatusBadRequest, common.ErrCodeBadRequest, "Invalid user ID")
 		return
 	}
 
 	var user models.User
 	if err := h.db.First(&user, userIDUint).Error; err != nil {
-		response := common.NewErrorResponse(common.ErrCodeNotFound, "User not found", nil)
-		c.JSON(http.StatusNotFound, response)
+		utils.HandleAPIError(c, err, http.StatusNotFound, common.ErrCodeNotFound, "User not found")
 		return
 	}
 
@@ -139,33 +130,28 @@ func (h *AdminHandler) DeleteUser(c *gin.Context) {
 	if user.Role == models.RoleAdmin {
 		var adminCount int64
 		if err := h.db.Model(&models.User{}).Where("role = ?", models.RoleAdmin).Count(&adminCount).Error; err != nil {
-			response := common.NewErrorResponse(common.ErrCodeInternalServer, "Failed to check admin count", nil)
-			c.JSON(http.StatusInternalServerError, response)
+			utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to check admin count")
 			return
 		}
 
 		if adminCount == 1 {
-			response := common.NewErrorResponse(common.ErrCodeBadRequest, "Cannot delete the last admin user", nil)
-			c.JSON(http.StatusBadRequest, response)
+			utils.HandleAPIError(c, nil, http.StatusBadRequest, common.ErrCodeBadRequest, "Cannot delete the last admin user")
 			return
 		}
 	}
 
 	// Delete user's sessions
 	if err := h.db.Where("user_id = ?", userIDUint).Delete(&models.Session{}).Error; err != nil {
-		response := common.NewErrorResponse(common.ErrCodeInternalServer, "Failed to delete user sessions", nil)
-		c.JSON(http.StatusInternalServerError, response)
+		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to delete user sessions")
 		return
 	}
 
 	// Delete user
 	if err := h.db.Delete(&user).Error; err != nil {
-		response := common.NewErrorResponse(common.ErrCodeInternalServer, "Failed to delete user", nil)
-		c.JSON(http.StatusInternalServerError, response)
+		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to delete user")
 		return
 	}
 
 	// Return success response
-	response := common.NewMessageResponse("User deleted successfully")
-	c.JSON(http.StatusOK, response)
+	c.JSON(http.StatusOK, common.NewMessageResponse("User deleted successfully"))
 }

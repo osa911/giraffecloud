@@ -51,6 +51,7 @@ func (s *Server) Start() error {
 	// Create handlers
 	authHandler := handlers.NewAuthHandler(s.db.DB)
 	userHandler := handlers.NewUserHandler(s.db.DB)
+	healthHandler := handlers.NewHealthHandler(s.db.DB)
 
 	// Add global middleware
 	s.router.Use(middleware.CORS())
@@ -58,7 +59,7 @@ func (s *Server) Start() error {
 	s.router.Use(middleware.RateLimitMiddleware(rateLimitConfig))
 
 	// Health check endpoint - no auth required
-	s.router.GET("/health", handlers.HealthHandler)
+	s.router.GET("/health", healthHandler.Check)
 
 	// Public routes
 	public := s.router.Group("/api/v1")
@@ -84,7 +85,7 @@ func (s *Server) Start() error {
 		tunnelHandler := handlers.NewTunnelHandler(s.db.DB)
 
 		// Tunnel routes with validation
-		protected.GET("/tunnels", tunnelHandler.ListTunnels)
+		protected.GET("/tunnels", tunnelHandler.GetTunnels)
 		protected.POST("/tunnels", validationMiddleware.ValidateCreateTunnelRequest(), tunnelHandler.CreateTunnel)
 		protected.GET("/tunnels/:id", tunnelHandler.GetTunnel)
 		protected.PUT("/tunnels/:id", validationMiddleware.ValidateUpdateTunnelRequest(), tunnelHandler.UpdateTunnel)

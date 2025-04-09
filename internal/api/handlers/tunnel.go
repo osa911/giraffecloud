@@ -9,6 +9,7 @@ import (
 	"giraffecloud/internal/api/dto/v1/tunnel"
 	"giraffecloud/internal/api/mapper"
 	"giraffecloud/internal/models"
+	"giraffecloud/internal/utils"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -22,68 +23,59 @@ func NewTunnelHandler(db *gorm.DB) *TunnelHandler {
 	return &TunnelHandler{db: db}
 }
 
-func (h *TunnelHandler) ListTunnels(c *gin.Context) {
+func (h *TunnelHandler) GetTunnels(c *gin.Context) {
 	userID := c.GetUint(constants.ContextKeyUserID)
 
 	var tunnels []models.Tunnel
 	if err := h.db.Where("user_id = ?", userID).Find(&tunnels).Error; err != nil {
-		response := common.NewErrorResponse(common.ErrCodeInternalServer, "Failed to fetch tunnels", err)
-		c.JSON(http.StatusInternalServerError, response)
+		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to fetch tunnels")
 		return
 	}
 
-	// Convert domain models to DTOs and wrap in APIResponse
+	// Use mapper to convert to DTO
 	tunnelResponses := mapper.TunnelsToTunnelResponses(tunnels)
-	response := common.NewSuccessResponse(tunnel.ListTunnelsResponse{
-		Tunnels:    tunnelResponses,
-		TotalCount: int64(len(tunnelResponses)),
-		Page:       1,      // Pagination not implemented yet
-		PageSize:   100,    // Pagination not implemented yet
-	})
 
-	c.JSON(http.StatusOK, response)
+	// Return as a proper response
+	c.JSON(http.StatusOK, common.NewSuccessResponse(gin.H{"tunnels": tunnelResponses}))
 }
 
 func (h *TunnelHandler) CreateTunnel(c *gin.Context) {
 	userID := c.GetUint(constants.ContextKeyUserID)
 
-	// Get tunnel data from context
+	// Get tunnel data from context (set by validation middleware)
 	tunnelData, exists := c.Get(constants.ContextKeyCreateTunnel)
 	if !exists {
-		response := common.NewErrorResponse(common.ErrCodeInternalServer, "Tunnel data not found in context. Ensure validation middleware is applied.", nil)
-		c.JSON(http.StatusInternalServerError, response)
+		utils.HandleAPIError(c, nil, http.StatusInternalServerError, common.ErrCodeInternalServer, "Tunnel data not found in context. Ensure validation middleware is applied.")
 		return
 	}
 
 	// Extract tunnel data
 	tunnelPtr, ok := tunnelData.(*tunnel.CreateTunnelRequest)
 	if !ok {
-		response := common.NewErrorResponse(common.ErrCodeInternalServer, "Invalid tunnel data format", nil)
-		c.JSON(http.StatusInternalServerError, response)
+		utils.HandleAPIError(c, nil, http.StatusInternalServerError, common.ErrCodeInternalServer, "Invalid tunnel data format")
 		return
 	}
 
-	tunnel := models.Tunnel{
-		Name:       tunnelPtr.Name,
-		UserID:     userID,
-		Protocol:   models.Protocol(tunnelPtr.Protocol),
-		LocalPort:  tunnelPtr.LocalPort,
-		RemoteHost: tunnelPtr.RemoteHost,
-		Status:     models.StatusInactive,
-		IsEnabled:  true,
+	// Create a new tunnel
+	newTunnel := models.Tunnel{
+		UserID:    userID,
+		Status:    models.StatusInactive,
+		IsEnabled: true,
 	}
 
-	if err := h.db.Create(&tunnel).Error; err != nil {
-		response := common.NewErrorResponse(common.ErrCodeInternalServer, "Failed to create tunnel", err)
-		c.JSON(http.StatusInternalServerError, response)
+	// Apply create tunnel request data using mapper
+	mapper.ApplyCreateTunnelRequest(&newTunnel, tunnelPtr)
+
+	if err := h.db.Create(&newTunnel).Error; err != nil {
+		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to create tunnel")
 		return
 	}
 
-	// Convert domain model to DTO and wrap in APIResponse
-	tunnelResponse := mapper.TunnelToTunnelResponse(&tunnel)
-	response := common.NewSuccessResponse(tunnelResponse)
+	// Convert to response DTO
+	tunnelResponse := mapper.TunnelToTunnelResponse(&newTunnel)
 
-	c.JSON(http.StatusCreated, response)
+	// Return with proper response format
+	c.JSON(http.StatusCreated, common.NewSuccessResponse(tunnelResponse))
 }
 
 func (h *TunnelHandler) GetTunnel(c *gin.Context) {
@@ -93,31 +85,21 @@ func (h *TunnelHandler) GetTunnel(c *gin.Context) {
 	// Convert tunnelID to uint
 	tunnelIDUint, err := strconv.ParseUint(tunnelID, 10, 32)
 	if err != nil {
-		response := common.NewErrorResponse(common.ErrCodeBadRequest, "Invalid tunnel ID", nil)
-		c.JSON(http.StatusBadRequest, response)
+		utils.HandleAPIError(c, err, http.StatusBadRequest, common.ErrCodeBadRequest, "Invalid tunnel ID")
 		return
 	}
 
-	// Get tunnel
 	var tunnel models.Tunnel
-	if err := h.db.First(&tunnel, tunnelIDUint).Error; err != nil {
-		response := common.NewErrorResponse(common.ErrCodeNotFound, "Tunnel not found", nil)
-		c.JSON(http.StatusNotFound, response)
+	if err := h.db.Where("id = ? AND user_id = ?", tunnelIDUint, userID).First(&tunnel).Error; err != nil {
+		utils.HandleAPIError(c, err, http.StatusNotFound, common.ErrCodeNotFound, "Tunnel not found")
 		return
 	}
 
-	// Check if the tunnel belongs to the user
-	if tunnel.UserID != userID {
-		response := common.NewErrorResponse(common.ErrCodeForbidden, "Access denied", nil)
-		c.JSON(http.StatusForbidden, response)
-		return
-	}
-
-	// Convert domain model to DTO and wrap in APIResponse
+	// Convert to response DTO
 	tunnelResponse := mapper.TunnelToTunnelResponse(&tunnel)
-	response := common.NewSuccessResponse(tunnelResponse)
 
-	c.JSON(http.StatusOK, response)
+	// Return with proper response format
+	c.JSON(http.StatusOK, common.NewSuccessResponse(tunnelResponse))
 }
 
 func (h *TunnelHandler) UpdateTunnel(c *gin.Context) {
@@ -127,67 +109,45 @@ func (h *TunnelHandler) UpdateTunnel(c *gin.Context) {
 	// Convert tunnelID to uint
 	tunnelIDUint, err := strconv.ParseUint(tunnelID, 10, 32)
 	if err != nil {
-		response := common.NewErrorResponse(common.ErrCodeBadRequest, "Invalid tunnel ID", nil)
-		c.JSON(http.StatusBadRequest, response)
+		utils.HandleAPIError(c, err, http.StatusBadRequest, common.ErrCodeBadRequest, "Invalid tunnel ID")
 		return
 	}
 
 	// Get tunnel update data from context
 	tunnelData, exists := c.Get(constants.ContextKeyUpdateTunnel)
 	if !exists {
-		response := common.NewErrorResponse(common.ErrCodeInternalServer, "Tunnel update data not found in context. Ensure validation middleware is applied.", nil)
-		c.JSON(http.StatusInternalServerError, response)
+		utils.HandleAPIError(c, nil, http.StatusInternalServerError, common.ErrCodeInternalServer, "Tunnel update data not found in context. Ensure validation middleware is applied.")
 		return
 	}
 
-	// Extract tunnel data
+	// Extract tunnel update data
 	tunnelPtr, ok := tunnelData.(*tunnel.UpdateTunnelRequest)
 	if !ok {
-		response := common.NewErrorResponse(common.ErrCodeInternalServer, "Invalid tunnel update data format", nil)
-		c.JSON(http.StatusInternalServerError, response)
+		utils.HandleAPIError(c, nil, http.StatusInternalServerError, common.ErrCodeInternalServer, "Invalid tunnel update data format")
 		return
 	}
 
+	// Fetch tunnel and check ownership
 	var tunnel models.Tunnel
-	if err := h.db.First(&tunnel, tunnelIDUint).Error; err != nil {
-		response := common.NewErrorResponse(common.ErrCodeNotFound, "Tunnel not found", nil)
-		c.JSON(http.StatusNotFound, response)
+	if err := h.db.Where("id = ? AND user_id = ?", tunnelIDUint, userID).First(&tunnel).Error; err != nil {
+		utils.HandleAPIError(c, err, http.StatusNotFound, common.ErrCodeNotFound, "Tunnel not found")
 		return
 	}
 
-	// Check if the tunnel belongs to the user
-	if tunnel.UserID != userID {
-		response := common.NewErrorResponse(common.ErrCodeForbidden, "Access denied", nil)
-		c.JSON(http.StatusForbidden, response)
-		return
-	}
+	// Apply update tunnel request data using mapper
+	mapper.ApplyUpdateTunnelRequest(&tunnel, tunnelPtr)
 
-	// Update fields
-	if tunnelPtr.Name != "" {
-		tunnel.Name = tunnelPtr.Name
-	}
-	if tunnelPtr.Protocol != "" {
-		tunnel.Protocol = models.Protocol(tunnelPtr.Protocol)
-	}
-	if tunnelPtr.LocalPort > 0 {
-		tunnel.LocalPort = tunnelPtr.LocalPort
-	}
-	if tunnelPtr.RemoteHost != "" {
-		tunnel.RemoteHost = tunnelPtr.RemoteHost
-	}
-	tunnel.IsEnabled = tunnelPtr.IsEnabled
-
+	// Save the updated tunnel
 	if err := h.db.Save(&tunnel).Error; err != nil {
-		response := common.NewErrorResponse(common.ErrCodeInternalServer, "Failed to update tunnel", err)
-		c.JSON(http.StatusInternalServerError, response)
+		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to update tunnel")
 		return
 	}
 
-	// Convert domain model to DTO and wrap in APIResponse
+	// Convert to response DTO
 	tunnelResponse := mapper.TunnelToTunnelResponse(&tunnel)
-	response := common.NewSuccessResponse(tunnelResponse)
 
-	c.JSON(http.StatusOK, response)
+	// Return with proper response format
+	c.JSON(http.StatusOK, common.NewSuccessResponse(tunnelResponse))
 }
 
 func (h *TunnelHandler) DeleteTunnel(c *gin.Context) {
@@ -197,34 +157,25 @@ func (h *TunnelHandler) DeleteTunnel(c *gin.Context) {
 	// Convert tunnelID to uint
 	tunnelIDUint, err := strconv.ParseUint(tunnelID, 10, 32)
 	if err != nil {
-		response := common.NewErrorResponse(common.ErrCodeBadRequest, "Invalid tunnel ID", nil)
-		c.JSON(http.StatusBadRequest, response)
+		utils.HandleAPIError(c, err, http.StatusBadRequest, common.ErrCodeBadRequest, "Invalid tunnel ID")
 		return
 	}
 
+	// Fetch tunnel and check ownership
 	var tunnel models.Tunnel
-	if err := h.db.First(&tunnel, tunnelIDUint).Error; err != nil {
-		response := common.NewErrorResponse(common.ErrCodeNotFound, "Tunnel not found", nil)
-		c.JSON(http.StatusNotFound, response)
+	if err := h.db.Where("id = ? AND user_id = ?", tunnelIDUint, userID).First(&tunnel).Error; err != nil {
+		utils.HandleAPIError(c, err, http.StatusNotFound, common.ErrCodeNotFound, "Tunnel not found")
 		return
 	}
 
-	// Check if the tunnel belongs to the user
-	if tunnel.UserID != userID {
-		response := common.NewErrorResponse(common.ErrCodeForbidden, "Access denied", nil)
-		c.JSON(http.StatusForbidden, response)
-		return
-	}
-
+	// Delete tunnel
 	if err := h.db.Delete(&tunnel).Error; err != nil {
-		response := common.NewErrorResponse(common.ErrCodeInternalServer, "Failed to delete tunnel", err)
-		c.JSON(http.StatusInternalServerError, response)
+		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to delete tunnel")
 		return
 	}
 
 	// Return success response
-	response := common.NewMessageResponse("Tunnel deleted successfully")
-	c.JSON(http.StatusOK, response)
+	c.JSON(http.StatusOK, common.NewMessageResponse("Tunnel deleted successfully"))
 }
 
 func (h *TunnelHandler) StartTunnel(c *gin.Context) {
@@ -234,22 +185,14 @@ func (h *TunnelHandler) StartTunnel(c *gin.Context) {
 	// Convert tunnelID to uint
 	tunnelIDUint, err := strconv.ParseUint(tunnelID, 10, 32)
 	if err != nil {
-		response := common.NewErrorResponse(common.ErrCodeBadRequest, "Invalid tunnel ID", nil)
-		c.JSON(http.StatusBadRequest, response)
+		utils.HandleAPIError(c, err, http.StatusBadRequest, common.ErrCodeBadRequest, "Invalid tunnel ID")
 		return
 	}
 
+	// Fetch tunnel and check ownership
 	var tunnel models.Tunnel
-	if err := h.db.First(&tunnel, tunnelIDUint).Error; err != nil {
-		response := common.NewErrorResponse(common.ErrCodeNotFound, "Tunnel not found", nil)
-		c.JSON(http.StatusNotFound, response)
-		return
-	}
-
-	// Check if the tunnel belongs to the user
-	if tunnel.UserID != userID {
-		response := common.NewErrorResponse(common.ErrCodeForbidden, "Access denied", nil)
-		c.JSON(http.StatusForbidden, response)
+	if err := h.db.Where("id = ? AND user_id = ?", tunnelIDUint, userID).First(&tunnel).Error; err != nil {
+		utils.HandleAPIError(c, err, http.StatusNotFound, common.ErrCodeNotFound, "Tunnel not found")
 		return
 	}
 
@@ -258,14 +201,12 @@ func (h *TunnelHandler) StartTunnel(c *gin.Context) {
 	tunnel.IsEnabled = true
 
 	if err := h.db.Save(&tunnel).Error; err != nil {
-		response := common.NewErrorResponse(common.ErrCodeInternalServer, "Failed to start tunnel", err)
-		c.JSON(http.StatusInternalServerError, response)
+		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to start tunnel")
 		return
 	}
 
 	// Return success response
-	response := common.NewMessageResponse("Tunnel started successfully")
-	c.JSON(http.StatusOK, response)
+	c.JSON(http.StatusOK, common.NewMessageResponse("Tunnel started successfully"))
 }
 
 func (h *TunnelHandler) StopTunnel(c *gin.Context) {
@@ -275,22 +216,14 @@ func (h *TunnelHandler) StopTunnel(c *gin.Context) {
 	// Convert tunnelID to uint
 	tunnelIDUint, err := strconv.ParseUint(tunnelID, 10, 32)
 	if err != nil {
-		response := common.NewErrorResponse(common.ErrCodeBadRequest, "Invalid tunnel ID", nil)
-		c.JSON(http.StatusBadRequest, response)
+		utils.HandleAPIError(c, err, http.StatusBadRequest, common.ErrCodeBadRequest, "Invalid tunnel ID")
 		return
 	}
 
+	// Fetch tunnel and check ownership
 	var tunnel models.Tunnel
-	if err := h.db.First(&tunnel, tunnelIDUint).Error; err != nil {
-		response := common.NewErrorResponse(common.ErrCodeNotFound, "Tunnel not found", nil)
-		c.JSON(http.StatusNotFound, response)
-		return
-	}
-
-	// Check if the tunnel belongs to the user
-	if tunnel.UserID != userID {
-		response := common.NewErrorResponse(common.ErrCodeForbidden, "Access denied", nil)
-		c.JSON(http.StatusForbidden, response)
+	if err := h.db.Where("id = ? AND user_id = ?", tunnelIDUint, userID).First(&tunnel).Error; err != nil {
+		utils.HandleAPIError(c, err, http.StatusNotFound, common.ErrCodeNotFound, "Tunnel not found")
 		return
 	}
 
@@ -299,12 +232,10 @@ func (h *TunnelHandler) StopTunnel(c *gin.Context) {
 	tunnel.IsEnabled = false
 
 	if err := h.db.Save(&tunnel).Error; err != nil {
-		response := common.NewErrorResponse(common.ErrCodeInternalServer, "Failed to stop tunnel", err)
-		c.JSON(http.StatusInternalServerError, response)
+		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to stop tunnel")
 		return
 	}
 
 	// Return success response
-	response := common.NewMessageResponse("Tunnel stopped successfully")
-	c.JSON(http.StatusOK, response)
+	c.JSON(http.StatusOK, common.NewMessageResponse("Tunnel stopped successfully"))
 }
