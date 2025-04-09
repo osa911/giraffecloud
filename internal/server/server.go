@@ -57,6 +57,9 @@ func (s *Server) Start() error {
 	s.router.Use(middleware.PreserveRequestBody())
 	s.router.Use(middleware.RateLimitMiddleware(rateLimitConfig))
 
+	// Health check endpoint - no auth required
+	s.router.GET("/health", handlers.HealthHandler)
+
 	// Public routes
 	public := s.router.Group("/api/v1")
 	{
