@@ -1,17 +1,17 @@
 .PHONY: dev dev-hot prod build test
 
 # Development commands
-dev: validate-env
+dev: validate-dev-env
 	@echo "Starting development server..."
 	@./scripts/server.sh
 
 # Development with hot reload
-dev-hot: validate-env
+dev-hot: validate-dev-env
 	@echo "Starting development server with hot-reload..."
 	@./scripts/hot-reload.sh
 
 # Production commands
-prod: validate-env
+prod: validate-prod-env
 	@echo "Starting production server..."
 	@set -a && source $(PROD_ENV) && set +a && go run cmd/server/main.go
 

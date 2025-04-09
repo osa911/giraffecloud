@@ -4,7 +4,7 @@ DEV_ENV=$(ENV_DIR)/.env.development
 PROD_ENV=$(ENV_DIR)/.env.production
 EXAMPLE_ENV=$(ENV_DIR)/.env.example
 
-.PHONY: setup-dev setup-prod validate-env
+.PHONY: setup-dev setup-prod validate-dev-env validate-prod-env
 
 # Environment setup commands
 setup-dev:
@@ -23,16 +23,21 @@ setup-prod:
 		echo "Production environment file already exists at $(PROD_ENV)"; \
 	fi
 
-validate-env:
-	@echo "Validating environment files..."
+# Environment validation functions
+validate-dev-env:
+	@echo "Validating development environment..."
 	@if [ ! -f "$(DEV_ENV)" ]; then \
 		echo "Error: Development environment file not found at $(DEV_ENV)"; \
 		echo "Run 'make setup-dev' to create it"; \
 		exit 1; \
 	fi
+	@echo "Development environment file validated successfully"
+
+validate-prod-env:
+	@echo "Validating production environment..."
 	@if [ ! -f "$(PROD_ENV)" ]; then \
 		echo "Error: Production environment file not found at $(PROD_ENV)"; \
 		echo "Run 'make setup-prod' to create it"; \
 		exit 1; \
 	fi
-	@echo "Environment files validated successfully"
+	@echo "Production environment file validated successfully"
