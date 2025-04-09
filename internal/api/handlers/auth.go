@@ -4,6 +4,9 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"net/http"
+	"net/url"
+	"os"
+	"strings"
 	"time"
 
 	"giraffecloud/internal/api/constants"
@@ -34,6 +37,60 @@ func generateSecureToken(length int) (string, error) {
 		return "", err
 	}
 	return base64.URLEncoding.EncodeToString(b), nil
+}
+
+// CheckIfIP checks if a string is an IP address
+func isIPAddress(host string) bool {
+	// Simple check for IPv4 - looks for 4 segments of numbers separated by dots
+	ipv4Parts := strings.Split(host, ".")
+	if len(ipv4Parts) == 4 {
+		for _, part := range ipv4Parts {
+			// Check if each part contains only digits
+			if !containsOnlyDigits(part) {
+				return false
+			}
+		}
+		return true
+	}
+	// Check for presence of colons which suggests IPv6
+	return strings.Contains(host, ":")
+}
+
+// Helper function to check if a string contains only digits
+func containsOnlyDigits(s string) bool {
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// Get the appropriate cookie domain based on environment
+func getCookieDomain() string {
+	if os.Getenv("GO_ENV") == "production" {
+		// Get the domain from CLIENT_URL environment variable
+		clientURL := os.Getenv("CLIENT_URL")
+		if clientURL != "" {
+			parsedURL, err := url.Parse(clientURL)
+			if err == nil && parsedURL.Hostname() != "localhost" {
+				// Extract the domain and add a leading dot for subdomain support
+				host := parsedURL.Hostname()
+				// Check if we already have an IP address
+				if !isIPAddress(host) {
+					// Find the last two parts of the domain (e.g., example.com from sub.example.com)
+					parts := strings.Split(host, ".")
+					if len(parts) >= 2 {
+						domain := parts[len(parts)-2] + "." + parts[len(parts)-1]
+						return "." + domain
+					}
+					// If it's a simple domain, just add the dot
+					return "." + host
+				}
+			}
+		}
+	}
+	return "" // Default empty string for development
 }
 
 func (h *AuthHandler) Login(c *gin.Context) {
@@ -157,7 +214,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		sessionCookie,
 		constants.CookieDuration24h,
 		constants.CookiePathRoot,
-		"", // Domain - leave empty for current domain
+		getCookieDomain(),
 		true, // Secure - requires HTTPS (set to true in production)
 		true, // HttpOnly - prevents JavaScript access
 	)
@@ -168,7 +225,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		sessionToken,
 		constants.CookieDuration24h,
 		constants.CookiePathAPI,
-		"",
+		getCookieDomain(),
 		true,
 		true,
 	)
@@ -238,8 +295,8 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 func (h *AuthHandler) Logout(c *gin.Context) {
 	// Clear the session cookie by setting an expired cookie
-	c.SetCookie(constants.CookieSession, "", -1, constants.CookiePathRoot, "", true, true)
-	c.SetCookie(constants.CookieAuthToken, "", -1, constants.CookiePathAPI, "", true, true)
+	c.SetCookie(constants.CookieSession, "", -1, constants.CookiePathRoot, getCookieDomain(), true, true)
+	c.SetCookie(constants.CookieAuthToken, "", -1, constants.CookiePathAPI, getCookieDomain(), true, true)
 
 	// Check for session cookie to identify and invalidate server-side session
 	sessionCookie, err := c.Cookie(constants.CookieAuthToken)
@@ -306,7 +363,7 @@ func (h *AuthHandler) GetSession(c *gin.Context) {
 				authToken,
 				constants.CookieDuration24h,
 				constants.CookiePathAPI,
-				"",
+				getCookieDomain(),
 				true,
 				true,
 			)
@@ -370,7 +427,7 @@ func (h *AuthHandler) RefreshSession(c *gin.Context) {
 				authToken,
 				constants.CookieDuration24h,
 				constants.CookiePathAPI,
-				"",
+				getCookieDomain(),
 				true,
 				true,
 			)
@@ -430,7 +487,7 @@ func (h *AuthHandler) VerifyToken(c *gin.Context) {
 		sessionCookie,
 		constants.CookieDurationWeek,
 		constants.CookiePathRoot,
-		"",
+		getCookieDomain(),
 		true,
 		true,
 	)
