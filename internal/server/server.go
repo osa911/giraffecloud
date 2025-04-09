@@ -1,6 +1,7 @@
 package server
 
 import (
+	"io"
 	"os"
 
 	"giraffecloud/internal/api/handlers"
@@ -18,11 +19,17 @@ type Server struct {
 
 // NewServer creates a new server instance
 func NewServer(db *db.Database) *Server {
+	// Set release mode for production
 	gin.SetMode(gin.ReleaseMode)
-	router := gin.Default()
 
-	// Explicitly configure the router for JSON
-	router.Use(gin.Logger())
+	// Disable Gin's default logger entirely because we're using our custom logger
+	gin.DisableConsoleColor()
+	gin.DefaultWriter = io.Discard
+
+	// Create a new engine without default middleware
+	router := gin.New()
+
+	// Always add recovery middleware for panic handling
 	router.Use(gin.Recovery())
 
 	return &Server{
@@ -57,6 +64,7 @@ func (s *Server) Start() error {
 	s.router.Use(middleware.CORS())
 	s.router.Use(middleware.PreserveRequestBody())
 	s.router.Use(middleware.RateLimitMiddleware(rateLimitConfig))
+	s.router.Use(middleware.RequestLogger())
 
 	// Health check endpoint - no auth required
 	s.router.GET("/health", healthHandler.Check)
