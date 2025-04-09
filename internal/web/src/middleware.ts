@@ -13,6 +13,11 @@ export function middleware(request: NextRequest) {
   const authToken = request.cookies.get("auth_token")?.value;
   const hasAuthCookies = !!sessionCookie || !!authToken;
 
+  console.log("hasAuthCookies", hasAuthCookies);
+  console.log("isPublicPath", isPublicPath);
+  console.log("path", path);
+  console.log("sessionCookie", sessionCookie);
+  console.log("authToken", authToken);
   // Redirect logic
   if (!hasAuthCookies && !isPublicPath) {
     return NextResponse.redirect(new URL("/auth/login", request.url));
