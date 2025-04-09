@@ -1,7 +1,6 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useActionState } from "react";
 import {
   Box,
   Paper,
@@ -11,43 +10,17 @@ import {
   Grid,
   Avatar,
 } from "@mui/material";
-import { useAuth, User } from "@/contexts/AuthProvider";
-import clientApi from "@/services/api/clientApiClient";
-import toast from "react-hot-toast";
-import { handleLoginSuccess } from "@/lib/actions";
+import { User } from "@/contexts/AuthProvider";
+import { updateProfileAction } from "@/lib/actions";
 
 interface ProfileFormProps {
   initialUser: User;
 }
 
 export default function ProfileForm({ initialUser }: ProfileFormProps) {
-  const { updateUser } = useAuth();
-  const [name, setName] = useState(initialUser.name || "");
-  const [loading, setLoading] = useState(false);
-  const router = useRouter();
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    try {
-      const updatedUser = await clientApi().put<User>("/user/profile", {
-        name,
-      });
-
-      // Update auth context
-      updateUser(updatedUser);
-
-      // Update cookie data to keep it in sync
-      await handleLoginSuccess(updatedUser);
-
-      toast.success("Profile updated successfully");
-      router.refresh(); // Refresh server components
-    } catch (error) {
-      toast.error("Failed to update profile");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [state, action, loading] = useActionState(updateProfileAction, {
+    name: initialUser.name,
+  });
 
   return (
     <Box>
@@ -75,7 +48,7 @@ export default function ProfileForm({ initialUser }: ProfileFormProps) {
             </Box>
           </Grid>
           <Grid size={{ xs: 12, md: 8 }}>
-            <Box component="form" onSubmit={handleSubmit}>
+            <Box component="form" action={action}>
               <TextField
                 margin="normal"
                 required
@@ -84,8 +57,7 @@ export default function ProfileForm({ initialUser }: ProfileFormProps) {
                 label="Full Name"
                 name="name"
                 autoComplete="name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
+                defaultValue={state.name}
               />
               <Button
                 type="submit"
