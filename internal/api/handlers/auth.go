@@ -12,6 +12,7 @@ import (
 	"giraffecloud/internal/api/mapper"
 	"giraffecloud/internal/config/firebase"
 	"giraffecloud/internal/models"
+	"giraffecloud/internal/utils"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -78,7 +79,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 				Role:       models.RoleUser,
 				IsActive:   true,
 				LastLogin:  time.Now(),
-				LastLoginIP: c.ClientIP(),
+				LastLoginIP: utils.GetRealIP(c),
 			}
 
 			if err := h.db.Create(&user).Error; err != nil {
@@ -93,7 +94,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	// Update last login info
 	user.LastLogin = time.Now()
-	user.LastLoginIP = c.ClientIP()
+	user.LastLoginIP = utils.GetRealIP(c)
 	if err := h.db.Save(&user).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, common.NewErrorResponse(common.ErrCodeInternalServer, "Failed to update user", err))
 		return
@@ -129,7 +130,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		LastUsed:   time.Now(),
 		ExpiresAt:  time.Now().Add(time.Hour * 24 * 30), // 30 days (server-side)
 		IsActive:   true,
-		IPAddress:  c.ClientIP(),
+		IPAddress:  utils.GetRealIP(c),
 		UserAgent:  userAgent,
 	}
 
@@ -219,7 +220,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		Role:        models.RoleUser,
 		IsActive:    true,
 		LastLogin:   time.Now(),
-		LastLoginIP: c.ClientIP(),
+		LastLoginIP: utils.GetRealIP(c),
 	}
 
 	if err := h.db.Create(&user).Error; err != nil {

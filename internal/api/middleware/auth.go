@@ -9,6 +9,7 @@ import (
 	"giraffecloud/internal/config/firebase"
 	"giraffecloud/internal/db"
 	"giraffecloud/internal/models"
+	"giraffecloud/internal/utils"
 
 	"github.com/gin-gonic/gin"
 )
@@ -71,7 +72,7 @@ func (m *AuthMiddleware) RequireAuth() gin.HandlerFunc {
 
 		// Update last login info
 		user.LastLogin = time.Now()
-		user.LastLoginIP = c.ClientIP()
+		user.LastLoginIP = utils.GetRealIP(c)
 		if err := db.DB.Save(&user).Error; err != nil {
 			response := common.NewErrorResponse(common.ErrCodeInternalServer, "Failed to update user", err)
 			c.JSON(http.StatusInternalServerError, response)
