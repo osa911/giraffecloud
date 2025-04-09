@@ -21,10 +21,70 @@ if ! command -v docker &> /dev/null || ! command -v docker-compose &> /dev/null;
     exit 1
 fi
 
-# Ensure buildx is available (for modern Docker builds)
+# Check and install Docker Buildx if missing
+install_buildx() {
+    echo -e "${YELLOW}Installing Docker Buildx plugin manually...${NC}"
+
+    # Create Docker CLI plugins directory if it doesn't exist
+    mkdir -p ~/.docker/cli-plugins
+
+    # Detect architecture
+    ARCH=$(uname -m)
+    case $ARCH in
+        x86_64)
+            BUILDX_ARCH="amd64"
+            ;;
+        aarch64|arm64)
+            BUILDX_ARCH="arm64"
+            ;;
+        armv7l)
+            BUILDX_ARCH="arm-v7"
+            ;;
+        *)
+            echo -e "${RED}Unsupported architecture: $ARCH${NC}"
+            echo "Please install Docker Buildx manually."
+            echo "See: https://docs.docker.com/build/install-buildx/"
+            return 1
+            ;;
+    esac
+
+    # Get latest Buildx version
+    BUILDX_VERSION=$(curl -s https://api.github.com/repos/docker/buildx/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+    if [ -z "$BUILDX_VERSION" ]; then
+        BUILDX_VERSION="v0.14.0"  # Fallback to a known version
+    fi
+
+    # Download Buildx binary
+    BUILDX_URL="https://github.com/docker/buildx/releases/download/${BUILDX_VERSION}/buildx-${BUILDX_VERSION}.linux-${BUILDX_ARCH}"
+    echo -e "Downloading Buildx ${BUILDX_VERSION} for ${ARCH}..."
+    curl -sSL "${BUILDX_URL}" -o ~/.docker/cli-plugins/docker-buildx
+
+    # Make it executable
+    chmod +x ~/.docker/cli-plugins/docker-buildx
+
+    # Verify installation
+    if docker buildx version &> /dev/null; then
+        echo -e "${GREEN}Docker Buildx installed successfully!${NC}"
+        return 0
+    else
+        echo -e "${RED}Failed to install Docker Buildx.${NC}"
+        echo "Please install it manually: https://docs.docker.com/build/install-buildx/"
+        return 1
+    fi
+}
+
+# Check if Buildx is available
 if ! docker buildx version &> /dev/null; then
-    echo -e "${YELLOW}Installing Docker Buildx...${NC}"
-    docker buildx install
+    install_buildx
+    # If installation fails, continue without Buildx
+    if [ $? -ne 0 ]; then
+        echo -e "${YELLOW}Continuing without Buildx. Using standard Docker build...${NC}"
+        USE_BUILDX=false
+    else
+        USE_BUILDX=true
+    fi
+else
+    USE_BUILDX=true
 fi
 
 # Check if .env.production file exists
@@ -73,10 +133,15 @@ run_docker_compose() {
     DB_USER=$DB_USER DB_PASSWORD=$DB_PASSWORD DB_NAME=$DB_NAME docker-compose "$@"
 }
 
-# Use buildx for building
+# Use buildx for building if available
 build_with_buildx() {
-    echo -e "${GREEN}Building with Docker Buildx...${NC}"
-    run_docker_compose build --progress=plain
+    if [ "$USE_BUILDX" = true ]; then
+        echo -e "${GREEN}Building with Docker Buildx...${NC}"
+        run_docker_compose build --progress=plain
+    else
+        echo -e "${GREEN}Building with standard Docker build...${NC}"
+        run_docker_compose build
+    fi
 }
 
 case $choice in
