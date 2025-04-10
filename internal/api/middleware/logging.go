@@ -97,9 +97,9 @@ func RequestLogger() gin.HandlerFunc {
 		logMsg := fmt.Sprintf(
 			"[GFC-API] %s | %s | %13v | %15s | %-17s %s\n",
 			time.Now().Format("2006/01/02 - 15:04:05"),
-			statusColorized,
 			latency,
 			clientIP,
+			statusColorized,
 			methodColorized,
 			path,
 		)
