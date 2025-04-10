@@ -68,29 +68,40 @@ func containsOnlyDigits(s string) bool {
 
 // Get the appropriate cookie domain based on environment
 func getCookieDomain() string {
-	if os.Getenv("ENV") == "production" {
-		// Get the domain from CLIENT_URL environment variable
-		clientURL := os.Getenv("CLIENT_URL")
-		if clientURL != "" {
-			parsedURL, err := url.Parse(clientURL)
-			if err == nil && parsedURL.Hostname() != "localhost" {
-				// Extract the domain and add a leading dot for subdomain support
-				host := parsedURL.Hostname()
-				// Check if we already have an IP address
-				if !isIPAddress(host) {
-					// Find the last two parts of the domain (e.g., example.com from sub.example.com)
-					parts := strings.Split(host, ".")
-					if len(parts) >= 2 {
-						domain := parts[len(parts)-2] + "." + parts[len(parts)-1]
-						return "." + domain
-					}
-					// If it's a simple domain, just add the dot
-					return "." + host
-				}
-			}
+	env := os.Getenv("ENV")
+	clientURL := os.Getenv("CLIENT_URL")
+
+	if env == "production" && clientURL != "" {
+		parsableURL := clientURL
+		if !strings.HasPrefix(parsableURL, "http://") && !strings.HasPrefix(parsableURL, "https://") {
+			parsableURL = "https://" + parsableURL
+		}
+
+		parsedURL, err := url.Parse(parsableURL)
+		if err != nil {
+			return ""
+		}
+
+		host := parsedURL.Hostname()
+
+		if host == "" {
+			return clientURL
+		}
+
+		if host == "localhost" || host == "127.0.0.1" || isIPAddress(host) {
+			return ""
+		}
+
+		parts := strings.Split(host, ".")
+		if len(parts) >= 2 {
+			domain := parts[len(parts)-2] + "." + parts[len(parts)-1]
+			return "." + domain
+		} else if host != "" {
+			return host
 		}
 	}
-	return "" // Default empty string for development
+
+	return "" // Default empty string
 }
 
 func (h *AuthHandler) Login(c *gin.Context) {
