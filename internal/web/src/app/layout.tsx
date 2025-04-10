@@ -8,6 +8,7 @@ import CssBaseline from "@mui/material/CssBaseline";
 import theme from "@/styles/theme";
 import { Toaster } from "react-hot-toast";
 import { getServerSession } from "@/services/authServerService";
+import { Analytics } from "@vercel/analytics/next";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -38,6 +39,7 @@ export default async function RootLayout({ children }: RootLayoutProps) {
             <Toaster />
           </ThemeProvider>
         </AppRouterCacheProvider>
+        <Analytics />
       </body>
     </html>
   );
