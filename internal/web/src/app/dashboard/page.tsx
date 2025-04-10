@@ -14,8 +14,8 @@ async function fetchDashboardStats(userId: number) {
   // You would typically fetch this from your API
   // For now, we'll return mock data
   return {
-    totalTunnels: 5,
-    activeTunnels: 2,
-    totalTraffic: 1.5,
+    totalTunnels: 0,
+    activeTunnels: 0,
+    totalTraffic: 0,
   };
 }

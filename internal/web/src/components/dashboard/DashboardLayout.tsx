@@ -26,6 +26,7 @@ import {
 import { useAuth } from "@/contexts/AuthProvider";
 import Link from "@/components/common/Link";
 import type { User } from "@/contexts/AuthProvider";
+// import Image from "next/image";
 const drawerWidth = 240;
 
 const menuItems = [
@@ -68,7 +69,13 @@ export default function DashboardLayoutClient({
   const drawer = (
     <div>
       <Toolbar>
-        <img src="/logo.png" alt="GiraffeCloud Logo" style={{ height: 40 }} />
+        {/* <Image
+          src="/giraffecloud.png"
+          alt="GiraffeCloud"
+          width={48}
+          height={48}
+        /> */}
+        GiraffeCloud
       </Toolbar>
       <List>
         {menuItems.map((item) => (
