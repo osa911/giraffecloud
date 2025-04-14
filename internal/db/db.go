@@ -1,23 +1,53 @@
 package db
 
 import (
+	"context"
 	"fmt"
 	"os"
 
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
+	"giraffecloud/internal/db/ent"
+
+	"entgo.io/ent/dialect"
+
+	_ "github.com/lib/pq"
 )
 
-var DB *gorm.DB
+// Client represents the database client
+var Client *ent.Client
+
+// Initialize sets up the Ent client
+func Initialize() (*ent.Client, error) {
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		config := NewConfig()
+		dbURL = fmt.Sprintf(
+			"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
+			config.Host, config.Port, config.User, config.Password, config.DBName, config.SSLMode,
+		)
+	}
+
+	// Create an Ent client
+	client, err := ent.Open(dialect.Postgres, dbURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to database: %v", err)
+	}
+
+	// Run the auto migration tool
+	if err := client.Schema.Create(context.Background()); err != nil {
+		return nil, fmt.Errorf("failed creating schema resources: %v", err)
+	}
+
+	Client = client
+	return client, nil
+}
 
 // Database represents the database connection
 type Database struct {
-	DB *gorm.DB
+	DB *ent.Client
 }
 
 // NewDatabase creates a new database instance
-func NewDatabase(db *gorm.DB) *Database {
+func NewDatabase(db *ent.Client) *Database {
 	return &Database{
 		DB: db,
 	}
@@ -43,63 +73,6 @@ func NewConfig() *Config {
 		DBName:   getEnvOrDefault("DB_NAME", "db_name"),
 		SSLMode:  getEnvOrDefault("DB_SSL_MODE", "disable"),
 	}
-}
-
-// Initialize sets up the database connection
-func Initialize() (*gorm.DB, error) {
-	env := getEnvOrDefault("ENV", "development")
-
-	// Debug log environment variables
-	fmt.Printf("==== Initializing Database ====\n")
-	fmt.Printf("Database environment variables:\n")
-	fmt.Printf("DB_HOST: %s\n", os.Getenv("DB_HOST"))
-	fmt.Printf("DB_PORT: %s\n", os.Getenv("DB_PORT"))
-	fmt.Printf("DB_USER: %s\n", os.Getenv("DB_USER"))
-	fmt.Printf("DB_NAME: %s\n", os.Getenv("DB_NAME"))
-	fmt.Printf("DB_SSL_MODE: %s\n", os.Getenv("DB_SSL_MODE"))
-
-	// Try to use DATABASE_URL first
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		// Fall back to individual environment variables
-		config := NewConfig()
-
-		// Verify that we have all required parameters
-		if config.DBName == "" {
-			return nil, fmt.Errorf("database name is required, DB_NAME environment variable is not set")
-		}
-
-		dbURL = fmt.Sprintf(
-			"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
-			config.Host, config.Port, config.User, config.Password, config.DBName, config.SSLMode,
-		)
-
-		// Log the connection string (with password masked)
-		logURL := fmt.Sprintf(
-			"host=%s port=%d user=%s password=*** dbname=%s sslmode=%s",
-			config.Host, config.Port, config.User, config.DBName, config.SSLMode,
-		)
-		fmt.Printf("Database connection string: %s\n", logURL)
-	}
-
-	// Configure GORM logger based on environment
-	logLevel := logger.Info
-	if env == "production" {
-		logLevel = logger.Silent
-	}
-
-	gormConfig := &gorm.Config{
-		Logger: logger.Default.LogMode(logLevel),
-	}
-
-	// Connect to database
-	db, err := gorm.Open(postgres.Open(dbURL), gormConfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to database: %v", err)
-	}
-
-	DB = db
-	return db, nil
 }
 
 // Helper functions for environment variables

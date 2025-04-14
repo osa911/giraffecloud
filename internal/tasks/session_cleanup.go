@@ -1,24 +1,23 @@
 package tasks
 
 import (
+	"context"
 	"log"
 	"time"
 
-	"giraffecloud/internal/db"
-	"giraffecloud/internal/models"
-
-	"gorm.io/gorm"
+	"giraffecloud/internal/db/ent"
+	"giraffecloud/internal/db/ent/session"
 )
 
 // SessionCleanup handles periodic cleaning of expired sessions
 type SessionCleanup struct {
-	db *gorm.DB
+	client *ent.Client
 }
 
 // NewSessionCleanup creates a new session cleanup task
-func NewSessionCleanup(database *db.Database) *SessionCleanup {
+func NewSessionCleanup(client *ent.Client) *SessionCleanup {
 	return &SessionCleanup{
-		db: database.DB,
+		client: client,
 	}
 }
 
@@ -45,13 +44,30 @@ func (sc *SessionCleanup) runPeriodically() {
 func (sc *SessionCleanup) cleanup() {
 	log.Println("Starting session cleanup task")
 
+	ctx := context.Background()
+
 	// Delete expired sessions
-	expiredResult := sc.db.Where("expires_at < ?", time.Now()).Delete(&models.Session{})
-	log.Printf("Deleted %d expired sessions", expiredResult.RowsAffected)
+	expiredCount, err := sc.client.Session.Delete().
+		Where(session.ExpiresAtLT(time.Now())).
+		Exec(ctx)
+	if err != nil {
+		log.Printf("Error deleting expired sessions: %v", err)
+	} else {
+		log.Printf("Deleted %d expired sessions", expiredCount)
+	}
 
 	// Delete inactive sessions that haven't been used in 30 days
-	inactiveResult := sc.db.Where("is_active = ? AND last_used < ?", false, time.Now().AddDate(0, 0, -30)).Delete(&models.Session{})
-	log.Printf("Deleted %d inactive sessions", inactiveResult.RowsAffected)
+	inactiveCount, err := sc.client.Session.Delete().
+		Where(
+			session.IsActive(false),
+			session.LastUsedLT(time.Now().AddDate(0, 0, -30)),
+		).
+		Exec(ctx)
+	if err != nil {
+		log.Printf("Error deleting inactive sessions: %v", err)
+	} else {
+		log.Printf("Deleted %d inactive sessions", inactiveCount)
+	}
 
 	log.Println("Session cleanup task completed")
 }

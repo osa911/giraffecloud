@@ -1,67 +1,63 @@
 package mapper
 
 import (
-	"giraffecloud/internal/api/dto/v1/auth"
-	"giraffecloud/internal/api/dto/v1/user"
-	"giraffecloud/internal/models"
+	"time"
+
+	userDto "giraffecloud/internal/api/dto/v1/user"
+	"giraffecloud/internal/db/ent"
 )
 
-// UserToUserResponse converts a domain User model to a UserResponse DTO
-func UserToUserResponse(u *models.User) *user.UserResponse {
+// UserToUserResponse converts an Ent User entity to a UserResponse DTO
+func UserToUserResponse(u *ent.User) *userDto.UserResponse {
 	if u == nil {
 		return nil
 	}
 
-	return &user.UserResponse{
-		ID:        u.ID,
-		Email:     u.Email,
-		Name:      u.Name,
-		Role:      string(u.Role),
-		IsActive:  u.IsActive,
-		LastLogin: u.LastLogin,
-		CreatedAt: u.CreatedAt,
-		UpdatedAt: u.UpdatedAt,
+	var lastLoginStr string
+	if u.LastLogin != nil {
+		lastLoginStr = u.LastLogin.Format(time.RFC3339)
+	}
+
+	var lastLoginIP string
+	if u.LastLoginIP != nil {
+		lastLoginIP = *u.LastLoginIP
+	}
+
+	var lastActivityStr string
+	if u.LastActivity != nil {
+		lastActivityStr = u.LastActivity.Format(time.RFC3339)
+	}
+
+	return &userDto.UserResponse{
+		ID:           u.ID,
+		Email:        u.Email,
+		Name:         u.Name,
+		Role:         u.Role,
+		IsActive:     u.IsActive,
+		LastLogin:    lastLoginStr,
+		LastLoginIP:  lastLoginIP,
+		LastActivity: lastActivityStr,
+		CreatedAt:    u.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:    u.UpdatedAt.Format(time.RFC3339),
 	}
 }
 
-// UsersToUserResponses converts a slice of domain User models to UserResponse DTOs
-func UsersToUserResponses(users []models.User) []user.UserResponse {
-	result := make([]user.UserResponse, len(users))
+// UsersToUserResponses converts a slice of Ent User entities to UserResponse DTOs
+func UsersToUserResponses(users []*ent.User) []*userDto.UserResponse {
+	result := make([]*userDto.UserResponse, len(users))
 	for i, u := range users {
-		user := u // Create a copy to avoid issues with references in the loop
-		result[i] = *UserToUserResponse(&user)
+		result[i] = UserToUserResponse(u)
 	}
 	return result
 }
 
-// UserToAuthUserResponse converts a domain User model to an auth UserResponse DTO
-func UserToAuthUserResponse(u *models.User) *auth.UserResponse {
-	if u == nil {
-		return nil
-	}
-
-	return &auth.UserResponse{
-		ID:    u.ID,
-		Email: u.Email,
-		Name:  u.Name,
-		Role:  string(u.Role),
-	}
-}
-
-// ApplyUpdateProfileRequest applies changes from UpdateProfileRequest to a User model
-func ApplyUpdateProfileRequest(u *models.User, req *user.UpdateProfileRequest) {
+// ApplyUpdateUserRequest applies changes from UpdateUserRequest to a User update builder
+func ApplyUpdateUserRequest(update *ent.UserUpdateOne, req *userDto.UpdateUserRequest) {
 	if req.Name != "" {
-		u.Name = req.Name
+		update.SetName(req.Name)
 	}
-}
-
-// ApplyUpdateUserRequest applies changes from UpdateUserRequest to a User model
-func ApplyUpdateUserRequest(u *models.User, req *user.UpdateUserRequest) {
-	if req.Name != "" {
-		u.Name = req.Name
+	if req.Email != "" {
+		update.SetEmail(req.Email)
 	}
-	if req.Role != "" {
-		u.Role = models.Role(req.Role)
-	}
-	u.IsActive = req.IsActive
+	update.SetIsActive(req.IsActive)
 }

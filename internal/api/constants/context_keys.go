@@ -13,10 +13,6 @@ const (
 	ContextKeyUserID        = "userID"
 	ContextKeyUser          = "user"
 
-	// Tunnel context keys
-	ContextKeyCreateTunnel = "createTunnel"
-	ContextKeyUpdateTunnel = "updateTunnel"
-
 	// Request body related keys
 	ContextKeyBodyValidation = "body_validation"
 	ContextKeyRawBody        = "raw_body"

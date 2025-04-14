@@ -1,30 +1,30 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 
 	"giraffecloud/internal/api/constants"
 	"giraffecloud/internal/api/dto/common"
-	"giraffecloud/internal/models"
+	"giraffecloud/internal/repository"
 	"giraffecloud/internal/utils"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 type SessionHandler struct {
-	db *gorm.DB
+	sessionRepo repository.SessionRepository
 }
 
-func NewSessionHandler(db *gorm.DB) *SessionHandler {
-	return &SessionHandler{db: db}
+func NewSessionHandler(sessionRepo repository.SessionRepository) *SessionHandler {
+	return &SessionHandler{sessionRepo: sessionRepo}
 }
 
 func (h *SessionHandler) GetSessions(c *gin.Context) {
 	userID := c.GetUint(constants.ContextKeyUserID)
 
-	var sessions []models.Session
-	if err := h.db.Where("user_id = ? AND is_active = ?", userID, true).Find(&sessions).Error; err != nil {
+	sessions, err := h.sessionRepo.GetActiveSessions(context.Background(), uint32(userID))
+	if err != nil {
 		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to get sessions")
 		return
 	}
@@ -34,7 +34,6 @@ func (h *SessionHandler) GetSessions(c *gin.Context) {
 	for _, s := range sessions {
 		sessionResponses = append(sessionResponses, gin.H{
 			"id":         s.ID,
-			"deviceName": s.DeviceName,
 			"lastUsed":   s.LastUsed,
 			"ipAddress":  s.IPAddress,
 			"createdAt":  s.CreatedAt,
@@ -48,15 +47,14 @@ func (h *SessionHandler) RevokeSession(c *gin.Context) {
 	userID := c.GetUint(constants.ContextKeyUserID)
 	sessionID := c.Param("id")
 
-	var session models.Session
-	if err := h.db.Where("id = ? AND user_id = ?", sessionID, userID).First(&session).Error; err != nil {
+	session, err := h.sessionRepo.GetUserSession(context.Background(), sessionID, uint32(userID))
+	if err != nil {
 		utils.HandleAPIError(c, err, http.StatusNotFound, common.ErrCodeNotFound, "Session not found")
 		return
 	}
 
 	// Mark session as inactive
-	session.IsActive = false
-	if err := h.db.Save(&session).Error; err != nil {
+	if err := h.sessionRepo.RevokeSession(context.Background(), session); err != nil {
 		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to revoke session")
 		return
 	}
@@ -73,7 +71,7 @@ func (h *SessionHandler) RevokeSession(c *gin.Context) {
 func (h *SessionHandler) RevokeAllSessions(c *gin.Context) {
 	userID := c.GetUint(constants.ContextKeyUserID)
 
-	if err := h.db.Model(&models.Session{}).Where("user_id = ?", userID).Updates(map[string]interface{}{"is_active": false}).Error; err != nil {
+	if err := h.sessionRepo.RevokeAllUserSessions(context.Background(), uint32(userID)); err != nil {
 		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to revoke sessions")
 		return
 	}

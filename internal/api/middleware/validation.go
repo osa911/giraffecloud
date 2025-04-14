@@ -1,13 +1,11 @@
 package middleware
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"giraffecloud/internal/api/constants"
 	"giraffecloud/internal/api/dto/common"
 	"giraffecloud/internal/api/dto/v1/auth"
-	"giraffecloud/internal/api/dto/v1/tunnel"
 	"giraffecloud/internal/api/dto/v1/user"
 
 	"github.com/gin-gonic/gin"
@@ -19,74 +17,30 @@ type ValidationMiddleware struct {
 	validator *validator.Validate
 }
 
-// NewValidationMiddleware creates a new validation middleware
+// NewValidationMiddleware creates a new ValidationMiddleware instance
 func NewValidationMiddleware() *ValidationMiddleware {
 	return &ValidationMiddleware{
 		validator: validator.New(),
 	}
 }
 
-// validateRequest is a helper function to validate a request against a struct
-func (m *ValidationMiddleware) validateRequest(c *gin.Context, obj interface{}, contextKey string) bool {
-	// Get raw body from context
-	rawBody, exists := c.Get(constants.ContextKeyRawBody)
-	if !exists {
-		c.JSON(http.StatusInternalServerError, common.NewErrorResponse(
-			common.ErrCodeInternalServer,
-			"Request body not found in context. Ensure body reader middleware is applied.",
-			nil,
-		))
+// validateRequest is a helper function to validate request data
+func (m *ValidationMiddleware) validateRequest(c *gin.Context, data interface{}, contextKey string) bool {
+	if err := c.ShouldBindJSON(data); err != nil {
+		response := common.NewErrorResponse(common.ErrCodeBadRequest, "Invalid request data", err.Error())
+		c.JSON(http.StatusBadRequest, response)
 		c.Abort()
 		return false
 	}
 
-	// Use the raw body bytes
-	bodyBytes, ok := rawBody.([]byte)
-	if !ok {
-		c.JSON(http.StatusInternalServerError, common.NewErrorResponse(
-			common.ErrCodeInternalServer,
-			"Invalid body format in context",
-			nil,
-		))
+	if err := m.validator.Struct(data); err != nil {
+		response := common.NewErrorResponse(common.ErrCodeBadRequest, "Validation failed", err.Error())
+		c.JSON(http.StatusBadRequest, response)
 		c.Abort()
 		return false
 	}
 
-	// If body is empty and we need to validate a struct, return validation error
-	if len(bodyBytes) == 0 {
-		c.JSON(http.StatusBadRequest, common.NewErrorResponse(
-			common.ErrCodeValidation,
-			"Request body is empty",
-			nil,
-		))
-		c.Abort()
-		return false
-	}
-
-	// Unmarshal JSON
-	if err := json.Unmarshal(bodyBytes, obj); err != nil {
-		c.JSON(http.StatusBadRequest, common.NewErrorResponse(
-			common.ErrCodeValidation,
-			"Invalid JSON format",
-			err,
-		))
-		c.Abort()
-		return false
-	}
-
-	// Validate
-	if err := m.validator.Struct(obj); err != nil {
-		c.JSON(http.StatusBadRequest, common.NewErrorResponse(
-			common.ErrCodeValidation,
-			"Validation failed",
-			err,
-		))
-		c.Abort()
-		return false
-	}
-
-	// Set validated object in context
-	c.Set(contextKey, obj)
+	c.Set(contextKey, data)
 	return true
 }
 
@@ -103,48 +57,8 @@ func (m *ValidationMiddleware) ValidateLoginRequest() gin.HandlerFunc {
 // ValidateRegisterRequest validates registration request
 func (m *ValidationMiddleware) ValidateRegisterRequest() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var regReq auth.RegisterRequest
-		if m.validateRequest(c, &regReq, constants.ContextKeyRegister) {
-			c.Next()
-		}
-	}
-}
-
-// ValidateUpdateProfileRequest validates profile update request
-func (m *ValidationMiddleware) ValidateUpdateProfileRequest() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		var profileReq user.UpdateProfileRequest
-		if m.validateRequest(c, &profileReq, constants.ContextKeyUpdateProfile) {
-			c.Next()
-		}
-	}
-}
-
-// ValidateUpdateUserRequest validates user update request (admin)
-func (m *ValidationMiddleware) ValidateUpdateUserRequest() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		var userReq user.UpdateUserRequest
-		if m.validateRequest(c, &userReq, constants.ContextKeyUpdateUser) {
-			c.Next()
-		}
-	}
-}
-
-// ValidateCreateTunnelRequest validates tunnel creation request
-func (m *ValidationMiddleware) ValidateCreateTunnelRequest() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		var tunnelReq tunnel.CreateTunnelRequest
-		if m.validateRequest(c, &tunnelReq, constants.ContextKeyCreateTunnel) {
-			c.Next()
-		}
-	}
-}
-
-// ValidateUpdateTunnelRequest validates tunnel update request
-func (m *ValidationMiddleware) ValidateUpdateTunnelRequest() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		var tunnelReq tunnel.UpdateTunnelRequest
-		if m.validateRequest(c, &tunnelReq, constants.ContextKeyUpdateTunnel) {
+		var registerReq auth.RegisterRequest
+		if m.validateRequest(c, &registerReq, constants.ContextKeyRegister) {
 			c.Next()
 		}
 	}
@@ -155,6 +69,26 @@ func (m *ValidationMiddleware) ValidateVerifyTokenRequest() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var verifyReq auth.VerifyTokenRequest
 		if m.validateRequest(c, &verifyReq, constants.ContextKeyVerifyToken) {
+			c.Next()
+		}
+	}
+}
+
+// ValidateUpdateUserRequest validates user update request
+func (m *ValidationMiddleware) ValidateUpdateUserRequest() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var updateReq user.UpdateUserRequest
+		if m.validateRequest(c, &updateReq, constants.ContextKeyUpdateUser) {
+			c.Next()
+		}
+	}
+}
+
+// ValidateUpdateProfileRequest validates profile update request
+func (m *ValidationMiddleware) ValidateUpdateProfileRequest() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var profileReq user.UpdateProfileRequest
+		if m.validateRequest(c, &profileReq, constants.ContextKeyUpdateProfile) {
 			c.Next()
 		}
 	}

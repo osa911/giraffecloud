@@ -1,32 +1,28 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 
 	"giraffecloud/internal/api/dto/common"
+	"giraffecloud/internal/db/ent"
 	"giraffecloud/internal/utils"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 type HealthHandler struct {
-	db *gorm.DB
+	client *ent.Client
 }
 
-func NewHealthHandler(db *gorm.DB) *HealthHandler {
-	return &HealthHandler{db: db}
+func NewHealthHandler(client *ent.Client) *HealthHandler {
+	return &HealthHandler{client: client}
 }
 
 func (h *HealthHandler) Check(c *gin.Context) {
-	// Test DB connection
-	sqlDB, err := h.db.DB()
+	// Test DB connection by running a simple query
+	_, err := h.client.User.Query().Count(context.Background())
 	if err != nil {
-		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Database configuration error")
-		return
-	}
-
-	if err := sqlDB.Ping(); err != nil {
 		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Database connection error")
 		return
 	}

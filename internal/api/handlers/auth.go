@@ -3,6 +3,7 @@ package handlers
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"fmt"
 	"net/http"
 	"net/url"
 	"os"
@@ -14,19 +15,19 @@ import (
 	"giraffecloud/internal/api/dto/v1/auth"
 	"giraffecloud/internal/api/mapper"
 	"giraffecloud/internal/config/firebase"
-	"giraffecloud/internal/models"
+	"giraffecloud/internal/db/ent"
+	"giraffecloud/internal/repository"
 	"giraffecloud/internal/utils"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 type AuthHandler struct {
-	db *gorm.DB
+	authRepo repository.AuthRepository
 }
 
-func NewAuthHandler(db *gorm.DB) *AuthHandler {
-	return &AuthHandler{db: db}
+func NewAuthHandler(authRepo repository.AuthRepository) *AuthHandler {
+	return &AuthHandler{authRepo: authRepo}
 }
 
 // generateSecureToken creates a secure random token
@@ -127,11 +128,9 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	// Check if user exists in database with this Firebase UID
-	var user models.User
-	result := h.db.Where("firebase_uid = ?", decodedToken.UID).First(&user)
-
-	if result.Error != nil {
-		if result.Error == gorm.ErrRecordNotFound {
+	existingUser, err := h.authRepo.GetUserByFirebaseUID(c.Request.Context(), decodedToken.UID)
+	if err != nil {
+		if ent.IsNotFound(err) {
 			// User not found in our database, but authenticated with Firebase
 			// Create a new user with minimal data from Firebase
 			email := decodedToken.Claims["email"].(string)
@@ -140,43 +139,35 @@ func (h *AuthHandler) Login(c *gin.Context) {
 				name = fullName
 			}
 
-			// Create new user model
-			user = models.User{
-				FirebaseUID: decodedToken.UID,
-				Email:      email,
-				Name:       name,
-				Role:       models.RoleUser,
-				IsActive:   true,
-				LastLogin:  time.Now(),
-				LastLoginIP: utils.GetRealIP(c),
-			}
-
-			if err := h.db.Create(&user).Error; err != nil {
+			// Create new user
+			existingUser, err = h.authRepo.CreateUser(c.Request.Context(), decodedToken.UID, email, name, utils.GetRealIP(c))
+			if err != nil {
+				utils.LogError(err, "Failed to create user")
 				utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to create user")
 				return
 			}
 		} else {
-			utils.HandleAPIError(c, result.Error, http.StatusInternalServerError, common.ErrCodeInternalServer, "Database error")
+			utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Database error")
 			return
 		}
 	}
 
 	// Update last login info
-	user.LastLogin = time.Now()
-	user.LastLoginIP = utils.GetRealIP(c)
-	if err := h.db.Save(&user).Error; err != nil {
+	existingUser, err = h.authRepo.UpdateUserLastLogin(c.Request.Context(), existingUser, utils.GetRealIP(c))
+	if err != nil {
+		utils.LogError(err, "Failed to update user")
 		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to update user")
 		return
 	}
 
-	// Create a server-side session
+	// Generate device info
 	deviceName := "Unknown"
 	userAgent := c.GetHeader("User-Agent")
 	if userAgent != "" {
 		deviceName = userAgent
 	}
 
-	// Generate a unique device ID if not provided
+	// Generate a unique device ID
 	deviceID, err := generateSecureToken(32)
 	if err != nil {
 		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to generate session token")
@@ -190,59 +181,30 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	// Create and store the session in the database with longer expiration (server-side)
-	session := models.Session{
-		UserID:     user.ID,
-		Token:      sessionToken,
-		DeviceName: deviceName,
-		DeviceID:   deviceID,
-		LastUsed:   time.Now(),
-		ExpiresAt:  time.Now().Add(time.Hour * 24 * 30), // 30 days (server-side)
-		IsActive:   true,
-		IPAddress:  utils.GetRealIP(c),
-		UserAgent:  userAgent,
-	}
-
-	if err := h.db.Create(&session).Error; err != nil {
+	// Create and store the session
+	expiresAt := time.Now().Add(time.Hour * 24 * 30) // 30 days
+	session, err := h.authRepo.CreateSession(c.Request.Context(), existingUser.ID, sessionToken, deviceName, deviceID, expiresAt)
+	if err != nil {
 		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to create session")
 		return
 	}
 
-	// Create Firebase session cookie with shorter lifetime
-	// Use a shorter 24-hour expiration for client-side cookies to improve security
-	// The cookies will be refreshed automatically when users visit the site
-	expiresIn := time.Hour * 24 // 24 hours
-	sessionCookie, err := firebase.GetAuthClient().SessionCookie(c.Request.Context(), loginPtr.Token, expiresIn)
-	if err != nil {
-		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to create session cookie")
-		return
-	}
+	// Set cookie domain based on environment
+	cookieDomain := getCookieDomain()
 
-	// Set the session cookie - this will be used for authentication
-	// HttpOnly prevents JavaScript access, Secure ensures HTTPS-only
-	c.SetCookie(
-		constants.CookieSession,
-		sessionCookie,
-		constants.CookieDuration24h,
-		constants.CookiePathRoot,
-		getCookieDomain(),
-		true, // Secure - requires HTTPS (set to true in production)
-		true, // HttpOnly - prevents JavaScript access
-	)
-
-	// Set API token cookie - for our backend API
+	// Set the session cookie (client-side)
 	c.SetCookie(
 		constants.CookieAuthToken,
-		sessionToken,
-		constants.CookieDuration24h,
+		session.Token,
+		constants.CookieDuration30d, // 30 days
 		constants.CookiePathAPI,
-		getCookieDomain(),
-		true,
-		true,
+		cookieDomain,
+		true,  // Secure
+		true,  // HttpOnly
 	)
 
-	// Return response using mapper and proper DTO format
-	userResponse := mapper.UserToAuthUserResponse(&user)
+	// Return user data and session info
+	userResponse := mapper.UserToUserResponse(existingUser)
 	c.JSON(http.StatusOK, common.NewSuccessResponse(auth.LoginResponse{
 		User: *userResponse,
 	}))
@@ -264,41 +226,38 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 
 	// Check if user exists with the same Firebase UID
-	var existingFirebaseUser models.User
-	if err := h.db.Where("firebase_uid = ?", registerPtr.FirebaseUID).First(&existingFirebaseUser).Error; err == nil {
-		// Return the existing user using mapper with proper DTO format
-		userResponse := mapper.UserToAuthUserResponse(&existingFirebaseUser)
+	existingUser, err := h.authRepo.GetUserByFirebaseUID(c.Request.Context(), registerPtr.Token)
+	if err == nil {
+		// User exists, return the existing user
+		userResponse := mapper.UserToUserResponse(existingUser)
 		c.JSON(http.StatusOK, common.NewSuccessResponse(auth.RegisterResponse{
 			User: *userResponse,
 		}))
 		return
-	}
-
-	// Check if user exists in our database with the same email
-	var existingUser models.User
-	if err := h.db.Where("email = ?", registerPtr.Email).First(&existingUser).Error; err == nil {
-		utils.HandleAPIError(c, nil, http.StatusConflict, common.ErrCodeConflict, "Wrong credentials")
+	} else if !ent.IsNotFound(err) {
+		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Database error")
 		return
 	}
 
-	// Create user in database
-	user := models.User{
-		FirebaseUID: registerPtr.FirebaseUID,
-		Email:       registerPtr.Email,
-		Name:        registerPtr.Name,
-		Role:        models.RoleUser,
-		IsActive:    true,
-		LastLogin:   time.Now(),
-		LastLoginIP: utils.GetRealIP(c),
+	// Check if user exists with the same email
+	existingUser, err = h.authRepo.GetUserByEmail(c.Request.Context(), registerPtr.Email)
+	if err == nil {
+		utils.HandleAPIError(c, nil, http.StatusConflict, common.ErrCodeConflict, "Wrong credentials")
+		return
+	} else if !ent.IsNotFound(err) {
+		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Database error")
+		return
 	}
 
-	if err := h.db.Create(&user).Error; err != nil {
+	// Create new user
+	newUser, err := h.authRepo.CreateUser(c.Request.Context(), registerPtr.Token, registerPtr.Email, registerPtr.Name, utils.GetRealIP(c))
+	if err != nil {
 		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to create user")
 		return
 	}
 
 	// Return response using mapper with proper DTO format
-	userResponse := mapper.UserToAuthUserResponse(&user)
+	userResponse := mapper.UserToUserResponse(newUser)
 	c.JSON(http.StatusCreated, common.NewSuccessResponse(auth.RegisterResponse{
 		User: *userResponse,
 	}))
@@ -313,10 +272,11 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	sessionCookie, err := c.Cookie(constants.CookieAuthToken)
 	if err == nil && sessionCookie != "" {
 		// Invalidate the session in the database
-		var session models.Session
-		if err := h.db.Where("token = ?", sessionCookie).First(&session).Error; err == nil {
-			session.IsActive = false
-			h.db.Save(&session)
+		err := h.authRepo.InvalidateSession(c.Request.Context(), sessionCookie)
+		if err != nil {
+			utils.LogError(err, "Failed to invalidate session")
+			utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to invalidate session")
+			return
 		}
 	}
 
@@ -324,7 +284,6 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	c.JSON(http.StatusOK, common.NewMessageResponse("Logged out successfully"))
 }
 
-// GetSession checks if the user has a valid session
 func (h *AuthHandler) GetSession(c *gin.Context) {
 	// Check for session cookie first
 	sessionCookie, err := c.Cookie(constants.CookieSession)
@@ -333,21 +292,19 @@ func (h *AuthHandler) GetSession(c *gin.Context) {
 		token, err := firebase.GetAuthClient().VerifySessionCookieAndCheckRevoked(c.Request.Context(), sessionCookie)
 		if err == nil {
 			// Session cookie is valid
-			var user models.User
-			if err := h.db.Where("firebase_uid = ?", token.UID).First(&user).Error; err == nil {
-				// Update user's last_activity field
-				h.db.Model(&user).Updates(map[string]interface{}{
-					"last_activity": time.Now(),
-				})
-
-				// Auto-refresh the cookie if it's going to expire soon (within 12 hours)
-				// This requires checking the cookie expiration time
-				// Since we can't directly check cookie expiration, we'll refresh auth_token
-				// which will provide a fallback authentication method
+			existingUser, err := h.authRepo.GetUserByFirebaseUID(c.Request.Context(), token.UID)
+			if err == nil {
+				// Update user's last activity
+				existingUser, err = h.authRepo.UpdateUserLastActivity(c.Request.Context(), existingUser)
+				if err != nil {
+					utils.LogError(err, "Failed to update user's last activity")
+					utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to update user's last activity")
+					return
+				}
 
 				// Return session response using proper DTO format
-				userResponse := mapper.UserToAuthUserResponse(&user)
-				c.JSON(http.StatusOK, common.NewSuccessResponse(auth.SessionResponse{
+				userResponse := mapper.UserToUserResponse(existingUser)
+				c.JSON(http.StatusOK, common.NewSuccessResponse(auth.SessionValidationResponse{
 					Valid: true,
 					User:  userResponse,
 				}))
@@ -359,16 +316,17 @@ func (h *AuthHandler) GetSession(c *gin.Context) {
 	// Check auth_token cookie as fallback
 	authToken, err := c.Cookie(constants.CookieAuthToken)
 	if err == nil && authToken != "" {
-		var session models.Session
-		if err := h.db.Where("token = ? AND is_active = ? AND expires_at > ?",
-			authToken, true, time.Now()).First(&session).Error; err == nil {
-
+		existingSession, err := h.authRepo.GetActiveSessionByToken(c.Request.Context(), authToken)
+		if err == nil {
 			// Update session last used
-			session.LastUsed = time.Now()
-			h.db.Save(&session)
+			existingSession, err = h.authRepo.UpdateSessionLastUsed(c.Request.Context(), existingSession, nil)
+			if err != nil {
+				utils.LogError(err, "Failed to update session's last used time")
+				utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to update session's last used time")
+				return
+			}
 
 			// Refresh the cookie with reset expiration
-			// This extends the client-side cookie lifetime
 			c.SetCookie(
 				constants.CookieAuthToken,
 				authToken,
@@ -380,11 +338,11 @@ func (h *AuthHandler) GetSession(c *gin.Context) {
 			)
 
 			// Fetch user
-			var user models.User
-			if err := h.db.First(&user, session.UserID).Error; err == nil {
+			owner, err := h.authRepo.GetSessionOwner(c.Request.Context(), existingSession)
+			if err == nil {
 				// Return session response using proper DTO format
-				userResponse := mapper.UserToAuthUserResponse(&user)
-				c.JSON(http.StatusOK, common.NewSuccessResponse(auth.SessionResponse{
+				userResponse := mapper.UserToUserResponse(owner)
+				c.JSON(http.StatusOK, common.NewSuccessResponse(auth.SessionValidationResponse{
 					Valid: true,
 					User:  userResponse,
 				}))
@@ -394,15 +352,14 @@ func (h *AuthHandler) GetSession(c *gin.Context) {
 	}
 
 	// If we get here, no valid session was found
-	c.JSON(http.StatusOK, common.NewSuccessResponse(auth.SessionResponse{
+	c.JSON(http.StatusOK, common.NewSuccessResponse(auth.SessionValidationResponse{
 		Valid: false,
 	}))
 }
 
-// RefreshSession extends the session lifetime by refreshing cookies
 func (h *AuthHandler) RefreshSession(c *gin.Context) {
-	var user models.User
 	var authenticated bool
+	var existingUser *ent.User
 
 	// Check for session cookie first
 	sessionCookie, err := c.Cookie(constants.CookieSession)
@@ -411,57 +368,66 @@ func (h *AuthHandler) RefreshSession(c *gin.Context) {
 		decodedToken, err := firebase.GetAuthClient().VerifySessionCookieAndCheckRevoked(c.Request.Context(), sessionCookie)
 		if err == nil {
 			// Get the user from Firebase UID
-			if err := h.db.Where("firebase_uid = ?", decodedToken.UID).First(&user).Error; err == nil {
+			existingUser, err = h.authRepo.GetUserByFirebaseUID(c.Request.Context(), decodedToken.UID)
+			if err == nil {
 				authenticated = true
-
-				// Extend the session cookie if it will expire soon
-				// This is now handled by the client using onIdTokenChanged
 			}
 		}
 	}
 
 	// Check auth_token cookie as fallback
-	authToken, err := c.Cookie(constants.CookieAuthToken)
-	if err == nil && authToken != "" {
-		var session models.Session
-		if err := h.db.Where("token = ? AND is_active = ? AND expires_at > ?",
-			authToken, true, time.Now()).First(&session).Error; err == nil {
+	if !authenticated {
+		authToken, err := c.Cookie(constants.CookieAuthToken)
+		if err == nil && authToken != "" {
+			existingSession, err := h.authRepo.GetActiveSessionByToken(c.Request.Context(), authToken)
+			if err == nil {
+				// Update session last used & extend expiration time
+				newExpiration := time.Now().Add(time.Hour * 24 * 30) // Reset to full 30 days
+				existingSession, err = h.authRepo.UpdateSessionLastUsed(c.Request.Context(), existingSession, &newExpiration)
+				if err != nil {
+					utils.LogError(err, "Failed to update session")
+					utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to update session")
+					return
+				}
 
-			// Update session last used & extend expiration time
-			session.LastUsed = time.Now()
-			session.ExpiresAt = time.Now().Add(time.Hour * 24 * 30) // Reset to full 30 days
-			h.db.Save(&session)
+				// Refresh the auth_token cookie
+				c.SetCookie(
+					constants.CookieAuthToken,
+					authToken,
+					constants.CookieDuration24h,
+					constants.CookiePathAPI,
+					getCookieDomain(),
+					true,
+					true,
+				)
 
-			// Refresh the auth_token cookie
-			c.SetCookie(
-				constants.CookieAuthToken,
-				authToken,
-				constants.CookieDuration24h,
-				constants.CookiePathAPI,
-				getCookieDomain(),
-				true,
-				true,
-			)
-
-			if !authenticated {
-				// Get the user if we haven't already
-				if err := h.db.First(&user, session.UserID).Error; err == nil {
-					authenticated = true
+				if !authenticated {
+					// Get the user if we haven't already
+					owner, err := h.authRepo.GetSessionOwner(c.Request.Context(), existingSession)
+					if err == nil {
+						existingUser = owner
+						authenticated = true
+					}
 				}
 			}
 		}
 	}
 
-	if authenticated {
-		// The client will handle ID token refreshing via Firebase SDK
-		// and call verify-token when needed
+	if authenticated && existingUser != nil {
+		// Update last activity
+		existingUser, err = h.authRepo.UpdateUserLastActivity(c.Request.Context(), existingUser)
+		if err != nil {
+			utils.LogError(err, "Failed to update user's last activity")
+			utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to update user's last activity")
+			return
+		}
+
 		c.JSON(http.StatusOK, common.NewMessageResponse("Session valid"))
 	} else {
 		c.JSON(http.StatusUnauthorized, common.NewErrorResponse(common.ErrCodeUnauthorized, "No valid session found", nil))
 	}
 }
 
-// VerifyToken handles verification of a Firebase ID token and creates a new session cookie
 func (h *AuthHandler) VerifyToken(c *gin.Context) {
 	// Get ID token from context (set by validation middleware)
 	verifyData, exists := c.Get(constants.ContextKeyVerifyToken)
@@ -473,6 +439,7 @@ func (h *AuthHandler) VerifyToken(c *gin.Context) {
 	// Extract token data
 	verifyReq, ok := verifyData.(*auth.VerifyTokenRequest)
 	if !ok {
+		utils.LogError(fmt.Errorf("invalid verification data type: %T", verifyData), "Invalid verification data format")
 		utils.HandleAPIError(c, nil, http.StatusInternalServerError, common.ErrCodeInternalServer, "Invalid verification data format")
 		return
 	}
@@ -480,6 +447,7 @@ func (h *AuthHandler) VerifyToken(c *gin.Context) {
 	// Verify the ID token
 	decodedToken, err := firebase.GetAuthClient().VerifyIDToken(c.Request.Context(), verifyReq.IDToken)
 	if err != nil {
+		utils.LogError(err, "Failed to verify Firebase ID token")
 		utils.HandleAPIError(c, err, http.StatusUnauthorized, common.ErrCodeUnauthorized, "Invalid ID token")
 		return
 	}
@@ -504,20 +472,24 @@ func (h *AuthHandler) VerifyToken(c *gin.Context) {
 	)
 
 	// Look up user to include in response
-	var user models.User
-	if err := h.db.Where("firebase_uid = ?", decodedToken.UID).First(&user).Error; err != nil {
+	existingUser, err := h.authRepo.GetUserByFirebaseUID(c.Request.Context(), decodedToken.UID)
+	if err != nil {
 		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to find user")
 		return
 	}
 
 	// Update last activity
-	user.LastActivity = time.Now()
-	h.db.Save(&user)
+	existingUser, err = h.authRepo.UpdateUserLastActivity(c.Request.Context(), existingUser)
+	if err != nil {
+		utils.LogError(err, "Failed to update user's last activity")
+		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to update user's last activity")
+		return
+	}
 
 	// Return success response
-	userResponse := mapper.UserToAuthUserResponse(&user)
+	userResponse := mapper.UserToUserResponse(existingUser)
 	c.JSON(http.StatusOK, common.NewSuccessResponse(gin.H{
 		"message": "Session refreshed successfully",
-		"user": userResponse,
+		"user":    userResponse,
 	}))
 }

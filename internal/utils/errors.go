@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"giraffecloud/internal/api/dto/common"
+	"giraffecloud/internal/db/ent"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 // ANSI color codes for terminal output
@@ -22,11 +22,24 @@ const (
 	reset   = "\033[0m"
 )
 
+// LogError logs an error with a message if logging is enabled
+func LogError(err error, message string) {
+	if os.Getenv("LOG_REQUESTS") == "true" {
+		errorLog := fmt.Sprintf(
+			"[GFC-API-ERROR] %s | %s: %s\n",
+			time.Now().Format("2006/01/02 - 15:04:05"),
+			message,
+			err.Error(),
+		)
+		fmt.Print(errorLog)
+	}
+}
+
 // HandleAPIError is a utility function for consistent error handling across the API
 // It handles common error types and ensures sensitive error details are only exposed in non-production environments
 func HandleAPIError(c *gin.Context, err error, defaultStatus int, defaultCode common.ErrorCode, defaultMessage string) {
 	// For record not found errors, return 404
-	if err == gorm.ErrRecordNotFound {
+	if ent.IsNotFound(err) {
 		c.JSON(404, common.NewErrorResponse(common.ErrCodeNotFound, "Resource not found", nil))
 		return
 	}

@@ -7,6 +7,7 @@ import (
 	"giraffecloud/internal/api/handlers"
 	"giraffecloud/internal/api/middleware"
 	"giraffecloud/internal/db"
+	"giraffecloud/internal/repository"
 
 	"github.com/gin-gonic/gin"
 )
@@ -51,14 +52,20 @@ func (s *Server) Start() error {
 		Burst: 20, // Allow bursts of up to 20 requests
 	}
 
+	// Create repositories
+	userRepo := repository.NewUserRepository(s.db.DB)
+	authRepo := repository.NewAuthRepository(s.db.DB)
+	sessionRepo := repository.NewSessionRepository(s.db.DB)
+
 	// Create validation middleware
 	validationMiddleware := middleware.NewValidationMiddleware()
 	authMiddleware := middleware.NewAuthMiddleware()
 
 	// Create handlers
-	authHandler := handlers.NewAuthHandler(s.db.DB)
-	userHandler := handlers.NewUserHandler(s.db.DB)
+	authHandler := handlers.NewAuthHandler(authRepo)
+	userHandler := handlers.NewUserHandler(userRepo)
 	healthHandler := handlers.NewHealthHandler(s.db.DB)
+	sessionHandler := handlers.NewSessionHandler(sessionRepo)
 
 	// Add global middleware
 	s.router.Use(middleware.CORS())
@@ -83,34 +90,20 @@ func (s *Server) Start() error {
 	// Protected routes
 	protected := s.router.Group("/api/v1")
 	protected.Use(authMiddleware.RequireAuth())
-	{
-		// User routes with validation
-		protected.GET("/user/profile", userHandler.GetProfile)
-		protected.PUT("/user/profile", validationMiddleware.ValidateUpdateProfileRequest(), userHandler.UpdateProfile)
-		protected.DELETE("/user/profile", userHandler.DeleteProfile)
 
-		// Create tunnel handler
-		tunnelHandler := handlers.NewTunnelHandler(s.db.DB)
+	// User routes
+	protected.GET("/users", userHandler.ListUsers)
+	protected.GET("/users/:id", userHandler.GetUser)
+	protected.PUT("/users/:id", validationMiddleware.ValidateUpdateUserRequest(), userHandler.UpdateUser)
+	protected.DELETE("/users/:id", userHandler.DeleteUser)
+	protected.GET("/user/profile", userHandler.GetProfile)
+	protected.PUT("/user/profile", validationMiddleware.ValidateUpdateProfileRequest(), userHandler.UpdateProfile)
+	protected.DELETE("/user/profile", userHandler.DeleteProfile)
 
-		// Tunnel routes with validation
-		protected.GET("/tunnels", tunnelHandler.GetTunnels)
-		protected.POST("/tunnels", validationMiddleware.ValidateCreateTunnelRequest(), tunnelHandler.CreateTunnel)
-		protected.GET("/tunnels/:id", tunnelHandler.GetTunnel)
-		protected.PUT("/tunnels/:id", validationMiddleware.ValidateUpdateTunnelRequest(), tunnelHandler.UpdateTunnel)
-		protected.DELETE("/tunnels/:id", tunnelHandler.DeleteTunnel)
-		protected.POST("/tunnels/:id/start", tunnelHandler.StartTunnel)
-		protected.POST("/tunnels/:id/stop", tunnelHandler.StopTunnel)
-
-		// Admin routes
-		admin := protected.Group("/admin")
-		admin.Use(authMiddleware.RequireAdmin())
-		{
-			admin.GET("/users", userHandler.ListUsers)
-			admin.GET("/users/:id", userHandler.GetUser)
-			admin.PUT("/users/:id", validationMiddleware.ValidateUpdateUserRequest(), userHandler.UpdateUser)
-			admin.DELETE("/users/:id", userHandler.DeleteUser)
-		}
-	}
+	// Session routes
+	protected.GET("/sessions", sessionHandler.GetSessions)
+	protected.DELETE("/sessions/:id", sessionHandler.RevokeSession)
+	protected.DELETE("/sessions", sessionHandler.RevokeAllSessions)
 
 	return s.router.Run(":" + port)
 }
