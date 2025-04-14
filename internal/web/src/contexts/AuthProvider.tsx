@@ -17,28 +17,21 @@ import {
   signInWithPopup,
   AuthError,
 } from "firebase/auth";
-import clientApi from "@/services/api/clientApiClient";
 import { auth as firebaseAuth } from "@/services/firebaseService";
-import { handleTokenChanged } from "@/services/authClientService";
+import { handleTokenChanged } from "@/lib/actions/auth.actions";
+import { UserResponse } from "@/lib/actions/user.types";
 import {
-  handleLogout,
+  logout,
   loginWithTokenAction,
-  LoginWithTokenFormState,
-  RegisterFormState,
   registerWithEmailAction,
-} from "@/lib/actions";
-
-export type User = {
-  id: number;
-  email: string;
-  name: string;
-  role: "user" | "admin";
-  isActive: boolean;
-};
+} from "@/lib/actions/auth.actions";
+import {
+  LoginWithTokenFormState,
+  RegisterRequest,
+} from "@/lib/actions/auth.types";
 
 type AuthContextType = {
-  user: User | null;
-  loading: boolean;
+  user: UserResponse | null;
   signUp: (email: string, password: string, name: string) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
@@ -57,20 +50,20 @@ export const useAuth = () => {
 
 type AuthProviderProps = {
   children: React.ReactNode;
-  initialUser: User | null;
+  initialUser: UserResponse | null;
 };
 
-export function AuthProvider({ children, initialUser }: AuthProviderProps) {
-  const [user, setUser] = useState<User | null>(initialUser);
-  const [isPending, startTransition] = useTransition();
-  const [loginState, loginWithToken, isLoginLoading] = useActionState<
-    undefined,
-    LoginWithTokenFormState
-  >(loginWithTokenAction, undefined);
-  const [registerState, registerWithEmail, isRegisterLoading] = useActionState<
-    undefined,
-    RegisterFormState
-  >(registerWithEmailAction, undefined);
+export const AuthProvider = ({ children, initialUser }: AuthProviderProps) => {
+  const [user, setUser] = useState<UserResponse | null>(initialUser);
+  const [, startTransition] = useTransition();
+  const [, loginWithToken] = useActionState<undefined, LoginWithTokenFormState>(
+    loginWithTokenAction,
+    undefined
+  );
+  const [, registerWithEmail] = useActionState<undefined, RegisterRequest>(
+    registerWithEmailAction,
+    undefined
+  );
   /**
    * Handle refresh token changes
    */
@@ -84,7 +77,29 @@ export function AuthProvider({ children, initialUser }: AuthProviderProps) {
     return () => unsubscribe();
   }, []);
 
-  // Helper function to login with token
+  const signUp = async (email: string, password: string, name: string) => {
+    try {
+      const userCredential = await createUserWithEmailAndPassword(
+        firebaseAuth,
+        email,
+        password
+      );
+
+      const registerData: RegisterRequest = {
+        email,
+        name,
+        token: userCredential.user.uid,
+      };
+
+      startTransition(() => {
+        void registerWithEmail(registerData);
+      });
+    } catch (error: any) {
+      console.error("Error signing up:", error);
+      throw error;
+    }
+  };
+
   const handleLoginWithToken = async (token: string): Promise<void> => {
     try {
       startTransition(() => {
@@ -93,31 +108,6 @@ export function AuthProvider({ children, initialUser }: AuthProviderProps) {
     } catch (error) {
       console.error("Error during login:", error);
       setUser(null);
-      throw error;
-    }
-  };
-
-  const signUp = async (email: string, password: string, name: string) => {
-    try {
-      // Create user in Firebase
-      const userCredential = await createUserWithEmailAndPassword(
-        firebaseAuth,
-        email,
-        password
-      );
-
-      // Create user in backend
-      const registerData: RegisterFormState = {
-        email,
-        name,
-        firebase_uid: userCredential.user.uid,
-      };
-
-      startTransition(() => {
-        void registerWithEmail(registerData);
-      });
-    } catch (error: any) {
-      console.error("Error signing up:", error);
       throw error;
     }
   };
@@ -131,8 +121,6 @@ export function AuthProvider({ children, initialUser }: AuthProviderProps) {
       );
 
       const idToken = await userCredential.user.getIdToken();
-
-      // Login to sync with backend
       await handleLoginWithToken(idToken);
     } catch (error) {
       console.error("Error signing in:", error);
@@ -145,8 +133,6 @@ export function AuthProvider({ children, initialUser }: AuthProviderProps) {
     try {
       const userCredential = await signInWithPopup(firebaseAuth, provider);
       const idToken = await userCredential.user.getIdToken();
-
-      // Login to sync with backend
       await handleLoginWithToken(idToken);
     } catch (error) {
       const authError = error as AuthError;
@@ -162,22 +148,10 @@ export function AuthProvider({ children, initialUser }: AuthProviderProps) {
     }
   };
 
-  const logout = async () => {
+  const handleLogout = async () => {
     try {
-      // First, try to notify the backend about logout
-      try {
-        // TODO: migrate to server action
-        await clientApi().post("/auth/logout");
-      } catch (error) {
-        console.error("Error notifying backend of logout:", error);
-        // Continue with logout even if backend notification fails
-      }
-
-      // Clear cookie via server action
-      await handleLogout();
-
-      // Then sign out from Firebase
       await signOut(firebaseAuth);
+      await logout();
       setUser(null);
     } catch (error) {
       console.error("Error signing out:", error);
@@ -189,14 +163,13 @@ export function AuthProvider({ children, initialUser }: AuthProviderProps) {
     <AuthContext.Provider
       value={{
         user,
-        loading: isLoginLoading || isRegisterLoading,
         signUp,
         signIn,
         signInWithGoogle,
-        logout,
+        logout: handleLogout,
       }}
     >
       {children}
     </AuthContext.Provider>
   );
-}
+};

@@ -15,13 +15,11 @@ interface DashboardStats {
   totalTraffic: number;
 }
 
-interface DashboardClientProps {
+interface DashboardPageProps {
   initialStats: DashboardStats;
 }
 
-export default function DashboardClient({
-  initialStats,
-}: DashboardClientProps) {
+export default function DashboardPage({ initialStats }: DashboardPageProps) {
   return (
     <Box>
       <Typography variant="h4" gutterBottom>

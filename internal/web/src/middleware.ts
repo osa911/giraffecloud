@@ -5,25 +5,20 @@ export function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;
 
   // Public paths that don't require authentication
-  const isPublicPath =
-    path === "/" || path === "/auth/login" || path === "/auth/register";
+  const isAuthPath = path === "/auth/login" || path === "/auth/register";
+  const isPublicPath = path === "/" || isAuthPath;
 
   // Check for your existing session cookies
   const sessionCookie = request.cookies.get("session")?.value;
   const authToken = request.cookies.get("auth_token")?.value;
   const hasAuthCookies = !!sessionCookie || !!authToken;
 
-  console.log("hasAuthCookies", hasAuthCookies);
-  console.log("isPublicPath", isPublicPath);
-  console.log("path", path);
-  console.log("sessionCookie", sessionCookie);
-  console.log("authToken", authToken);
   // Redirect logic
   if (!hasAuthCookies && !isPublicPath) {
     return NextResponse.redirect(new URL("/auth/login", request.url));
   }
 
-  if (hasAuthCookies && isPublicPath && path !== "/") {
+  if (hasAuthCookies && isAuthPath) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 

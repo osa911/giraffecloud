@@ -1,7 +1,7 @@
-import Link from "next/link";
+import Link from "@/components/common/Link";
 import { Button, Container, Typography, Box } from "@mui/material";
 
-export default function Home() {
+export default function HomeServerPage() {
   return (
     <main>
       <Container maxWidth="lg">
@@ -28,12 +28,12 @@ export default function Home() {
             Secure and efficient reverse tunnel service
           </Typography>
           <Box sx={{ mt: 4 }}>
-            <Link href="/auth/register" passHref>
+            <Link href="/auth/register">
               <Button variant="contained" size="large" sx={{ mr: 2 }}>
                 Get Started
               </Button>
             </Link>
-            <Link href="/auth/login" passHref>
+            <Link href="/auth/login">
               <Button variant="outlined" size="large">
                 Login
               </Button>

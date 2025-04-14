@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 import axios from "axios";
 import baseApiClient, {
   BaseApiClientParams,
-} from "@/services/api/baseApiClient";
+} from "@/services/apiClient/baseApiClient";
 
 const serverAxios = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080",

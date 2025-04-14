@@ -13,7 +13,7 @@ import {
 import Link from "@/components/common/Link";
 import { useAuth } from "@/contexts/AuthProvider";
 
-export default function LoginForm() {
+export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);

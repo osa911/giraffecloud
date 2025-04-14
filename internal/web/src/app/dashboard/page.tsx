@@ -1,12 +1,12 @@
-import { requireAuth } from "@/services/authServerService";
-import Dashboard from "@/components/dashboard/Dashboard";
+import { getAuthUser } from "@/lib/actions/auth.actions";
+import DashboardPage from "@/components/dashboard/DashboardPage";
 
 // Server component
-export default async function DashboardPage() {
-  const user = await requireAuth();
+export default async function DashboardServerPage() {
+  const user = await getAuthUser();
   const stats = await fetchDashboardStats(user.id);
 
-  return <Dashboard initialStats={stats} />;
+  return <DashboardPage initialStats={stats} />;
 }
 
 // Server-side data fetching function

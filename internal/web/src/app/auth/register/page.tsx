@@ -1,6 +1,6 @@
-import RegisterForm from "@/components/auth/register/RegisterForm";
+import RegisterPage from "@/components/auth/register/RegisterPage";
 
 // Server component
-export default function RegisterPage() {
-  return <RegisterForm />;
+export default function RegisterServerPage() {
+  return <RegisterPage />;
 }

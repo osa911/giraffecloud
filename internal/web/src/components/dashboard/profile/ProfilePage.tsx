@@ -10,14 +10,14 @@ import {
   Grid,
   Avatar,
 } from "@mui/material";
-import { User } from "@/contexts/AuthProvider";
-import { updateProfileAction } from "@/lib/actions";
+import { updateProfileAction } from "@/lib/actions/user.actions";
+import { UserResponse } from "@/lib/actions/user.types";
 
-interface ProfileFormProps {
-  initialUser: User;
+interface ProfilePageProps {
+  initialUser: UserResponse;
 }
 
-export default function ProfileForm({ initialUser }: ProfileFormProps) {
+export default function ProfilePage({ initialUser }: ProfilePageProps) {
   const [state, action, loading] = useActionState(updateProfileAction, {
     name: initialUser.name,
   });

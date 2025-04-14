@@ -1,9 +1,7 @@
-import { requireAuth } from "@/services/authServerService";
-import ProfileForm from "@/components/dashboard/profile/ProfileForm";
+import { getAuthUser } from "@/lib/actions/auth.actions";
+import ProfilePage from "@/components/dashboard/profile/ProfilePage";
 
-export default async function ProfilePage() {
-  // Get authenticated user (already checked by dashboard layout, but good to be explicit)
-  const user = await requireAuth();
-
-  return <ProfileForm initialUser={user} />;
+export default async function ProfileServerPage() {
+  const user = await getAuthUser();
+  return <ProfilePage initialUser={user} />;
 }

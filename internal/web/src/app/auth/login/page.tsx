@@ -1,6 +1,6 @@
-import LoginForm from "@/components/auth/login/LoginForm";
+import LoginPage from "@/components/auth/login/LoginPage";
 
 // Server component
-export default function LoginPage() {
-  return <LoginForm />;
+export default function LoginServerPage() {
+  return <LoginPage />;
 }

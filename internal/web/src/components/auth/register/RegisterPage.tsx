@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import {
   Container,
   Box,
@@ -14,14 +13,13 @@ import {
 import Link from "@/components/common/Link";
 import { useAuth } from "@/contexts/AuthProvider";
 
-export default function RegisterForm() {
+export default function RegisterPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const { signUp, signInWithGoogle } = useAuth();
-  const router = useRouter();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,8 +27,6 @@ export default function RegisterForm() {
     setError("");
     try {
       await signUp(email, password, name);
-      router.push("/dashboard");
-      router.refresh(); // Refresh to update server components
     } catch (error) {
       setError("Failed to create an account.");
     } finally {
@@ -43,8 +39,6 @@ export default function RegisterForm() {
     setError("");
     try {
       await signInWithGoogle();
-      router.push("/dashboard");
-      router.refresh(); // Refresh to update server components
     } catch (error) {
       setError("Failed to sign up with Google.");
     } finally {

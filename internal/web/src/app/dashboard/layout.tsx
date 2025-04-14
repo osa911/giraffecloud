@@ -1,15 +1,14 @@
-import { requireAuth } from "@/services/authServerService";
-import DashboardLayoutClient from "@/components/dashboard/DashboardLayout";
+import { getAuthUser } from "@/lib/actions/auth.actions";
+import DashboardLayout from "@/components/dashboard/DashboardLayout";
 
-type DashboardLayoutProps = {
+type DashboardServerLayoutProps = {
   children: React.ReactNode;
 };
 
 // Server component
-async function DashboardLayout({ children }: DashboardLayoutProps) {
-  const user = await requireAuth();
-
-  return <DashboardLayoutClient user={user}>{children}</DashboardLayoutClient>;
+async function DashboardServerLayout({ children }: DashboardServerLayoutProps) {
+  const user = await getAuthUser();
+  return <DashboardLayout user={user}>{children}</DashboardLayout>;
 }
 
-export default DashboardLayout;
+export default DashboardServerLayout;

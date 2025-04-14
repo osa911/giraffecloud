@@ -25,7 +25,7 @@ import {
 } from "@mui/icons-material";
 import { useAuth } from "@/contexts/AuthProvider";
 import Link from "@/components/common/Link";
-import type { User } from "@/contexts/AuthProvider";
+import { UserResponse } from "@/lib/actions/user.types";
 // import Image from "next/image";
 const drawerWidth = 240;
 
@@ -36,7 +36,7 @@ const menuItems = [
 
 interface DashboardLayoutClientProps {
   children: React.ReactNode;
-  user: User;
+  user: UserResponse;
 }
 
 export default function DashboardLayoutClient({
@@ -58,12 +58,6 @@ export default function DashboardLayoutClient({
 
   const handleMenuClose = () => {
     setAnchorEl(null);
-  };
-
-  const handleLogout = async () => {
-    await logout();
-    router.push("/auth/login");
-    router.refresh(); // Refresh to update server components
   };
 
   const drawer = (
@@ -133,7 +127,7 @@ export default function DashboardLayoutClient({
             <MenuItem onClick={() => router.push("/dashboard/profile")}>
               Profile
             </MenuItem>
-            <MenuItem onClick={handleLogout}>Logout</MenuItem>
+            <MenuItem onClick={logout}>Logout</MenuItem>
           </Menu>
         </Toolbar>
       </AppBar>

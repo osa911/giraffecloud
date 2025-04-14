@@ -7,7 +7,7 @@ import { ThemeProvider } from "@mui/material/styles";
 import CssBaseline from "@mui/material/CssBaseline";
 import theme from "@/styles/theme";
 import { Toaster } from "react-hot-toast";
-import { getServerSession } from "@/services/authServerService";
+import { getAuthUser } from "@/lib/actions/auth.actions";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 
@@ -23,12 +23,14 @@ export const metadata: Metadata = {
   description: "Secure tunnel service for your applications",
 };
 
-type RootLayoutProps = {
+type RootServerLayoutProps = {
   children: React.ReactNode;
 };
 
-export default async function RootLayout({ children }: RootLayoutProps) {
-  const initialUser = await getServerSession();
+export default async function RootServerLayout({
+  children,
+}: RootServerLayoutProps) {
+  const initialUser = await getAuthUser({ redirect: false });
 
   return (
     <html lang="en" className={inter.className}>
