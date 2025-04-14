@@ -145,20 +145,6 @@ func (uc *UserCreate) SetNillableLastActivity(t *time.Time) *UserCreate {
 	return uc
 }
 
-// SetOsaCol sets the "osa_col" field.
-func (uc *UserCreate) SetOsaCol(s string) *UserCreate {
-	uc.mutation.SetOsaCol(s)
-	return uc
-}
-
-// SetNillableOsaCol sets the "osa_col" field if the given value is not nil.
-func (uc *UserCreate) SetNillableOsaCol(s *string) *UserCreate {
-	if s != nil {
-		uc.SetOsaCol(*s)
-	}
-	return uc
-}
-
 // SetID sets the "id" field.
 func (uc *UserCreate) SetID(u uint32) *UserCreate {
 	uc.mutation.SetID(u)
@@ -234,10 +220,6 @@ func (uc *UserCreate) defaults() {
 	if _, ok := uc.mutation.IsActive(); !ok {
 		v := user.DefaultIsActive
 		uc.mutation.SetIsActive(v)
-	}
-	if _, ok := uc.mutation.OsaCol(); !ok {
-		v := user.DefaultOsaCol
-		uc.mutation.SetOsaCol(v)
 	}
 }
 
@@ -332,10 +314,6 @@ func (uc *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 	if value, ok := uc.mutation.LastActivity(); ok {
 		_spec.SetField(user.FieldLastActivity, field.TypeTime, value)
 		_node.LastActivity = &value
-	}
-	if value, ok := uc.mutation.OsaCol(); ok {
-		_spec.SetField(user.FieldOsaCol, field.TypeString, value)
-		_node.OsaCol = value
 	}
 	if nodes := uc.mutation.SessionsIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{

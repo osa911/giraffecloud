@@ -37,8 +37,6 @@ type User struct {
 	LastLoginIP *string `json:"last_login_ip,omitempty"`
 	// LastActivity holds the value of the "last_activity" field.
 	LastActivity *time.Time `json:"last_activity,omitempty"`
-	// OsaCol holds the value of the "osa_col" field.
-	OsaCol string `json:"osa_col,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the UserQuery when eager-loading is set.
 	Edges        UserEdges `json:"edges"`
@@ -72,7 +70,7 @@ func (*User) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case user.FieldID:
 			values[i] = new(sql.NullInt64)
-		case user.FieldFirebaseUID, user.FieldEmail, user.FieldName, user.FieldRole, user.FieldLastLoginIP, user.FieldOsaCol:
+		case user.FieldFirebaseUID, user.FieldEmail, user.FieldName, user.FieldRole, user.FieldLastLoginIP:
 			values[i] = new(sql.NullString)
 		case user.FieldCreatedAt, user.FieldUpdatedAt, user.FieldLastLogin, user.FieldLastActivity:
 			values[i] = new(sql.NullTime)
@@ -160,12 +158,6 @@ func (u *User) assignValues(columns []string, values []any) error {
 				u.LastActivity = new(time.Time)
 				*u.LastActivity = value.Time
 			}
-		case user.FieldOsaCol:
-			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field osa_col", values[i])
-			} else if value.Valid {
-				u.OsaCol = value.String
-			}
 		default:
 			u.selectValues.Set(columns[i], values[i])
 		}
@@ -242,9 +234,6 @@ func (u *User) String() string {
 		builder.WriteString("last_activity=")
 		builder.WriteString(v.Format(time.ANSIC))
 	}
-	builder.WriteString(", ")
-	builder.WriteString("osa_col=")
-	builder.WriteString(u.OsaCol)
 	builder.WriteByte(')')
 	return builder.String()
 }

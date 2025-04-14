@@ -34,8 +34,6 @@ const (
 	FieldLastLoginIP = "last_login_ip"
 	// FieldLastActivity holds the string denoting the last_activity field in the database.
 	FieldLastActivity = "last_activity"
-	// FieldOsaCol holds the string denoting the osa_col field in the database.
-	FieldOsaCol = "osa_col"
 	// EdgeSessions holds the string denoting the sessions edge name in mutations.
 	EdgeSessions = "sessions"
 	// Table holds the table name of the user in the database.
@@ -62,7 +60,6 @@ var Columns = []string{
 	FieldLastLogin,
 	FieldLastLoginIP,
 	FieldLastActivity,
-	FieldOsaCol,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -88,8 +85,6 @@ var (
 	DefaultRole string
 	// DefaultIsActive holds the default value on creation for the "is_active" field.
 	DefaultIsActive bool
-	// DefaultOsaCol holds the default value on creation for the "osa_col" field.
-	DefaultOsaCol string
 )
 
 // OrderOption defines the ordering options for the User queries.
@@ -148,11 +143,6 @@ func ByLastLoginIP(opts ...sql.OrderTermOption) OrderOption {
 // ByLastActivity orders the results by the last_activity field.
 func ByLastActivity(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldLastActivity, opts...).ToFunc()
-}
-
-// ByOsaCol orders the results by the osa_col field.
-func ByOsaCol(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldOsaCol, opts...).ToFunc()
 }
 
 // BySessionsCount orders the results by sessions count.

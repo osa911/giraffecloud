@@ -50,7 +50,7 @@ func (r *authRepository) CreateUser(ctx context.Context, firebaseUID, email, nam
 
 // UpdateUserLastLogin updates user's last login information
 func (r *authRepository) UpdateUserLastLogin(ctx context.Context, user *ent.User, ip string) (*ent.User, error) {
-	return user.Update().
+	return r.client.User.UpdateOneID(user.ID).
 		SetLastLogin(time.Now()).
 		SetLastLoginIP(ip).
 		Save(ctx)
@@ -58,7 +58,7 @@ func (r *authRepository) UpdateUserLastLogin(ctx context.Context, user *ent.User
 
 // UpdateUserLastActivity updates user's last activity timestamp
 func (r *authRepository) UpdateUserLastActivity(ctx context.Context, user *ent.User) (*ent.User, error) {
-	return user.Update().
+	return r.client.User.UpdateOneID(user.ID).
 		SetLastActivity(time.Now()).
 		Save(ctx)
 }
@@ -84,12 +84,13 @@ func (r *authRepository) GetActiveSessionByToken(ctx context.Context, token stri
 			session.IsActive(true),
 			session.ExpiresAtGT(time.Now()),
 		).
+		WithOwner().
 		Only(ctx)
 }
 
 // UpdateSessionLastUsed updates session's last used timestamp and optionally extends expiration
 func (r *authRepository) UpdateSessionLastUsed(ctx context.Context, session *ent.Session, newExpiration *time.Time) (*ent.Session, error) {
-	update := session.Update().
+	update := r.client.Session.UpdateOneID(session.ID).
 		SetLastUsed(time.Now())
 
 	if newExpiration != nil {
@@ -101,13 +102,16 @@ func (r *authRepository) UpdateSessionLastUsed(ctx context.Context, session *ent
 
 // InvalidateSession marks a session as inactive
 func (r *authRepository) InvalidateSession(ctx context.Context, token string) error {
-	return r.client.Session.Update().
-		Where(session.Token(token)).
+	session, err := r.GetActiveSessionByToken(ctx, token)
+	if err != nil {
+		return err
+	}
+	return r.client.Session.UpdateOneID(session.ID).
 		SetIsActive(false).
 		Exec(ctx)
 }
 
 // GetSessionOwner returns the owner of a session
 func (r *authRepository) GetSessionOwner(ctx context.Context, session *ent.Session) (*ent.User, error) {
-	return session.QueryOwner().Only(ctx)
+	return r.client.Session.QueryOwner(session).Only(ctx)
 }

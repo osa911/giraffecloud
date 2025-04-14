@@ -105,11 +105,6 @@ func LastActivity(v time.Time) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldLastActivity, v))
 }
 
-// OsaCol applies equality check predicate on the "osa_col" field. It's identical to OsaColEQ.
-func OsaCol(v string) predicate.User {
-	return predicate.User(sql.FieldEQ(FieldOsaCol, v))
-}
-
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.
 func CreatedAtEQ(v time.Time) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldCreatedAt, v))
@@ -643,81 +638,6 @@ func LastActivityIsNil() predicate.User {
 // LastActivityNotNil applies the NotNil predicate on the "last_activity" field.
 func LastActivityNotNil() predicate.User {
 	return predicate.User(sql.FieldNotNull(FieldLastActivity))
-}
-
-// OsaColEQ applies the EQ predicate on the "osa_col" field.
-func OsaColEQ(v string) predicate.User {
-	return predicate.User(sql.FieldEQ(FieldOsaCol, v))
-}
-
-// OsaColNEQ applies the NEQ predicate on the "osa_col" field.
-func OsaColNEQ(v string) predicate.User {
-	return predicate.User(sql.FieldNEQ(FieldOsaCol, v))
-}
-
-// OsaColIn applies the In predicate on the "osa_col" field.
-func OsaColIn(vs ...string) predicate.User {
-	return predicate.User(sql.FieldIn(FieldOsaCol, vs...))
-}
-
-// OsaColNotIn applies the NotIn predicate on the "osa_col" field.
-func OsaColNotIn(vs ...string) predicate.User {
-	return predicate.User(sql.FieldNotIn(FieldOsaCol, vs...))
-}
-
-// OsaColGT applies the GT predicate on the "osa_col" field.
-func OsaColGT(v string) predicate.User {
-	return predicate.User(sql.FieldGT(FieldOsaCol, v))
-}
-
-// OsaColGTE applies the GTE predicate on the "osa_col" field.
-func OsaColGTE(v string) predicate.User {
-	return predicate.User(sql.FieldGTE(FieldOsaCol, v))
-}
-
-// OsaColLT applies the LT predicate on the "osa_col" field.
-func OsaColLT(v string) predicate.User {
-	return predicate.User(sql.FieldLT(FieldOsaCol, v))
-}
-
-// OsaColLTE applies the LTE predicate on the "osa_col" field.
-func OsaColLTE(v string) predicate.User {
-	return predicate.User(sql.FieldLTE(FieldOsaCol, v))
-}
-
-// OsaColContains applies the Contains predicate on the "osa_col" field.
-func OsaColContains(v string) predicate.User {
-	return predicate.User(sql.FieldContains(FieldOsaCol, v))
-}
-
-// OsaColHasPrefix applies the HasPrefix predicate on the "osa_col" field.
-func OsaColHasPrefix(v string) predicate.User {
-	return predicate.User(sql.FieldHasPrefix(FieldOsaCol, v))
-}
-
-// OsaColHasSuffix applies the HasSuffix predicate on the "osa_col" field.
-func OsaColHasSuffix(v string) predicate.User {
-	return predicate.User(sql.FieldHasSuffix(FieldOsaCol, v))
-}
-
-// OsaColIsNil applies the IsNil predicate on the "osa_col" field.
-func OsaColIsNil() predicate.User {
-	return predicate.User(sql.FieldIsNull(FieldOsaCol))
-}
-
-// OsaColNotNil applies the NotNil predicate on the "osa_col" field.
-func OsaColNotNil() predicate.User {
-	return predicate.User(sql.FieldNotNull(FieldOsaCol))
-}
-
-// OsaColEqualFold applies the EqualFold predicate on the "osa_col" field.
-func OsaColEqualFold(v string) predicate.User {
-	return predicate.User(sql.FieldEqualFold(FieldOsaCol, v))
-}
-
-// OsaColContainsFold applies the ContainsFold predicate on the "osa_col" field.
-func OsaColContainsFold(v string) predicate.User {
-	return predicate.User(sql.FieldContainsFold(FieldOsaCol, v))
 }
 
 // HasSessions applies the HasEdge predicate on the "sessions" edge.

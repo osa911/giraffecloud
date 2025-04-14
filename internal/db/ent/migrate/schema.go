@@ -48,7 +48,6 @@ var (
 		{Name: "last_login", Type: field.TypeTime, Nullable: true},
 		{Name: "last_login_ip", Type: field.TypeString, Nullable: true},
 		{Name: "last_activity", Type: field.TypeTime, Nullable: true},
-		{Name: "osa_col", Type: field.TypeString, Nullable: true, Default: "osa"},
 	}
 	// UsersTable holds the schema information for the "users" table.
 	UsersTable = &schema.Table{

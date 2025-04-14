@@ -59,8 +59,4 @@ func init() {
 	userDescIsActive := userFields[5].Descriptor()
 	// user.DefaultIsActive holds the default value on creation for the is_active field.
 	user.DefaultIsActive = userDescIsActive.Default.(bool)
-	// userDescOsaCol is the schema descriptor for osa_col field.
-	userDescOsaCol := userFields[9].Descriptor()
-	// user.DefaultOsaCol holds the default value on creation for the osa_col field.
-	user.DefaultOsaCol = userDescOsaCol.Default.(string)
 }

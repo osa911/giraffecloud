@@ -171,26 +171,6 @@ func (uu *UserUpdate) ClearLastActivity() *UserUpdate {
 	return uu
 }
 
-// SetOsaCol sets the "osa_col" field.
-func (uu *UserUpdate) SetOsaCol(s string) *UserUpdate {
-	uu.mutation.SetOsaCol(s)
-	return uu
-}
-
-// SetNillableOsaCol sets the "osa_col" field if the given value is not nil.
-func (uu *UserUpdate) SetNillableOsaCol(s *string) *UserUpdate {
-	if s != nil {
-		uu.SetOsaCol(*s)
-	}
-	return uu
-}
-
-// ClearOsaCol clears the value of the "osa_col" field.
-func (uu *UserUpdate) ClearOsaCol() *UserUpdate {
-	uu.mutation.ClearOsaCol()
-	return uu
-}
-
 // AddSessionIDs adds the "sessions" edge to the Session entity by IDs.
 func (uu *UserUpdate) AddSessionIDs(ids ...uint32) *UserUpdate {
 	uu.mutation.AddSessionIDs(ids...)
@@ -315,12 +295,6 @@ func (uu *UserUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	}
 	if uu.mutation.LastActivityCleared() {
 		_spec.ClearField(user.FieldLastActivity, field.TypeTime)
-	}
-	if value, ok := uu.mutation.OsaCol(); ok {
-		_spec.SetField(user.FieldOsaCol, field.TypeString, value)
-	}
-	if uu.mutation.OsaColCleared() {
-		_spec.ClearField(user.FieldOsaCol, field.TypeString)
 	}
 	if uu.mutation.SessionsCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -529,26 +503,6 @@ func (uuo *UserUpdateOne) ClearLastActivity() *UserUpdateOne {
 	return uuo
 }
 
-// SetOsaCol sets the "osa_col" field.
-func (uuo *UserUpdateOne) SetOsaCol(s string) *UserUpdateOne {
-	uuo.mutation.SetOsaCol(s)
-	return uuo
-}
-
-// SetNillableOsaCol sets the "osa_col" field if the given value is not nil.
-func (uuo *UserUpdateOne) SetNillableOsaCol(s *string) *UserUpdateOne {
-	if s != nil {
-		uuo.SetOsaCol(*s)
-	}
-	return uuo
-}
-
-// ClearOsaCol clears the value of the "osa_col" field.
-func (uuo *UserUpdateOne) ClearOsaCol() *UserUpdateOne {
-	uuo.mutation.ClearOsaCol()
-	return uuo
-}
-
 // AddSessionIDs adds the "sessions" edge to the Session entity by IDs.
 func (uuo *UserUpdateOne) AddSessionIDs(ids ...uint32) *UserUpdateOne {
 	uuo.mutation.AddSessionIDs(ids...)
@@ -703,12 +657,6 @@ func (uuo *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) 
 	}
 	if uuo.mutation.LastActivityCleared() {
 		_spec.ClearField(user.FieldLastActivity, field.TypeTime)
-	}
-	if value, ok := uuo.mutation.OsaCol(); ok {
-		_spec.SetField(user.FieldOsaCol, field.TypeString, value)
-	}
-	if uuo.mutation.OsaColCleared() {
-		_spec.ClearField(user.FieldOsaCol, field.TypeString)
 	}
 	if uuo.mutation.SessionsCleared() {
 		edge := &sqlgraph.EdgeSpec{
