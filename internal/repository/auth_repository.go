@@ -64,12 +64,12 @@ func (r *authRepository) UpdateUserLastActivity(ctx context.Context, user *ent.U
 }
 
 // CreateSession creates a new session for a user
-func (r *authRepository) CreateSession(ctx context.Context, userID uint32, token, deviceName, deviceID string, expiresAt time.Time) (*ent.Session, error) {
+func (r *authRepository) CreateSession(ctx context.Context, userID uint32, token string, userAgent string, ipAddress string, expiresAt time.Time) (*ent.Session, error) {
 	return r.client.Session.Create().
 		SetOwnerID(userID).
 		SetToken(token).
-		SetUserAgent(deviceName).
-		SetIPAddress(deviceID).
+		SetUserAgent(userAgent).
+		SetIPAddress(ipAddress).
 		SetLastUsed(time.Now()).
 		SetExpiresAt(expiresAt).
 		SetIsActive(true).

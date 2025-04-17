@@ -30,10 +30,8 @@ type RegisterResponse struct {
 
 // SessionResponse represents session information
 type SessionResponse struct {
-	Token      string    `json:"token"`
-	DeviceID   string    `json:"device_id"`
-	DeviceName string    `json:"device_name"`
-	ExpiresAt  time.Time `json:"expires_at"`
+	Token     string    `json:"token"`
+	ExpiresAt time.Time `json:"expires_at"`
 }
 
 // SessionValidationResponse represents the response for session validation

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"giraffecloud/internal/logging"
+
 	firebase "firebase.google.com/go/v4"
 	"firebase.google.com/go/v4/auth"
 	"google.golang.org/api/option"
@@ -17,40 +19,42 @@ var (
 
 // InitializeFirebase initializes the Firebase Admin SDK
 func InitializeFirebase() error {
-	fmt.Println("==== Initializing Firebase ====")
+	logger := logging.GetLogger()
+	logger.Info("==== Initializing Firebase ====")
 
 	// Get the service account key file path
 	serviceAccountKeyPath := filepath.Join("internal", "config", "firebase", "service-account.json")
-	fmt.Println("Service account key path:", serviceAccountKeyPath)
+	logger.Info("Service account key path: %s", serviceAccountKeyPath)
 
 	// Check if the file exists
 	var opt option.ClientOption
 
 	// Create Firebase app
-	fmt.Println("Creating Firebase app instance...")
+	logger.Info("Creating Firebase app instance...")
 	opt = option.WithCredentialsFile(serviceAccountKeyPath)
 	var err error
 	app, err = firebase.NewApp(context.Background(), nil, opt)
 	if err != nil {
 		return fmt.Errorf("failed to initialize Firebase app: %v", err)
 	}
-	fmt.Println("Firebase app created successfully")
+	logger.Info("Firebase app created successfully")
 
 	// Get Auth client
-	fmt.Println("Getting Firebase Auth client...")
+	logger.Info("Getting Firebase Auth client...")
 	authClient, err = app.Auth(context.Background())
 	if err != nil {
 		return fmt.Errorf("failed to get Firebase Auth client: %v", err)
 	}
-	fmt.Println("Firebase Auth client initialized successfully")
+	logger.Info("Firebase Auth client initialized successfully")
 
 	return nil
 }
 
 // GetAuthClient returns the Firebase Auth client
 func GetAuthClient() *auth.Client {
+	logger := logging.GetLogger()
 	if authClient == nil {
-		fmt.Println("WARNING: GetAuthClient called but authClient is nil")
+		logger.Warn("GetAuthClient called but authClient is nil")
 	}
 	return authClient
 }

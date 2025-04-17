@@ -54,7 +54,7 @@ func (h *SessionHandler) RevokeSession(c *gin.Context) {
 	}
 
 	// Mark session as inactive
-	if err := h.sessionRepo.RevokeSession(context.Background(), session); err != nil {
+	if err := h.sessionRepo.Revoke(context.Background(), session); err != nil {
 		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to revoke session")
 		return
 	}

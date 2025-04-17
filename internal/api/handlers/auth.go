@@ -16,6 +16,7 @@ import (
 	"giraffecloud/internal/api/mapper"
 	"giraffecloud/internal/config/firebase"
 	"giraffecloud/internal/db/ent"
+	"giraffecloud/internal/logging"
 	"giraffecloud/internal/repository"
 	"giraffecloud/internal/service"
 	"giraffecloud/internal/utils"
@@ -24,14 +25,23 @@ import (
 )
 
 type AuthHandler struct {
-	authRepo repository.AuthRepository
-	csrfService service.CSRFService
+	authRepo     repository.AuthRepository
+	sessionRepo  repository.SessionRepository
+	csrfService  service.CSRFService
+	auditService *service.AuditService
 }
 
-func NewAuthHandler(authRepo repository.AuthRepository, csrfService service.CSRFService) *AuthHandler {
+func NewAuthHandler(
+	authRepo repository.AuthRepository,
+	sessionRepo repository.SessionRepository,
+	csrfService service.CSRFService,
+	auditService *service.AuditService,
+) *AuthHandler {
 	return &AuthHandler{
-		authRepo: authRepo,
-		csrfService: csrfService,
+		authRepo:     authRepo,
+		sessionRepo:  sessionRepo,
+		csrfService:  csrfService,
+		auditService: auditService,
 	}
 }
 
@@ -111,6 +121,8 @@ func getCookieDomain() string {
 }
 
 func (h *AuthHandler) Login(c *gin.Context) {
+	logger := logging.GetLogger()
+
 	// Get login data from context (set by ValidateLoginRequest middleware)
 	loginData, exists := c.Get(constants.ContextKeyLogin)
 	if !exists {
@@ -128,6 +140,14 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	// Verify the Firebase token
 	decodedToken, err := firebase.GetAuthClient().VerifyIDToken(c.Request.Context(), loginPtr.Token)
 	if err != nil {
+		h.auditService.LogFailedAuthAttempt(
+			c.Request.Context(),
+			utils.GetRealIP(c),
+			"Invalid Firebase token",
+			map[string]interface{}{
+				"error": err.Error(),
+			},
+		)
 		utils.HandleAPIError(c, err, http.StatusUnauthorized, common.ErrCodeUnauthorized, "Invalid token")
 		return
 	}
@@ -147,11 +167,28 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			// Create new user
 			existingUser, err = h.authRepo.CreateUser(c.Request.Context(), decodedToken.UID, email, name, utils.GetRealIP(c))
 			if err != nil {
-				utils.LogError(err, "Failed to create user")
+				h.auditService.LogFailedAuthAttempt(
+					c.Request.Context(),
+					utils.GetRealIP(c),
+					"Failed to create user",
+					map[string]interface{}{
+						"error": err.Error(),
+						"email": email,
+					},
+				)
+				logger.Error("Failed to create user: %v", err)
 				utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to create user")
 				return
 			}
 		} else {
+			h.auditService.LogFailedAuthAttempt(
+				c.Request.Context(),
+				utils.GetRealIP(c),
+				"Database error",
+				map[string]interface{}{
+					"error": err.Error(),
+				},
+			)
 			utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Database error")
 			return
 		}
@@ -160,24 +197,26 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	// Update last login info
 	existingUser, err = h.authRepo.UpdateUserLastLogin(c.Request.Context(), existingUser, utils.GetRealIP(c))
 	if err != nil {
-		utils.LogError(err, "Failed to update user")
+		h.auditService.LogFailedAuthAttempt(
+			c.Request.Context(),
+			utils.GetRealIP(c),
+			"Failed to update user",
+			map[string]interface{}{
+				"error": err.Error(),
+				"user_id": existingUser.ID,
+			},
+		)
+		logger.Error("Failed to update user: %v", err)
 		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to update user")
 		return
 	}
 
-	// Generate device info
-	deviceName := "Unknown"
+	// Get user agent and IP address
 	userAgent := c.GetHeader("User-Agent")
-	if userAgent != "" {
-		deviceName = userAgent
+	if userAgent == "" {
+		userAgent = "Unknown"
 	}
-
-	// Generate a unique device ID
-	deviceID, err := generateSecureToken(32)
-	if err != nil {
-		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to generate session token")
-		return
-	}
+	ipAddress := utils.GetRealIP(c)
 
 	// Generate a secure session token
 	sessionToken, err := generateSecureToken(64)
@@ -188,11 +227,38 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	// Create and store the session
 	expiresAt := time.Now().Add(time.Hour * 24 * 30) // 30 days
-	session, err := h.authRepo.CreateSession(c.Request.Context(), existingUser.ID, sessionToken, deviceName, deviceID, expiresAt)
+	session, err := h.sessionRepo.CreateForUser(c.Request.Context(), existingUser.ID, sessionToken, userAgent, ipAddress, expiresAt)
 	if err != nil {
+		h.auditService.LogFailedAuthAttempt(
+			c.Request.Context(),
+			utils.GetRealIP(c),
+			"Failed to create session",
+			map[string]interface{}{
+				"error": err.Error(),
+				"user_id": existingUser.ID,
+			},
+		)
 		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to create session")
 		return
 	}
+
+	// Log successful login and session creation
+	h.auditService.LogAuthEvent(
+		c.Request.Context(),
+		service.AuditEventLogin,
+		existingUser,
+		utils.GetRealIP(c),
+		map[string]interface{}{
+			"user_agent": userAgent,
+			"ip_address": ipAddress,
+		},
+	)
+	h.auditService.LogSessionEvent(
+		c.Request.Context(),
+		service.AuditEventSessionCreated,
+		session,
+		nil,
+	)
 
 	// Set cookie domain based on environment
 	cookieDomain := getCookieDomain()
@@ -285,22 +351,51 @@ func (h *AuthHandler) Register(c *gin.Context) {
 }
 
 func (h *AuthHandler) Logout(c *gin.Context) {
-	// Clear the session cookie by setting an expired cookie
-	c.SetSameSite(http.SameSiteStrictMode)
-	c.SetCookie(constants.CookieSession, "", -1, constants.CookiePathRoot, getCookieDomain(), true, true)
-	c.SetCookie(constants.CookieAuthToken, "", -1, constants.CookiePathAPI, getCookieDomain(), true, true)
+	logger := logging.GetLogger()
+
+	// Get user from context
+	user, _ := c.Get(constants.ContextKeyUser)
+	currentUser, ok := user.(*ent.User)
 
 	// Check for session cookie to identify and invalidate server-side session
 	sessionCookie, err := c.Cookie(constants.CookieAuthToken)
 	if err == nil && sessionCookie != "" {
+		// Get session before invalidating it (for audit log)
+		session, err := h.sessionRepo.GetActiveByToken(c.Request.Context(), sessionCookie)
+		if err == nil {
+			// Log session revocation
+			h.auditService.LogSessionEvent(
+				c.Request.Context(),
+				service.AuditEventSessionRevoked,
+				session,
+				nil,
+			)
+		}
+
 		// Invalidate the session in the database
-		err := h.authRepo.InvalidateSession(c.Request.Context(), sessionCookie)
+		err = h.sessionRepo.RevokeByToken(c.Request.Context(), sessionCookie)
 		if err != nil {
-			utils.LogError(err, "Failed to invalidate session")
+			logger.Error("Failed to invalidate session: %v", err)
 			utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to invalidate session")
 			return
 		}
 	}
+
+	// Log logout event if we have user info
+	if ok && currentUser != nil {
+		h.auditService.LogAuthEvent(
+			c.Request.Context(),
+			service.AuditEventLogout,
+			currentUser,
+			utils.GetRealIP(c),
+			nil,
+		)
+	}
+
+	// Clear the session cookies
+	c.SetSameSite(http.SameSiteStrictMode)
+	c.SetCookie(constants.CookieSession, "", -1, constants.CookiePathRoot, getCookieDomain(), true, true)
+	c.SetCookie(constants.CookieAuthToken, "", -1, constants.CookiePathAPI, getCookieDomain(), true, true)
 
 	// Return success response
 	c.JSON(http.StatusOK, common.NewMessageResponse("Logged out successfully"))
@@ -338,10 +433,10 @@ func (h *AuthHandler) GetSession(c *gin.Context) {
 	// Check auth_token cookie as fallback
 	authToken, err := c.Cookie(constants.CookieAuthToken)
 	if err == nil && authToken != "" {
-		existingSession, err := h.authRepo.GetActiveSessionByToken(c.Request.Context(), authToken)
+		existingSession, err := h.sessionRepo.GetActiveByToken(c.Request.Context(), authToken)
 		if err == nil {
 			// Update session last used
-			existingSession, err = h.authRepo.UpdateSessionLastUsed(c.Request.Context(), existingSession, nil)
+			existingSession, err = h.sessionRepo.UpdateLastUsed(c.Request.Context(), existingSession, nil)
 			if err != nil {
 				utils.LogError(err, "Failed to update session's last used time")
 				utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to update session's last used time")
@@ -361,7 +456,7 @@ func (h *AuthHandler) GetSession(c *gin.Context) {
 			)
 
 			// Fetch user
-			owner, err := h.authRepo.GetSessionOwner(c.Request.Context(), existingSession)
+			owner, err := h.sessionRepo.GetSessionOwner(c.Request.Context(), existingSession)
 			if err == nil {
 				// Return session response using proper DTO format
 				userResponse := mapper.UserToUserResponse(owner)
@@ -402,11 +497,11 @@ func (h *AuthHandler) RefreshSession(c *gin.Context) {
 	if !authenticated {
 		authToken, err := c.Cookie(constants.CookieAuthToken)
 		if err == nil && authToken != "" {
-			existingSession, err := h.authRepo.GetActiveSessionByToken(c.Request.Context(), authToken)
+			existingSession, err := h.sessionRepo.GetActiveByToken(c.Request.Context(), authToken)
 			if err == nil {
 				// Update session last used & extend expiration time
 				newExpiration := time.Now().Add(time.Hour * 24 * 30) // Reset to full 30 days
-				existingSession, err = h.authRepo.UpdateSessionLastUsed(c.Request.Context(), existingSession, &newExpiration)
+				existingSession, err = h.sessionRepo.UpdateLastUsed(c.Request.Context(), existingSession, &newExpiration)
 				if err != nil {
 					utils.LogError(err, "Failed to update session")
 					utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to update session")
@@ -427,7 +522,7 @@ func (h *AuthHandler) RefreshSession(c *gin.Context) {
 
 				if !authenticated {
 					// Get the user if we haven't already
-					owner, err := h.authRepo.GetSessionOwner(c.Request.Context(), existingSession)
+					owner, err := h.sessionRepo.GetSessionOwner(c.Request.Context(), existingSession)
 					if err == nil {
 						existingUser = owner
 						authenticated = true

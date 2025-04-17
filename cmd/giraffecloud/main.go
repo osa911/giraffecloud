@@ -2,20 +2,17 @@ package main
 
 import (
 	"fmt"
+	"giraffecloud/internal/config"
+	"giraffecloud/internal/logging"
 	"os"
 	"os/signal"
 	"syscall"
 
-	"giraffecloud/internal/config"
-	"giraffecloud/internal/logging"
 	"giraffecloud/internal/service"
 	"giraffecloud/internal/tunnel"
+	"giraffecloud/internal/version"
 
 	"github.com/spf13/cobra"
-)
-
-var (
-	logger *logging.Logger
 )
 
 var rootCmd = &cobra.Command{
@@ -31,17 +28,13 @@ var connectCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg, err := config.LoadConfig()
 		if err != nil {
-			logger.Error("Failed to load config: %v", err)
+			fmt.Printf("Error loading config: %v\n", err)
 			os.Exit(1)
 		}
 
-		// Initialize logger
-		logger, err = logging.NewLogger(&cfg.Logging)
-		if err != nil {
-			fmt.Printf("Failed to initialize logger: %v\n", err)
-			os.Exit(1)
-		}
-		defer logger.Close()
+		// Configure and get logger
+		logging.Configure(&cfg.Logging)
+		logger := logging.GetLogger()
 
 		logger.Info("Starting GiraffeCloud tunnel")
 		logger.Debug("Configuration loaded: %+v", cfg)
@@ -88,13 +81,9 @@ var installCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		// Initialize logger
-		logger, err = logging.NewLogger(&cfg.Logging)
-		if err != nil {
-			fmt.Printf("Failed to initialize logger: %v\n", err)
-			os.Exit(1)
-		}
-		defer logger.Close()
+		// Configure and get logger
+		logging.Configure(&cfg.Logging)
+		logger := logging.GetLogger()
 
 		logger.Info("Installing GiraffeCloud service")
 
@@ -123,13 +112,9 @@ var uninstallCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		// Initialize logger
-		logger, err = logging.NewLogger(&cfg.Logging)
-		if err != nil {
-			fmt.Printf("Failed to initialize logger: %v\n", err)
-			os.Exit(1)
-		}
-		defer logger.Close()
+		// Configure and get logger
+		logging.Configure(&cfg.Logging)
+		logger := logging.GetLogger()
 
 		logger.Info("Uninstalling GiraffeCloud service")
 
@@ -148,11 +133,22 @@ var uninstallCmd = &cobra.Command{
 	},
 }
 
+var versionCmd = &cobra.Command{
+	Use:   "version",
+	Short: "Print version information",
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Println(version.Info())
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(connectCmd)
+
 	serviceCmd.AddCommand(installCmd)
 	serviceCmd.AddCommand(uninstallCmd)
+
 	rootCmd.AddCommand(serviceCmd)
+	rootCmd.AddCommand(versionCmd)
 }
 
 func main() {

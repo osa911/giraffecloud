@@ -1,7 +1,6 @@
 package main
 
 import (
-	"log"
 	"os"
 
 	"giraffecloud/internal/config"
@@ -13,7 +12,7 @@ import (
 )
 
 func main() {
-	// Initialize logger
+	// Initialize logger configuration
 	logConfig := &config.LoggingConfig{
 		Level:      os.Getenv("LOG_LEVEL"),
 		File:       os.Getenv("LOG_FILE"),
@@ -30,10 +29,9 @@ func main() {
 		logConfig.File = "~/.giraffecloud/api.log"
 	}
 
-	logger, err := logging.NewLogger(logConfig)
-	if err != nil {
-		log.Fatalf("Failed to initialize logger: %v", err)
-	}
+	// Configure and get logger
+	logging.Configure(logConfig)
+	logger := logging.GetLogger()
 	defer logger.Close()
 
 	// Initialize database connection
@@ -59,7 +57,14 @@ func main() {
 	logger.Info("Started session cleanup task")
 
 	// Initialize server
-	srv := server.NewServer(database)
+	cfg := &config.Config{
+		Logging: *logConfig, // Use the same logging config
+	}
+	srv, err := server.NewServer(cfg, database)
+	if err != nil {
+		logger.Error("Failed to create server: %v", err)
+		os.Exit(1)
+	}
 
 	// Start server
 	if err := srv.Start(); err != nil {

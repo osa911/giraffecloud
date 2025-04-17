@@ -1,42 +1,90 @@
 package server
 
 import (
+	"fmt"
 	"io"
 	"os"
 
 	"giraffecloud/internal/api/handlers"
 	"giraffecloud/internal/api/middleware"
+	"giraffecloud/internal/config"
 	"giraffecloud/internal/db"
+	"giraffecloud/internal/logging"
 	"giraffecloud/internal/repository"
+	"giraffecloud/internal/server/routes"
 	"giraffecloud/internal/service"
 
 	"github.com/gin-gonic/gin"
 )
 
-// Server represents the HTTP server
-type Server struct {
-	router *gin.Engine
-	db     *db.Database
+// NewServer creates a new server instance
+func NewServer(cfg *config.Config, db *db.Database) (*Server, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("config cannot be nil")
+	}
+	if db == nil {
+		return nil, fmt.Errorf("database cannot be nil")
+	}
+
+	// Create server instance
+	s := &Server{
+		router: gin.New(),
+		cfg:    cfg,
+		db:     db,
+	}
+
+	// Initialize all components and set up routes
+	if err := s.initialize(); err != nil {
+		return nil, fmt.Errorf("failed to initialize server: %w", err)
+	}
+
+	return s, nil
 }
 
-// NewServer creates a new server instance
-func NewServer(db *db.Database) *Server {
-	// Set release mode for production
+// initialize sets up all the server components
+func (s *Server) initialize() error {
+	// Disable default logger
 	gin.SetMode(gin.ReleaseMode)
-
-	// Disable Gin's default logger entirely because we're using our custom logger
-	gin.DisableConsoleColor()
 	gin.DefaultWriter = io.Discard
 
-	// Create a new engine without default middleware
-	router := gin.New()
+	// Set up global middleware
+	logger := logging.GetLogger()
+	routes.SetupGlobalMiddleware(s.router, logger)
 
-	// Always add recovery middleware for panic handling
-	router.Use(gin.Recovery())
+	// Initialize services
+	auditService := service.NewAuditService()
+	csrfService := service.NewCSRFService()
 
-	return &Server{
-		router: router,
-		db:     db,
+	// Initialize repositories
+	repos := s.initializeRepositories()
+
+	// Initialize handlers
+	handlers := &routes.Handlers{
+		Auth:    handlers.NewAuthHandler(repos.Auth, repos.Session, csrfService, auditService),
+		User:    handlers.NewUserHandler(repos.User),
+		Health:  handlers.NewHealthHandler(s.db.DB),
+		Session: handlers.NewSessionHandler(repos.Session),
+	}
+
+	// Initialize middleware
+	middleware := &routes.Middleware{
+		Validation: middleware.NewValidationMiddleware(),
+		Auth:       middleware.NewAuthMiddleware(),
+		CSRF:       csrfService,
+	}
+
+	// Set up all routes
+	routes.Setup(s.router, handlers, middleware)
+
+	return nil
+}
+
+// initializeRepositories creates all repository instances
+func (s *Server) initializeRepositories() *Repositories {
+	return &Repositories{
+		User:    repository.NewUserRepository(s.db.DB),
+		Auth:    repository.NewAuthRepository(s.db.DB),
+		Session: repository.NewSessionRepository(s.db.DB),
 	}
 }
 
@@ -47,76 +95,7 @@ func (s *Server) Start() error {
 		port = "8080"
 	}
 
-	// Create services
-	csrfService := service.NewCSRFService()
-
-	// Create rate limiter configuration
-	rateLimitConfig := middleware.RateLimitConfig{
-		RPS:   10, // 10 requests per second
-		Burst: 20, // Allow bursts of up to 20 requests
-	}
-
-	// Create repositories
-	userRepo := repository.NewUserRepository(s.db.DB)
-	authRepo := repository.NewAuthRepository(s.db.DB)
-	sessionRepo := repository.NewSessionRepository(s.db.DB)
-
-	// Create validation middleware
-	validationMiddleware := middleware.NewValidationMiddleware()
-	authMiddleware := middleware.NewAuthMiddleware()
-
-	// Create handlers
-	authHandler := handlers.NewAuthHandler(authRepo, csrfService)
-	userHandler := handlers.NewUserHandler(userRepo)
-	healthHandler := handlers.NewHealthHandler(s.db.DB)
-	sessionHandler := handlers.NewSessionHandler(sessionRepo)
-
-	// Add global middleware
-	s.router.Use(middleware.CORS())
-	s.router.Use(middleware.PreserveRequestBody())
-	s.router.Use(middleware.RateLimitMiddleware(rateLimitConfig))
-	s.router.Use(middleware.RequestLogger())
-
-	// Health check endpoint - no auth required
-	s.router.GET("/health", healthHandler.Check)
-
-	// Public routes
-	public := s.router.Group("/api/v1")
-	{
-		// Auth routes that don't need CSRF protection (pre-authentication)
-		public.POST("/auth/register", validationMiddleware.ValidateRegisterRequest(), authHandler.Register)
-		public.POST("/auth/login", validationMiddleware.ValidateLoginRequest(), authHandler.Login)
-
-		// Auth routes that need CSRF protection (post-authentication)
-		csrfProtected := public.Group("")
-		csrfProtected.Use(middleware.CSRFMiddleware(csrfService))
-		{
-			csrfProtected.POST("/auth/logout", authHandler.Logout)
-			csrfProtected.POST("/auth/verify-token", validationMiddleware.ValidateVerifyTokenRequest(), authHandler.VerifyToken)
-		}
-
-		// Read-only auth route (no CSRF needed)
-		public.GET("/auth/session", authHandler.GetSession)
-	}
-
-	// Protected routes (all need both auth and CSRF)
-	protected := s.router.Group("/api/v1")
-	protected.Use(authMiddleware.RequireAuth())
-	protected.Use(middleware.CSRFMiddleware(csrfService))
-
-	// User routes
-	protected.GET("/users", userHandler.ListUsers)
-	protected.GET("/users/:id", userHandler.GetUser)
-	protected.PUT("/users/:id", validationMiddleware.ValidateUpdateUserRequest(), userHandler.UpdateUser)
-	protected.DELETE("/users/:id", userHandler.DeleteUser)
-	protected.GET("/user/profile", userHandler.GetProfile)
-	protected.PUT("/user/profile", validationMiddleware.ValidateUpdateProfileRequest(), userHandler.UpdateProfile)
-	protected.DELETE("/user/profile", userHandler.DeleteProfile)
-
-	// Session routes
-	protected.GET("/sessions", sessionHandler.GetSessions)
-	protected.DELETE("/sessions/:id", sessionHandler.RevokeSession)
-	protected.DELETE("/sessions", sessionHandler.RevokeAllSessions)
-
+	logger := logging.GetLogger()
+	logger.Info("Starting server on port " + port)
 	return s.router.Run(":" + port)
 }
