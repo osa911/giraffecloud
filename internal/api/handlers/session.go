@@ -61,6 +61,7 @@ func (h *SessionHandler) RevokeSession(c *gin.Context) {
 
 	// If we're revoking the current session, also clear cookies
 	if sessionToken, err := c.Cookie(constants.CookieAuthToken); err == nil && sessionToken == session.Token {
+		c.SetSameSite(http.SameSiteStrictMode)
 		c.SetCookie(constants.CookieSession, "", -1, constants.CookiePathRoot, "", true, true)
 		c.SetCookie(constants.CookieAuthToken, "", -1, constants.CookiePathAPI, "", true, true)
 	}
@@ -77,6 +78,7 @@ func (h *SessionHandler) RevokeAllSessions(c *gin.Context) {
 	}
 
 	// Clear current cookies regardless
+	c.SetSameSite(http.SameSiteStrictMode)
 	c.SetCookie(constants.CookieSession, "", -1, constants.CookiePathRoot, "", true, true)
 	c.SetCookie(constants.CookieAuthToken, "", -1, constants.CookiePathAPI, "", true, true)
 

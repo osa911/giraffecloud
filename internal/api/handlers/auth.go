@@ -193,6 +193,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	cookieDomain := getCookieDomain()
 
 	// Set the session cookie (client-side)
+	c.SetSameSite(http.SameSiteStrictMode)
 	c.SetCookie(
 		constants.CookieAuthToken,
 		session.Token,
@@ -265,6 +266,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 func (h *AuthHandler) Logout(c *gin.Context) {
 	// Clear the session cookie by setting an expired cookie
+	c.SetSameSite(http.SameSiteStrictMode)
 	c.SetCookie(constants.CookieSession, "", -1, constants.CookiePathRoot, getCookieDomain(), true, true)
 	c.SetCookie(constants.CookieAuthToken, "", -1, constants.CookiePathAPI, getCookieDomain(), true, true)
 
@@ -327,6 +329,7 @@ func (h *AuthHandler) GetSession(c *gin.Context) {
 			}
 
 			// Refresh the cookie with reset expiration
+			c.SetSameSite(http.SameSiteStrictMode)
 			c.SetCookie(
 				constants.CookieAuthToken,
 				authToken,
@@ -391,6 +394,7 @@ func (h *AuthHandler) RefreshSession(c *gin.Context) {
 				}
 
 				// Refresh the auth_token cookie
+				c.SetSameSite(http.SameSiteStrictMode)
 				c.SetCookie(
 					constants.CookieAuthToken,
 					authToken,
@@ -461,6 +465,7 @@ func (h *AuthHandler) VerifyToken(c *gin.Context) {
 	}
 
 	// Set the new session cookie
+	c.SetSameSite(http.SameSiteStrictMode)
 	c.SetCookie(
 		constants.CookieSession,
 		sessionCookie,
