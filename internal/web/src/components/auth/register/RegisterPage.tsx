@@ -12,6 +12,7 @@ import {
 } from "@mui/material";
 import Link from "@/components/common/Link";
 import { useAuth } from "@/contexts/AuthProvider";
+import { validatePassword } from "@/lib/validation/passwordPolicy";
 
 export default function RegisterPage() {
   const [name, setName] = useState("");
@@ -23,6 +24,11 @@ export default function RegisterPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const passwordError = validatePassword(password);
+    if (passwordError) {
+      setError(passwordError);
+      return;
+    }
     setLoading(true);
     setError("");
     try {
@@ -33,6 +39,7 @@ export default function RegisterPage() {
       setLoading(false);
     }
   };
+
 
   const handleGoogleSignUp = async () => {
     setLoading(true);
@@ -100,6 +107,7 @@ export default function RegisterPage() {
             autoComplete="new-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            helperText="Minimum 8 chars, upper/lowercase, number, special character."
           />
           <Button
             type="submit"
