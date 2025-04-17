@@ -17,6 +17,7 @@ import (
 	"giraffecloud/internal/config/firebase"
 	"giraffecloud/internal/db/ent"
 	"giraffecloud/internal/repository"
+	"giraffecloud/internal/service"
 	"giraffecloud/internal/utils"
 
 	"github.com/gin-gonic/gin"
@@ -24,10 +25,14 @@ import (
 
 type AuthHandler struct {
 	authRepo repository.AuthRepository
+	csrfService service.CSRFService
 }
 
-func NewAuthHandler(authRepo repository.AuthRepository) *AuthHandler {
-	return &AuthHandler{authRepo: authRepo}
+func NewAuthHandler(authRepo repository.AuthRepository, csrfService service.CSRFService) *AuthHandler {
+	return &AuthHandler{
+		authRepo: authRepo,
+		csrfService: csrfService,
+	}
 }
 
 // generateSecureToken creates a secure random token
@@ -203,6 +208,21 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		true,  // Secure
 		true,  // HttpOnly
 	)
+
+	// Generate and set CSRF token cookie (not HttpOnly)
+	csrfToken, err := h.csrfService.GenerateToken()
+	if err == nil {
+		c.SetSameSite(http.SameSiteStrictMode)
+		c.SetCookie(
+			constants.CookieCSRF,
+			csrfToken,
+			constants.CookieDuration30d,
+			constants.CookiePathAPI,
+			cookieDomain,
+			true, // Secure
+			false, // NOT HttpOnly
+		)
+	}
 
 	// Return user data and session info
 	userResponse := mapper.UserToUserResponse(existingUser)

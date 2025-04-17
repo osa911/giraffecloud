@@ -8,6 +8,7 @@ import (
 	"giraffecloud/internal/api/middleware"
 	"giraffecloud/internal/db"
 	"giraffecloud/internal/repository"
+	"giraffecloud/internal/service"
 
 	"github.com/gin-gonic/gin"
 )
@@ -46,6 +47,9 @@ func (s *Server) Start() error {
 		port = "8080"
 	}
 
+	// Create services
+	csrfService := service.NewCSRFService()
+
 	// Create rate limiter configuration
 	rateLimitConfig := middleware.RateLimitConfig{
 		RPS:   10, // 10 requests per second
@@ -62,7 +66,7 @@ func (s *Server) Start() error {
 	authMiddleware := middleware.NewAuthMiddleware()
 
 	// Create handlers
-	authHandler := handlers.NewAuthHandler(authRepo)
+	authHandler := handlers.NewAuthHandler(authRepo, csrfService)
 	userHandler := handlers.NewUserHandler(userRepo)
 	healthHandler := handlers.NewHealthHandler(s.db.DB)
 	sessionHandler := handlers.NewSessionHandler(sessionRepo)
@@ -79,17 +83,26 @@ func (s *Server) Start() error {
 	// Public routes
 	public := s.router.Group("/api/v1")
 	{
-		// Auth routes with validation
+		// Auth routes that don't need CSRF protection (pre-authentication)
 		public.POST("/auth/register", validationMiddleware.ValidateRegisterRequest(), authHandler.Register)
 		public.POST("/auth/login", validationMiddleware.ValidateLoginRequest(), authHandler.Login)
-		public.POST("/auth/logout", authHandler.Logout)
+
+		// Auth routes that need CSRF protection (post-authentication)
+		csrfProtected := public.Group("")
+		csrfProtected.Use(middleware.CSRFMiddleware(csrfService))
+		{
+			csrfProtected.POST("/auth/logout", authHandler.Logout)
+			csrfProtected.POST("/auth/verify-token", validationMiddleware.ValidateVerifyTokenRequest(), authHandler.VerifyToken)
+		}
+
+		// Read-only auth route (no CSRF needed)
 		public.GET("/auth/session", authHandler.GetSession)
-		public.POST("/auth/verify-token", validationMiddleware.ValidateVerifyTokenRequest(), authHandler.VerifyToken)
 	}
 
-	// Protected routes
+	// Protected routes (all need both auth and CSRF)
 	protected := s.router.Group("/api/v1")
 	protected.Use(authMiddleware.RequireAuth())
+	protected.Use(middleware.CSRFMiddleware(csrfService))
 
 	// User routes
 	protected.GET("/users", userHandler.ListUsers)

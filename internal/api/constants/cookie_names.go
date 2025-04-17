@@ -5,6 +5,7 @@ const (
 	// Authentication cookies
 	CookieSession   = "session"    // Firebase session cookie (HttpOnly)
 	CookieAuthToken = "auth_token" // API authentication token (HttpOnly)
+	CookieCSRF     = "csrf_token" // CSRF protection token (not HttpOnly)
 
 	// Cookie paths
 	CookiePathRoot = "/"      // Root path for cookies available throughout the site
@@ -14,4 +15,7 @@ const (
 	CookieDuration24h  = 86400  // 24 hours
 	CookieDuration30d  = 2592000 // 30 days
 	CookieDurationWeek = 604800  // 7 days
+
+	// Header names
+	HeaderCSRF = "X-CSRF-Token" // CSRF token header name
 )
