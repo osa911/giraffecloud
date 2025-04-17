@@ -1,5 +1,11 @@
 import { AxiosInstance, AxiosRequestConfig } from "axios";
 
+// Constants for CSRF handling
+export const CSRF_COOKIE_NAME = "csrf_token";
+export const CSRF_HEADER_NAME = "X-CSRF-Token";
+export const UNSAFE_METHODS = ["post", "put", "patch", "delete"] as const;
+export const AUTH_ENDPOINTS = ["/auth/login", "/auth/register"] as const;
+
 // Define the standard API response structure
 export interface APIResponse<T> {
   success: boolean;
@@ -11,12 +17,35 @@ export interface APIResponse<T> {
   };
 }
 
+// CSRF-related types
+export type CSRFConfig = {
+  getCsrfToken: () => string | undefined | Promise<string | undefined>;
+  shouldSkipCsrf?: (url: string) => boolean;
+  onMissingToken?: (method: string, url?: string) => void;
+};
+
 // This interface defines the minimal contract that matches the axios interface we need
 export type HttpClient = Pick<AxiosInstance, "get" | "post" | "put" | "delete">;
 
 export type BaseApiClientParams = {
   prefix?: string;
   version?: string;
+  csrfConfig?: CSRFConfig;
+};
+
+// Utility function to check if a method requires CSRF token
+export const requiresCsrfToken = (method?: string): boolean => {
+  return (
+    !!method &&
+    UNSAFE_METHODS.includes(
+      method.toLowerCase() as (typeof UNSAFE_METHODS)[number]
+    )
+  );
+};
+
+// Utility function to check if an endpoint should skip CSRF
+export const isAuthEndpoint = (url?: string): boolean => {
+  return !!url && AUTH_ENDPOINTS.some((endpoint) => url.includes(endpoint));
 };
 
 // The base client factory takes an HTTP client instance and creates an API client from it
@@ -24,8 +53,33 @@ const baseApiClient = (
   httpClient: HttpClient,
   params?: BaseApiClientParams
 ) => {
-  const { prefix = "api", version = "v1" } = params || {};
+  const { prefix = "api", version = "v1", csrfConfig } = params || {};
   const baseURL = `/${prefix}/${version}`;
+
+  // Helper to add CSRF token to request config if needed
+  const addCsrfToken = async (
+    config: AxiosRequestConfig = {}
+  ): Promise<AxiosRequestConfig> => {
+    if (!csrfConfig) return config;
+
+    const {
+      getCsrfToken,
+      shouldSkipCsrf = isAuthEndpoint,
+      onMissingToken,
+    } = csrfConfig;
+    config.headers = config.headers || {};
+
+    if (requiresCsrfToken(config.method) && !shouldSkipCsrf(config.url || "")) {
+      const token = await getCsrfToken();
+      if (token) {
+        config.headers[CSRF_HEADER_NAME] = token;
+      } else if (onMissingToken) {
+        onMissingToken(config.method || "", config.url);
+      }
+    }
+
+    return config;
+  };
 
   return {
     get: async <T>(
@@ -33,9 +87,10 @@ const baseApiClient = (
       config?: AxiosRequestConfig
     ): Promise<T> => {
       const url = `${baseURL}${endpoint}`;
-      const response = await httpClient.get<APIResponse<T>>(url, config);
-
-      // Return just the data from the response envelope
+      const response = await httpClient.get<APIResponse<T>>(
+        url,
+        await addCsrfToken(config)
+      );
       return response.data.data as T;
     },
 
@@ -45,9 +100,11 @@ const baseApiClient = (
       config?: AxiosRequestConfig
     ): Promise<T> => {
       const url = `${baseURL}${endpoint}`;
-      const response = await httpClient.post<APIResponse<T>>(url, data, config);
-
-      // Return just the data from the response envelope
+      const response = await httpClient.post<APIResponse<T>>(
+        url,
+        data,
+        await addCsrfToken(config)
+      );
       return response.data.data as T;
     },
 
@@ -57,9 +114,11 @@ const baseApiClient = (
       config?: AxiosRequestConfig
     ): Promise<T> => {
       const url = `${baseURL}${endpoint}`;
-      const response = await httpClient.put<APIResponse<T>>(url, data, config);
-
-      // Return just the data from the response envelope
+      const response = await httpClient.put<APIResponse<T>>(
+        url,
+        data,
+        await addCsrfToken(config)
+      );
       return response.data.data as T;
     },
 
@@ -68,9 +127,10 @@ const baseApiClient = (
       config?: AxiosRequestConfig
     ): Promise<T> => {
       const url = `${baseURL}${endpoint}`;
-      const response = await httpClient.delete<APIResponse<T>>(url, config);
-
-      // Return just the data from the response envelope
+      const response = await httpClient.delete<APIResponse<T>>(
+        url,
+        await addCsrfToken(config)
+      );
       return response.data.data as T;
     },
   };

@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import axios from "axios";
 import baseApiClient, {
   BaseApiClientParams,
+  CSRF_COOKIE_NAME,
 } from "@/services/apiClient/baseApiClient";
 
 const serverAxios = axios.create({
@@ -18,13 +19,28 @@ const serverAxios = axios.create({
 serverAxios.interceptors.request.use(async (config) => {
   const cookieStore = await cookies();
   config.headers = config.headers || {};
-  config.headers.Cookie = cookieStore;
 
+  // Add all cookies
+  config.headers.Cookie = cookieStore;
   return config;
 });
 
+// Create and export the server API client
 const serverApi = (params?: BaseApiClientParams) => {
-  return baseApiClient(serverAxios, params);
+  return baseApiClient(serverAxios, {
+    ...params,
+    csrfConfig: {
+      getCsrfToken: async () => {
+        const cookieStore = await cookies();
+        return cookieStore.get(CSRF_COOKIE_NAME)?.value;
+      },
+      onMissingToken: (method, url) => {
+        if (process.env.NODE_ENV === "development") {
+          console.warn("CSRF token missing for unsafe method:", method, url);
+        }
+      },
+    },
+  });
 };
 
 export default serverApi;
