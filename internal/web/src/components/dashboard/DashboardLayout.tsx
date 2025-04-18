@@ -22,6 +22,7 @@ import {
   Menu as MenuIcon,
   Dashboard as DashboardIcon,
   Person as ProfileIcon,
+  Settings as SettingsIcon,
 } from "@mui/icons-material";
 import { useAuth } from "@/contexts/AuthProvider";
 import Link from "@/components/common/Link";
@@ -32,6 +33,7 @@ const drawerWidth = 240;
 const menuItems = [
   { text: "Dashboard", icon: <DashboardIcon />, path: "/dashboard" },
   { text: "Profile", icon: <ProfileIcon />, path: "/dashboard/profile" },
+  { text: "Settings", icon: <SettingsIcon />, path: "/dashboard/settings" },
 ];
 
 interface DashboardLayoutClientProps {
