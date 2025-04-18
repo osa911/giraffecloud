@@ -12,6 +12,7 @@ type Handlers struct {
 	User    *handlers.UserHandler
 	Health  *handlers.HealthHandler
 	Session *handlers.SessionHandler
+	Token   *handlers.TokenHandler
 }
 
 // Middleware contains all the middleware

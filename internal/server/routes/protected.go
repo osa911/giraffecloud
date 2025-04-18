@@ -14,4 +14,5 @@ func SetupProtectedRoutes(router *gin.Engine, h *Handlers, m *Middleware) {
 
 	SetupUserRoutes(protected, h.User, m.Validation)
 	SetupSessionRoutes(protected, h.Session)
+	h.Token.RegisterRoutes(router) // Token handler registers its own routes
 }

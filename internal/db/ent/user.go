@@ -47,9 +47,11 @@ type User struct {
 type UserEdges struct {
 	// Sessions holds the value of the sessions edge.
 	Sessions []*Session `json:"sessions,omitempty"`
+	// Tokens holds the value of the tokens edge.
+	Tokens []*Token `json:"tokens,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [1]bool
+	loadedTypes [2]bool
 }
 
 // SessionsOrErr returns the Sessions value or an error if the edge
@@ -59,6 +61,15 @@ func (e UserEdges) SessionsOrErr() ([]*Session, error) {
 		return e.Sessions, nil
 	}
 	return nil, &NotLoadedError{edge: "sessions"}
+}
+
+// TokensOrErr returns the Tokens value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) TokensOrErr() ([]*Token, error) {
+	if e.loadedTypes[1] {
+		return e.Tokens, nil
+	}
+	return nil, &NotLoadedError{edge: "tokens"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -174,6 +185,11 @@ func (u *User) Value(name string) (ent.Value, error) {
 // QuerySessions queries the "sessions" edge of the User entity.
 func (u *User) QuerySessions() *SessionQuery {
 	return NewUserClient(u.config).QuerySessions(u)
+}
+
+// QueryTokens queries the "tokens" edge of the User entity.
+func (u *User) QueryTokens() *TokenQuery {
+	return NewUserClient(u.config).QueryTokens(u)
 }
 
 // Update returns a builder for updating this User.

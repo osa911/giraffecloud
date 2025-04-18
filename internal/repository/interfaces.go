@@ -4,7 +4,10 @@ import (
 	"context"
 	"time"
 
+	"giraffecloud/internal/api/mapper"
 	"giraffecloud/internal/db/ent"
+
+	"github.com/google/uuid"
 )
 
 // UserRepository defines the interface for user-related database operations
@@ -71,4 +74,18 @@ type AuthRepository interface {
 	UpdateUserLastLogin(ctx context.Context, user *ent.User, ipAddress string) (*ent.User, error)
 	// UpdateUserLastActivity updates user's last activity timestamp
 	UpdateUserLastActivity(ctx context.Context, user *ent.User) (*ent.User, error)
+}
+
+// TokenRepository defines the interface for token-related database operations
+type TokenRepository interface {
+	// Create creates a new token
+	Create(ctx context.Context, token *mapper.Token) error
+	// List returns all tokens for a user
+	List(ctx context.Context, userID uint32) ([]*mapper.Token, error)
+	// GetByHash returns a token by its hash
+	GetByHash(ctx context.Context, tokenHash string) (*mapper.Token, error)
+	// Revoke marks a token as revoked
+	Revoke(ctx context.Context, id uuid.UUID) error
+	// UpdateLastUsed updates token's last used timestamp
+	UpdateLastUsed(ctx context.Context, id uuid.UUID) error
 }

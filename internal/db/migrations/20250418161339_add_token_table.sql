@@ -1,0 +1,2 @@
+-- Create "tokens" table
+CREATE TABLE "public"."tokens" ("id" uuid NOT NULL, "name" character varying NOT NULL, "token_hash" character varying NOT NULL, "created_at" timestamptz NOT NULL, "last_used_at" timestamptz NOT NULL, "expires_at" timestamptz NOT NULL, "revoked_at" timestamptz NULL, "user_id" bigint NOT NULL, PRIMARY KEY ("id"), CONSTRAINT "tokens_users_tokens" FOREIGN KEY ("user_id") REFERENCES "public"."users" ("id") ON UPDATE NO ACTION ON DELETE NO ACTION);

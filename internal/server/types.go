@@ -20,4 +20,5 @@ type Repositories struct {
 	User    repository.UserRepository
 	Auth    repository.AuthRepository
 	Session repository.SessionRepository
+	Token   repository.TokenRepository
 }

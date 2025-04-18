@@ -58,12 +58,16 @@ func (s *Server) initialize() error {
 	// Initialize repositories
 	repos := s.initializeRepositories()
 
+	// Initialize token service
+	tokenService := service.NewTokenService(repos.Token)
+
 	// Initialize handlers
 	handlers := &routes.Handlers{
 		Auth:    handlers.NewAuthHandler(repos.Auth, repos.Session, csrfService, auditService),
 		User:    handlers.NewUserHandler(repos.User),
 		Health:  handlers.NewHealthHandler(s.db.DB),
 		Session: handlers.NewSessionHandler(repos.Session),
+		Token:   handlers.NewTokenHandler(tokenService),
 	}
 
 	// Initialize middleware
@@ -85,6 +89,7 @@ func (s *Server) initializeRepositories() *Repositories {
 		User:    repository.NewUserRepository(s.db.DB),
 		Auth:    repository.NewAuthRepository(s.db.DB),
 		Session: repository.NewSessionRepository(s.db.DB),
+		Token:   repository.NewTokenRepository(s.db.DB),
 	}
 }
 

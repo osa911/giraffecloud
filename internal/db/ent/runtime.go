@@ -5,8 +5,11 @@ package ent
 import (
 	"giraffecloud/internal/db/ent/schema"
 	"giraffecloud/internal/db/ent/session"
+	"giraffecloud/internal/db/ent/token"
 	"giraffecloud/internal/db/ent/user"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // The init function reads all schema descriptors with runtime code
@@ -32,6 +35,30 @@ func init() {
 	sessionDescIsActive := sessionFields[4].Descriptor()
 	// session.DefaultIsActive holds the default value on creation for the is_active field.
 	session.DefaultIsActive = sessionDescIsActive.Default.(bool)
+	tokenFields := schema.Token{}.Fields()
+	_ = tokenFields
+	// tokenDescName is the schema descriptor for name field.
+	tokenDescName := tokenFields[2].Descriptor()
+	// token.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	token.NameValidator = tokenDescName.Validators[0].(func(string) error)
+	// tokenDescTokenHash is the schema descriptor for token_hash field.
+	tokenDescTokenHash := tokenFields[3].Descriptor()
+	// token.TokenHashValidator is a validator for the "token_hash" field. It is called by the builders before save.
+	token.TokenHashValidator = tokenDescTokenHash.Validators[0].(func(string) error)
+	// tokenDescCreatedAt is the schema descriptor for created_at field.
+	tokenDescCreatedAt := tokenFields[4].Descriptor()
+	// token.DefaultCreatedAt holds the default value on creation for the created_at field.
+	token.DefaultCreatedAt = tokenDescCreatedAt.Default.(func() time.Time)
+	// tokenDescLastUsedAt is the schema descriptor for last_used_at field.
+	tokenDescLastUsedAt := tokenFields[5].Descriptor()
+	// token.DefaultLastUsedAt holds the default value on creation for the last_used_at field.
+	token.DefaultLastUsedAt = tokenDescLastUsedAt.Default.(func() time.Time)
+	// token.UpdateDefaultLastUsedAt holds the default value on update for the last_used_at field.
+	token.UpdateDefaultLastUsedAt = tokenDescLastUsedAt.UpdateDefault.(func() time.Time)
+	// tokenDescID is the schema descriptor for id field.
+	tokenDescID := tokenFields[0].Descriptor()
+	// token.DefaultID holds the default value on creation for the id field.
+	token.DefaultID = tokenDescID.Default.(func() uuid.UUID)
 	userMixin := schema.User{}.Mixin()
 	userMixinFields0 := userMixin[0].Fields()
 	_ = userMixinFields0

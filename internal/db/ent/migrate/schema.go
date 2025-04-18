@@ -35,6 +35,31 @@ var (
 			},
 		},
 	}
+	// TokensColumns holds the columns for the "tokens" table.
+	TokensColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeUUID},
+		{Name: "name", Type: field.TypeString},
+		{Name: "token_hash", Type: field.TypeString},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "last_used_at", Type: field.TypeTime},
+		{Name: "expires_at", Type: field.TypeTime},
+		{Name: "revoked_at", Type: field.TypeTime, Nullable: true},
+		{Name: "user_id", Type: field.TypeUint32},
+	}
+	// TokensTable holds the schema information for the "tokens" table.
+	TokensTable = &schema.Table{
+		Name:       "tokens",
+		Columns:    TokensColumns,
+		PrimaryKey: []*schema.Column{TokensColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "tokens_users_tokens",
+				Columns:    []*schema.Column{TokensColumns[7]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+	}
 	// UsersColumns holds the columns for the "users" table.
 	UsersColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeUint32, Increment: true},
@@ -58,10 +83,12 @@ var (
 	// Tables holds all the tables in the schema.
 	Tables = []*schema.Table{
 		SessionsTable,
+		TokensTable,
 		UsersTable,
 	}
 )
 
 func init() {
 	SessionsTable.ForeignKeys[0].RefTable = UsersTable
+	TokensTable.ForeignKeys[0].RefTable = UsersTable
 }

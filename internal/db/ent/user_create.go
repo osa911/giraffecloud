@@ -7,11 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"giraffecloud/internal/db/ent/session"
+	"giraffecloud/internal/db/ent/token"
 	"giraffecloud/internal/db/ent/user"
 	"time"
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/google/uuid"
 )
 
 // UserCreate is the builder for creating a User entity.
@@ -164,6 +166,21 @@ func (uc *UserCreate) AddSessions(s ...*Session) *UserCreate {
 		ids[i] = s[i].ID
 	}
 	return uc.AddSessionIDs(ids...)
+}
+
+// AddTokenIDs adds the "tokens" edge to the Token entity by IDs.
+func (uc *UserCreate) AddTokenIDs(ids ...uuid.UUID) *UserCreate {
+	uc.mutation.AddTokenIDs(ids...)
+	return uc
+}
+
+// AddTokens adds the "tokens" edges to the Token entity.
+func (uc *UserCreate) AddTokens(t ...*Token) *UserCreate {
+	ids := make([]uuid.UUID, len(t))
+	for i := range t {
+		ids[i] = t[i].ID
+	}
+	return uc.AddTokenIDs(ids...)
 }
 
 // Mutation returns the UserMutation object of the builder.
@@ -324,6 +341,22 @@ func (uc *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(session.FieldID, field.TypeUint32),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := uc.mutation.TokensIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.TokensTable,
+			Columns: []string{user.TokensColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(token.FieldID, field.TypeUUID),
 			},
 		}
 		for _, k := range nodes {
