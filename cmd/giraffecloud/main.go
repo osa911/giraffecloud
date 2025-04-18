@@ -8,7 +8,6 @@ import (
 	"os/signal"
 	"syscall"
 
-	"giraffecloud/internal/service"
 	"giraffecloud/internal/tunnel"
 	"giraffecloud/internal/version"
 
@@ -87,7 +86,7 @@ var installCmd = &cobra.Command{
 
 		logger.Info("Installing GiraffeCloud service")
 
-		sm, err := service.NewServiceManager()
+		sm, err := tunnel.NewServiceManager()
 		if err != nil {
 			logger.Error("Failed to create service manager: %v", err)
 			os.Exit(1)
@@ -118,7 +117,7 @@ var uninstallCmd = &cobra.Command{
 
 		logger.Info("Uninstalling GiraffeCloud service")
 
-		sm, err := service.NewServiceManager()
+		sm, err := tunnel.NewServiceManager()
 		if err != nil {
 			logger.Error("Failed to create service manager: %v", err)
 			os.Exit(1)
