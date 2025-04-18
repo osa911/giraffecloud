@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"giraffecloud/internal/config"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -53,8 +54,12 @@ func NewLogger(config *config.LoggingConfig) (*Logger, error) {
 		Compress:   true,
 	}
 
+	// Create a multi-writer that writes to both file and stdout
+	multiWriter := io.MultiWriter(writer, os.Stdout)
+
 	// Create logger with timestamp and file:line prefix
-	logger := log.New(writer, "", log.LstdFlags|log.Lshortfile)
+	// logger := log.New(multiWriter, "", log.LstdFlags|log.Lshortfile)
+	logger := log.New(multiWriter, "", log.LstdFlags)
 
 	return &Logger{
 		Logger: logger,
