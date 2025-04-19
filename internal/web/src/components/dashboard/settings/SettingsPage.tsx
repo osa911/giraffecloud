@@ -1,6 +1,8 @@
+"use client";
+
 import React from "react";
 import { Box, Container, Paper, Tab, Tabs, Typography } from "@mui/material";
-import TokenManagement from "@/components/TokenManagement";
+import TokenManagement from "@/components/dashboard/settings/TokenManagement";
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -31,7 +33,9 @@ function a11yProps(index: number) {
   };
 }
 
-export default function SettingsPage() {
+type Props = {};
+
+const SettingsPage = (props: Props) => {
   const [value, setValue] = React.useState(0);
 
   const handleChange = (event: React.SyntheticEvent, newValue: number) => {
@@ -61,4 +65,6 @@ export default function SettingsPage() {
       </Paper>
     </Container>
   );
-}
+};
+
+export default SettingsPage;

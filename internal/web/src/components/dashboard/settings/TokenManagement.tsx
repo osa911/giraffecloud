@@ -1,3 +1,5 @@
+"use client";
+
 import React, { useState, useEffect } from "react";
 import {
   Box,
@@ -16,40 +18,40 @@ import {
   TableRow,
   TextField,
   Typography,
+  Alert,
+  Snackbar,
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
 import { format } from "date-fns";
-
-interface Token {
-  id: string;
-  name: string;
-  created_at: string;
-  last_used_at: string;
-  expires_at: string;
-}
-
-interface CreateTokenResponse {
-  token: string;
-  id: string;
-  name: string;
-  created_at: string;
-  expires_at: string;
-}
+import {
+  createToken,
+  getTokensList,
+  revokeToken,
+  type Token,
+} from "@/api/tokenApi";
+import { ApiError } from "@/utils/error";
 
 const TokenManagement: React.FC = () => {
   const [tokens, setTokens] = useState<Token[]>([]);
   const [open, setOpen] = useState(false);
   const [newTokenName, setNewTokenName] = useState("");
   const [newTokenValue, setNewTokenValue] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
   const fetchTokens = async () => {
     try {
-      const response = await fetch("/api/v1/tokens");
-      if (!response.ok) throw new Error("Failed to fetch tokens");
-      const data = await response.json();
+      setLoading(true);
+      const data = await getTokensList();
       setTokens(data);
-    } catch (error) {
-      console.error("Error fetching tokens:", error);
+      setError(null);
+    } catch (err) {
+      setError(
+        err instanceof ApiError ? err.message : "Failed to fetch tokens"
+      );
+      console.error("Error fetching tokens:", err);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -59,16 +61,8 @@ const TokenManagement: React.FC = () => {
 
   const handleCreateToken = async () => {
     try {
-      const response = await fetch("/api/v1/tokens", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ name: newTokenName }),
-      });
-
-      if (!response.ok) throw new Error("Failed to create token");
-      const data: CreateTokenResponse = await response.json();
+      setLoading(true);
+      const data = await createToken(newTokenName);
       setNewTokenValue(data.token);
       setTokens([
         ...tokens,
@@ -80,21 +74,30 @@ const TokenManagement: React.FC = () => {
           expires_at: data.expires_at,
         },
       ]);
-    } catch (error) {
-      console.error("Error creating token:", error);
+      setError(null);
+    } catch (err) {
+      setError(
+        err instanceof ApiError ? err.message : "Failed to create token"
+      );
+      console.error("Error creating token:", err);
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleRevokeToken = async (id: string) => {
     try {
-      const response = await fetch(`/api/v1/tokens/${id}`, {
-        method: "DELETE",
-      });
-
-      if (!response.ok) throw new Error("Failed to revoke token");
+      setLoading(true);
+      await revokeToken(id);
       setTokens(tokens.filter((token) => token.id !== id));
-    } catch (error) {
-      console.error("Error revoking token:", error);
+      setError(null);
+    } catch (err) {
+      setError(
+        err instanceof ApiError ? err.message : "Failed to revoke token"
+      );
+      console.error("Error revoking token:", err);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -104,11 +107,19 @@ const TokenManagement: React.FC = () => {
     setNewTokenValue(null);
   };
 
+  const handleErrorClose = () => {
+    setError(null);
+  };
+
   return (
     <Box sx={{ p: 3 }}>
       <Box sx={{ display: "flex", justifyContent: "space-between", mb: 3 }}>
         <Typography variant="h5">API Tokens</Typography>
-        <Button variant="contained" onClick={() => setOpen(true)}>
+        <Button
+          variant="contained"
+          onClick={() => setOpen(true)}
+          disabled={loading}
+        >
           Create New Token
         </Button>
       </Box>
@@ -142,6 +153,7 @@ const TokenManagement: React.FC = () => {
                     onClick={() => handleRevokeToken(token.id)}
                     color="error"
                     size="small"
+                    disabled={loading}
                   >
                     <DeleteIcon />
                   </IconButton>
@@ -181,20 +193,40 @@ const TokenManagement: React.FC = () => {
               variant="outlined"
               value={newTokenName}
               onChange={(e) => setNewTokenName(e.target.value)}
+              disabled={loading}
             />
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleClose}>
+          <Button onClick={handleClose} disabled={loading}>
             {newTokenValue ? "Close" : "Cancel"}
           </Button>
           {!newTokenValue && (
-            <Button onClick={handleCreateToken} variant="contained">
+            <Button
+              onClick={handleCreateToken}
+              variant="contained"
+              disabled={loading || !newTokenName.trim()}
+            >
               Create
             </Button>
           )}
         </DialogActions>
       </Dialog>
+
+      <Snackbar
+        open={!!error}
+        autoHideDuration={6000}
+        onClose={handleErrorClose}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert
+          onClose={handleErrorClose}
+          severity="error"
+          sx={{ width: "100%" }}
+        >
+          {error}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };

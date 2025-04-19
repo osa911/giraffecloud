@@ -10,8 +10,8 @@ import (
 func SetupTokenRoutes(router *gin.RouterGroup, h *handlers.TokenHandler) {
 	tokens := router.Group("/tokens")
 	{
-		tokens.POST("/", h.CreateToken)
-		tokens.GET("/", h.ListTokens)
+		tokens.POST("", h.CreateToken)
+		tokens.GET("", h.ListTokens)
 		tokens.DELETE("/:id", h.RevokeToken)
 	}
 }

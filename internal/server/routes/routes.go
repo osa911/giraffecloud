@@ -3,6 +3,7 @@ package routes
 import (
 	"giraffecloud/internal/api/middleware"
 	"giraffecloud/internal/logging"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -32,4 +33,26 @@ func SetupGlobalMiddleware(router *gin.Engine, logger *logging.Logger) {
 		RPS:   10,
 		Burst: 20,
 	}))
+	router.Use(handleTrailingSlash())
+}
+
+// handleTrailingSlash middleware removes the need for strict trailing slash matching
+func handleTrailingSlash() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		path := c.Request.URL.Path
+
+		// Skip for root path
+		if path == "/" {
+			c.Next()
+			return
+		}
+
+		// Remove trailing slash if present (except for root path)
+		if path != "/" && strings.HasSuffix(path, "/") {
+			path = strings.TrimSuffix(path, "/")
+			c.Request.URL.Path = path
+		}
+
+		c.Next()
+	}
 }
