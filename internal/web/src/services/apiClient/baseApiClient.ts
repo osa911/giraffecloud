@@ -2,12 +2,17 @@ import { AxiosInstance, AxiosRequestConfig } from "axios";
 
 // Constants for CSRF handling
 export const CSRF_COOKIE_NAME = "csrf_token";
-export const CSRF_HEADER_NAME = "X-CSRF-Token";
-export const UNSAFE_METHODS = ["post", "put", "patch", "delete"] as const;
-export const AUTH_ENDPOINTS = ["/auth/login", "/auth/register"] as const;
+export const AUTH_TOKEN_COOKIE_NAME = "auth_token";
+const CSRF_HEADER_NAME = "X-CSRF-Token";
+
+// HTTP methods that require CSRF protection
+const UNSAFE_METHODS = ["post", "put", "patch", "delete"] as const;
+
+// Endpoints that should skip CSRF protection
+const AUTH_ENDPOINTS = ["/auth/login", "/auth/register"] as const;
 
 // Define the standard API response structure
-export interface APIResponse<T> {
+interface APIResponse<T> {
   success: boolean;
   data?: T;
   error?: {
@@ -18,14 +23,14 @@ export interface APIResponse<T> {
 }
 
 // CSRF-related types
-export type CSRFConfig = {
+type CSRFConfig = {
   getCsrfToken: () => string | undefined | Promise<string | undefined>;
   shouldSkipCsrf?: (url: string) => boolean;
   onMissingToken?: (method: string, url?: string) => void;
 };
 
 // This interface defines the minimal contract that matches the axios interface we need
-export type HttpClient = Pick<AxiosInstance, "get" | "post" | "put" | "delete">;
+type HttpClient = Pick<AxiosInstance, "get" | "post" | "put" | "delete">;
 
 export type BaseApiClientParams = {
   prefix?: string;
@@ -34,7 +39,7 @@ export type BaseApiClientParams = {
 };
 
 // Utility function to check if a method requires CSRF token
-export const requiresCsrfToken = (method?: string): boolean => {
+const requiresCsrfToken = (method?: string): boolean => {
   return (
     !!method &&
     UNSAFE_METHODS.includes(
@@ -44,8 +49,8 @@ export const requiresCsrfToken = (method?: string): boolean => {
 };
 
 // Utility function to check if an endpoint should skip CSRF
-export const isAuthEndpoint = (url?: string): boolean => {
-  return !!url && AUTH_ENDPOINTS.some((endpoint) => url.includes(endpoint));
+const isAuthEndpoint = (url?: string): boolean => {
+  return !!url && AUTH_ENDPOINTS.some((endpoint) => url.endsWith(endpoint));
 };
 
 // The base client factory takes an HTTP client instance and creates an API client from it
@@ -84,9 +89,11 @@ const baseApiClient = (
   return {
     get: async <T>(
       endpoint: string,
-      config?: AxiosRequestConfig
+      config: AxiosRequestConfig = {}
     ): Promise<T> => {
       const url = `${baseURL}${endpoint}`;
+      config.method = "get";
+      config.url = url;
       const response = await httpClient.get<APIResponse<T>>(
         url,
         await addCsrfToken(config)
@@ -97,9 +104,11 @@ const baseApiClient = (
     post: async <T>(
       endpoint: string,
       data?: any,
-      config?: AxiosRequestConfig
+      config: AxiosRequestConfig = {}
     ): Promise<T> => {
       const url = `${baseURL}${endpoint}`;
+      config.method = "post";
+      config.url = url;
       const response = await httpClient.post<APIResponse<T>>(
         url,
         data,
@@ -111,9 +120,11 @@ const baseApiClient = (
     put: async <T>(
       endpoint: string,
       data?: any,
-      config?: AxiosRequestConfig
+      config: AxiosRequestConfig = {}
     ): Promise<T> => {
       const url = `${baseURL}${endpoint}`;
+      config.method = "put";
+      config.url = url;
       const response = await httpClient.put<APIResponse<T>>(
         url,
         data,
@@ -124,9 +135,11 @@ const baseApiClient = (
 
     delete: async <T>(
       endpoint: string,
-      config?: AxiosRequestConfig
+      config: AxiosRequestConfig = {}
     ): Promise<T> => {
       const url = `${baseURL}${endpoint}`;
+      config.method = "delete";
+      config.url = url;
       const response = await httpClient.delete<APIResponse<T>>(
         url,
         await addCsrfToken(config)

@@ -265,7 +265,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		constants.CookieAuthToken,
 		session.Token,
 		constants.CookieDuration30d, // 30 days
-		constants.CookiePathAPI,
+		constants.CookiePathRoot,    // Changed from CookiePathAPI
 		cookieDomain,
 		true,  // Secure
 		true,  // HttpOnly
@@ -279,7 +279,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			constants.CookieCSRF,
 			csrfToken,
 			constants.CookieDuration30d,
-			constants.CookiePathAPI,
+			constants.CookiePathRoot,
 			cookieDomain,
 			true, // Secure
 			false, // NOT HttpOnly
@@ -391,7 +391,8 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	// Clear the session cookies
 	c.SetSameSite(http.SameSiteStrictMode)
 	c.SetCookie(constants.CookieSession, "", -1, constants.CookiePathRoot, getCookieDomain(), true, true)
-	c.SetCookie(constants.CookieAuthToken, "", -1, constants.CookiePathAPI, getCookieDomain(), true, true)
+	c.SetCookie(constants.CookieAuthToken, "", -1, constants.CookiePathRoot, getCookieDomain(), true, true)
+	c.SetCookie(constants.CookieCSRF, "", -1, constants.CookiePathRoot, getCookieDomain(), true, false)
 
 	// Return success response
 	c.JSON(http.StatusOK, common.NewMessageResponse("Logged out successfully"))
@@ -445,7 +446,7 @@ func (h *AuthHandler) GetSession(c *gin.Context) {
 				constants.CookieAuthToken,
 				authToken,
 				constants.CookieDuration24h,
-				constants.CookiePathAPI,
+				constants.CookiePathRoot, // Changed from CookiePathAPI
 				getCookieDomain(),
 				true,
 				true,
@@ -510,7 +511,7 @@ func (h *AuthHandler) RefreshSession(c *gin.Context) {
 					constants.CookieAuthToken,
 					authToken,
 					constants.CookieDuration24h,
-					constants.CookiePathAPI,
+					constants.CookiePathRoot, // Changed from CookiePathAPI
 					getCookieDomain(),
 					true,
 					true,

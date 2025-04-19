@@ -19,11 +19,15 @@ export const loginWithTokenAction = async (
   newState: LoginWithTokenFormState
 ): Promise<undefined> => {
   const token = newState.token;
+  let user: UserResponse | null = null;
   try {
-    await login({ token });
-    redirect("/dashboard");
+    user = await login({ token });
   } catch (error) {
     console.error("Error logging in:", error);
+  } finally {
+    if (user) {
+      redirect("/dashboard");
+    }
   }
 };
 
@@ -31,17 +35,20 @@ export async function registerWithEmailAction(
   prevState: undefined,
   newState: RegisterRequest
 ): Promise<undefined> {
+  let user: UserResponse | null = null;
   try {
-    await register(newState);
-    redirect("/dashboard");
+    user = await register(newState);
   } catch (error) {
     console.error("Error registering:", error);
+  } finally {
+    if (user) {
+      redirect("/dashboard");
+    }
   }
 }
 
 export async function login(data: LoginRequest): Promise<UserResponse> {
   const user = await serverApi().post<UserResponse>("/auth/login", data);
-  console.log("user", user);
   await setUserDataCookie(user);
   return user;
 }
