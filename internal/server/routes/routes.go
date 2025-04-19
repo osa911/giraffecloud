@@ -28,6 +28,7 @@ func SetupGlobalMiddleware(router *gin.Engine, logger *logging.Logger) {
 	router.Use(gin.Recovery())
 	router.Use(middleware.RequestLogger(logger))
 	router.Use(middleware.CORS())
+	router.Use(middleware.SecurityHeaders())
 	router.Use(middleware.PreserveRequestBody())
 	router.Use(middleware.RateLimitMiddleware(middleware.RateLimitConfig{
 		RPS:   10,
