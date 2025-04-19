@@ -20,15 +20,6 @@ func NewTokenHandler(tokenService *service.TokenService) *TokenHandler {
 	}
 }
 
-func (h *TokenHandler) RegisterRoutes(r *gin.Engine) {
-	tokens := r.Group("/api/v1/tokens")
-	{
-		tokens.POST("/", h.CreateToken)
-		tokens.GET("/", h.ListTokens)
-		tokens.DELETE("/:id", h.RevokeToken)
-	}
-}
-
 func (h *TokenHandler) CreateToken(c *gin.Context) {
 	var req token.CreateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
