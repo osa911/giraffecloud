@@ -25,6 +25,48 @@ serverAxios.interceptors.request.use(async (config) => {
   return config;
 });
 
+// Add response interceptor to handle cookies
+serverAxios.interceptors.response.use(async (response) => {
+  const cookieStore = await cookies();
+
+  // Get Set-Cookie headers from Go backend
+  const setCookieHeaders = response.headers["set-cookie"];
+  if (setCookieHeaders) {
+    // Parse and set each cookie
+    setCookieHeaders.forEach((cookieStr) => {
+      const [nameValue, ...options] = cookieStr.split("; ");
+      const [name, value] = nameValue.split("=");
+
+      const cookieOptions: any = {};
+      options.forEach((opt) => {
+        const [key, val = true] = opt.toLowerCase().split("=");
+        switch (key) {
+          case "path":
+            cookieOptions.path = val;
+            break;
+          case "max-age":
+            cookieOptions.maxAge = parseInt(val as string);
+            break;
+          case "secure":
+            cookieOptions.secure = true;
+            break;
+          case "httponly":
+            cookieOptions.httpOnly = true;
+            break;
+          case "samesite":
+            cookieOptions.sameSite = val;
+            break;
+        }
+      });
+
+      // Set the cookie in the browser
+      cookieStore.set(name, value, cookieOptions);
+    });
+  }
+
+  return response;
+});
+
 // Create and export the server API client
 const serverApi = (params?: BaseApiClientParams) => {
   return baseApiClient(serverAxios, {

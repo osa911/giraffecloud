@@ -152,6 +152,34 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
+	// Create a new session cookie with the verified ID token
+	expiresIn := time.Hour * 24 * 7 // 7 days for the session cookie
+	sessionCookie, err := firebase.GetAuthClient().SessionCookie(c.Request.Context(), loginPtr.Token, expiresIn)
+	if err != nil {
+		h.auditService.LogFailedAuthAttempt(
+			c.Request.Context(),
+			utils.GetRealIP(c),
+			"Failed to create session cookie",
+			map[string]interface{}{
+				"error": err.Error(),
+			},
+		)
+		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to create session cookie")
+		return
+	}
+
+	// Set the Firebase session cookie
+	c.SetSameSite(http.SameSiteStrictMode)
+	c.SetCookie(
+		constants.CookieSession,
+		sessionCookie,
+		constants.CookieDurationWeek,
+		constants.CookiePathRoot,
+		getCookieDomain(),
+		true,
+		true,
+	)
+
 	// Check if user exists in database with this Firebase UID
 	existingUser, err := h.authRepo.GetUserByFirebaseUID(c.Request.Context(), decodedToken.UID)
 	if err != nil {
@@ -242,6 +270,13 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
+	// Get the session with owner loaded for audit logging
+	sessionWithOwner, err := h.sessionRepo.GetActiveByToken(c.Request.Context(), session.Token)
+	if err != nil {
+		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to load session details")
+		return
+	}
+
 	// Log successful login and session creation
 	h.auditService.LogAuthEvent(
 		c.Request.Context(),
@@ -256,7 +291,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	h.auditService.LogSessionEvent(
 		c.Request.Context(),
 		service.AuditEventSessionCreated,
-		session,
+		sessionWithOwner,
 		nil,
 	)
 

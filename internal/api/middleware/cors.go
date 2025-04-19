@@ -19,12 +19,12 @@ func CORS() gin.HandlerFunc {
 
 		// Check if we're in development mode
 		if os.Getenv("ENV") == "development" || os.Getenv("ENV") == "" {
-			// In development, be more permissive - accept any origin
+			// In development, accept the origin if it's present
 			if origin != "" {
 				c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
 			} else {
-				// Default for local development if no origin header
-				c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+				// If no origin header, only accept localhost origins
+				c.Writer.Header().Set("Access-Control-Allow-Origin", "http://localhost:3000")
 			}
 		} else {
 			// In production, be more strict about allowed origins
@@ -32,22 +32,27 @@ func CORS() gin.HandlerFunc {
 				originAllowed := false
 				for _, allowed := range strings.Split(allowedOrigins, ",") {
 					allowed = strings.TrimSpace(allowed)
-					if (allowed == "*") || (origin == allowed) {
+					if origin == allowed {
 						originAllowed = true
 						c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
 						break
 					}
 				}
 
-				// If origin not in allowed list and we don't have a wildcard
-				if !originAllowed && !strings.Contains(allowedOrigins, "*") {
+				// If origin not in allowed list
+				if !originAllowed {
 					c.Status(http.StatusForbidden)
 					c.Abort()
 					return
 				}
 			} else {
-				// Fallback if no allowed origins configured
-				c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+				// If no allowed origins configured, only accept the client URL
+				clientURL := os.Getenv("CLIENT_URL")
+				if clientURL != "" {
+					c.Writer.Header().Set("Access-Control-Allow-Origin", clientURL)
+				} else {
+					c.Writer.Header().Set("Access-Control-Allow-Origin", "http://localhost:3000")
+				}
 			}
 		}
 

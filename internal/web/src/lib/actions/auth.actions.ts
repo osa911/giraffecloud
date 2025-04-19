@@ -20,7 +20,7 @@ export const loginWithTokenAction = async (
 ): Promise<undefined> => {
   const token = newState.token;
   try {
-    const user = await login({ token });
+    await login({ token });
     redirect("/dashboard");
   } catch (error) {
     console.error("Error logging in:", error);
@@ -32,7 +32,7 @@ export async function registerWithEmailAction(
   newState: RegisterRequest
 ): Promise<undefined> {
   try {
-    const user = await register(newState);
+    await register(newState);
     redirect("/dashboard");
   } catch (error) {
     console.error("Error registering:", error);
@@ -41,6 +41,7 @@ export async function registerWithEmailAction(
 
 export async function login(data: LoginRequest): Promise<UserResponse> {
   const user = await serverApi().post<UserResponse>("/auth/login", data);
+  console.log("user", user);
   await setUserDataCookie(user);
   return user;
 }
@@ -73,7 +74,8 @@ export async function getAuthUser(
     // Try cookie first
     const cookieData = await getUserDataFromCookie();
     if (cookieData) {
-      return cookieData;
+      user = cookieData;
+      return user;
     }
 
     // Fallback to API
@@ -81,8 +83,9 @@ export async function getAuthUser(
       "/auth/session"
     );
     if (data.valid && data.user) {
+      user = data.user;
       await setUserDataCookie(data.user);
-      return data.user;
+      return user;
     }
   } catch (error) {
     console.error("Error verifying session:", error);
@@ -92,7 +95,7 @@ export async function getAuthUser(
     }
   }
 
-  return null;
+  return user;
 }
 
 export async function verifyToken(data: VerifyTokenRequest): Promise<void> {
@@ -112,6 +115,7 @@ async function setUserDataCookie(user: UserResponse | null): Promise<void> {
     path: "/",
     secure: process.env.NODE_ENV === "production",
     maxAge: 60 * 60 * 24 * 1, // 1 day
+    sameSite: "strict",
   });
 }
 
@@ -134,13 +138,8 @@ export async function refreshSessionIfNeeded(
   user: FirebaseUser
 ): Promise<boolean> {
   try {
-    // Get the current ID token from Firebase (will be fresh due to Firebase's auto-refresh)
     const idToken = await user.getIdToken();
-
-    // Call the backend to refresh the session cookie
     await verifyToken({ id_token: idToken });
-
-    console.log("Session cookie refreshed with backend");
     return true;
   } catch (error) {
     console.error("Error refreshing session cookie:", error);
@@ -150,8 +149,6 @@ export async function refreshSessionIfNeeded(
 
 export async function handleTokenChanged(user: FirebaseUser): Promise<void> {
   try {
-    // This will be called when the token is refreshed by Firebase
-    console.log("Token refreshed by Firebase, updating session cookie");
     await refreshSessionIfNeeded(user);
   } catch (error) {
     console.error("Error handling token change:", error);
