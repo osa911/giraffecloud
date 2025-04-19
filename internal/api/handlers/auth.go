@@ -274,6 +274,12 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	// Generate and set CSRF token cookie (not HttpOnly)
 	csrfToken, err := h.csrfService.GenerateToken()
 	if err == nil {
+		// URL decode the token before setting it to prevent double encoding
+		decodedToken, err := url.QueryUnescape(csrfToken)
+		if err == nil {
+			csrfToken = decodedToken
+		}
+
 		c.SetSameSite(http.SameSiteStrictMode)
 		c.SetCookie(
 			constants.CookieCSRF,
@@ -371,9 +377,8 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 		// Invalidate the session in the database
 		err = h.sessionRepo.RevokeByToken(c.Request.Context(), sessionCookie)
 		if err != nil {
+			// Log the error but don't return it - we'll still clear cookies and log out
 			logger.Error("Failed to invalidate session: %v", err)
-			utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to invalidate session")
-			return
 		}
 	}
 

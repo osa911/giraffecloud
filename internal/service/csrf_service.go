@@ -25,7 +25,8 @@ func (s *csrfService) GenerateToken() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return base64.URLEncoding.EncodeToString(b), nil
+	// Use RawURLEncoding to avoid URL-unsafe characters without encoding
+	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
 // ValidateToken validates the CSRF token against the header
