@@ -32,7 +32,8 @@ func (s *TokenService) CreateToken(ctx context.Context, userID uint32, req *toke
 	if _, err := rand.Read(tokenBytes); err != nil {
 		return nil, fmt.Errorf("failed to generate token: %w", err)
 	}
-	plainToken := base64.URLEncoding.EncodeToString(tokenBytes)
+	// Use RawURLEncoding to avoid URL-unsafe characters without padding
+	plainToken := base64.RawURLEncoding.EncodeToString(tokenBytes)
 
 	// Hash the token for storage
 	hash := sha256.Sum256([]byte(plainToken))

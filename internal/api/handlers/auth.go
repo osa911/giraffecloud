@@ -52,7 +52,8 @@ func generateSecureToken(length int) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return base64.URLEncoding.EncodeToString(b), nil
+	// Use RawURLEncoding to avoid URL-unsafe characters without padding
+	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
 // CheckIfIP checks if a string is an IP address
