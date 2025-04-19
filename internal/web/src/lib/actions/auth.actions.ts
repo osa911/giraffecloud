@@ -52,14 +52,7 @@ export async function register(data: RegisterRequest): Promise<UserResponse> {
 }
 
 export async function logout(): Promise<void> {
-  try {
-    // First notify backend about logout
-    await serverApi().post("/auth/logout");
-  } catch (error) {
-    console.error("Error notifying backend about logout:", error);
-    // Continue with cookie cleanup even if backend call fails
-  }
-
+  await serverApi().post("/auth/logout");
   await setUserDataCookie(null);
   redirect("/auth/login");
 }

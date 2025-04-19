@@ -8,7 +8,7 @@ import (
 )
 
 // SetupAuthRoutes configures authentication related routes
-func SetupAuthRoutes(router *gin.Engine, auth *handlers.AuthHandler, m *Middleware) {
+func SetupAuthRoutes(router *gin.RouterGroup, auth *handlers.AuthHandler, m *Middleware) {
 	public := router.Group("/auth")
 	{
 		// No CSRF protection for login and register

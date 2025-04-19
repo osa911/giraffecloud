@@ -7,8 +7,8 @@ import (
 )
 
 // SetupProtectedRoutes configures routes that require authentication
-func SetupProtectedRoutes(router *gin.Engine, h *Handlers, m *Middleware) {
-	protected := router.Group("/api/v1")
+func SetupProtectedRoutes(router *gin.RouterGroup, h *Handlers, m *Middleware) {
+	protected := router.Group("")
 	protected.Use(m.Auth.RequireAuth())
 	protected.Use(middleware.CSRFMiddleware(m.CSRF))
 

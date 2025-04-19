@@ -9,14 +9,17 @@ import (
 
 // Setup configures all route groups
 func Setup(router *gin.Engine, h *Handlers, m *Middleware) {
+	// Create base API v1 group
+	v1 := router.Group("/api/v1")
+
 	// Health check endpoint
 	SetupHealthRoutes(router, h.Health)
 
 	// Auth routes
-	SetupAuthRoutes(router, h.Auth, m)
+	SetupAuthRoutes(v1, h.Auth, m)
 
 	// Protected API routes
-	SetupProtectedRoutes(router, h, m)
+	SetupProtectedRoutes(v1, h, m)
 }
 
 // SetupGlobalMiddleware configures middleware that applies to all routes
