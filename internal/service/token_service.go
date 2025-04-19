@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"time"
 
@@ -15,6 +16,37 @@ import (
 
 	"github.com/google/uuid"
 )
+
+var (
+	ErrTokenTooShort = errors.New("token too short")
+	ErrTokenInvalid  = errors.New("invalid token format")
+)
+
+const (
+	MinTokenBytes = 32 // 256 bits minimum
+)
+
+// validateTokenEntropy ensures the token has sufficient entropy
+func validateTokenEntropy(token string) error {
+	// Check minimum length (base64 encoded)
+	minBase64Len := base64.RawURLEncoding.EncodedLen(MinTokenBytes)
+	if len(token) < minBase64Len {
+		return ErrTokenTooShort
+	}
+
+	// Try to decode to ensure it's valid base64
+	decoded, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil {
+		return ErrTokenInvalid
+	}
+
+	// Ensure decoded length meets minimum requirement
+	if len(decoded) < MinTokenBytes {
+		return ErrTokenTooShort
+	}
+
+	return nil
+}
 
 type TokenService struct {
 	tokenRepo repository.TokenRepository
@@ -28,12 +60,17 @@ func NewTokenService(tokenRepo repository.TokenRepository) *TokenService {
 
 func (s *TokenService) CreateToken(ctx context.Context, userID uint32, req *token.CreateRequest) (*token.Response, error) {
 	// Generate a random token
-	tokenBytes := make([]byte, 32)
+	tokenBytes := make([]byte, MinTokenBytes)
 	if _, err := rand.Read(tokenBytes); err != nil {
 		return nil, fmt.Errorf("failed to generate token: %w", err)
 	}
 	// Use RawURLEncoding to avoid URL-unsafe characters without padding
 	plainToken := base64.RawURLEncoding.EncodeToString(tokenBytes)
+
+	// Validate token entropy
+	if err := validateTokenEntropy(plainToken); err != nil {
+		return nil, fmt.Errorf("token validation failed: %w", err)
+	}
 
 	// Hash the token for storage
 	hash := sha256.Sum256([]byte(plainToken))
@@ -71,6 +108,11 @@ func (s *TokenService) RevokeToken(ctx context.Context, id uuid.UUID) error {
 }
 
 func (s *TokenService) ValidateToken(ctx context.Context, tokenStr string) (*mapper.Token, error) {
+	// Validate token entropy first
+	if err := validateTokenEntropy(tokenStr); err != nil {
+		return nil, fmt.Errorf("invalid token format: %w", err)
+	}
+
 	hash := sha256.Sum256([]byte(tokenStr))
 	tokenHash := hex.EncodeToString(hash[:])
 
