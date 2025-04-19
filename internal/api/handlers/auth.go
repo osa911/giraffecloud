@@ -140,14 +140,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	// Verify the Firebase token
 	decodedToken, err := firebase.GetAuthClient().VerifyIDToken(c.Request.Context(), loginPtr.Token)
 	if err != nil {
-		h.auditService.LogFailedAuthAttempt(
-			c.Request.Context(),
-			utils.GetRealIP(c),
-			"Invalid Firebase token",
-			map[string]interface{}{
-				"error": err.Error(),
-			},
-		)
+		h.auditService.LogFailedAuthAttempt(c.Request.Context(), c, "Invalid Firebase token", err)
 		utils.HandleAPIError(c, err, http.StatusUnauthorized, common.ErrCodeUnauthorized, "Invalid token")
 		return
 	}
@@ -156,14 +149,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	expiresIn := time.Hour * 24 * 7 // 7 days for the session cookie
 	sessionCookie, err := firebase.GetAuthClient().SessionCookie(c.Request.Context(), loginPtr.Token, expiresIn)
 	if err != nil {
-		h.auditService.LogFailedAuthAttempt(
-			c.Request.Context(),
-			utils.GetRealIP(c),
-			"Failed to create session cookie",
-			map[string]interface{}{
-				"error": err.Error(),
-			},
-		)
+		h.auditService.LogFailedAuthAttempt(c.Request.Context(), c, "Failed to create session cookie", err)
 		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to create session cookie")
 		return
 	}
@@ -195,28 +181,15 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			// Create new user
 			existingUser, err = h.authRepo.CreateUser(c.Request.Context(), decodedToken.UID, email, name, utils.GetRealIP(c))
 			if err != nil {
-				h.auditService.LogFailedAuthAttempt(
-					c.Request.Context(),
-					utils.GetRealIP(c),
-					"Failed to create user",
-					map[string]interface{}{
-						"error": err.Error(),
-						"email": email,
-					},
-				)
+				h.auditService.LogFailedAuthAttempt(c.Request.Context(), c, "Failed to create user", err, map[string]interface{}{
+					"email": email,
+				})
 				logger.Error("Failed to create user: %v", err)
 				utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to create user")
 				return
 			}
 		} else {
-			h.auditService.LogFailedAuthAttempt(
-				c.Request.Context(),
-				utils.GetRealIP(c),
-				"Database error",
-				map[string]interface{}{
-					"error": err.Error(),
-				},
-			)
+			h.auditService.LogFailedAuthAttempt(c.Request.Context(), c, "Database error", err)
 			utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Database error")
 			return
 		}
@@ -225,15 +198,9 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	// Update last login info
 	existingUser, err = h.authRepo.UpdateUserLastLogin(c.Request.Context(), existingUser, utils.GetRealIP(c))
 	if err != nil {
-		h.auditService.LogFailedAuthAttempt(
-			c.Request.Context(),
-			utils.GetRealIP(c),
-			"Failed to update user",
-			map[string]interface{}{
-				"error": err.Error(),
-				"user_id": existingUser.ID,
-			},
-		)
+		h.auditService.LogFailedAuthAttempt(c.Request.Context(), c, "Failed to update user", err, map[string]interface{}{
+			"user_id": existingUser.ID,
+		})
 		logger.Error("Failed to update user: %v", err)
 		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to update user")
 		return
@@ -257,15 +224,9 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	expiresAt := time.Now().Add(time.Hour * 24 * 30) // 30 days
 	session, err := h.sessionRepo.CreateForUser(c.Request.Context(), existingUser.ID, sessionToken, userAgent, ipAddress, expiresAt)
 	if err != nil {
-		h.auditService.LogFailedAuthAttempt(
-			c.Request.Context(),
-			utils.GetRealIP(c),
-			"Failed to create session",
-			map[string]interface{}{
-				"error": err.Error(),
-				"user_id": existingUser.ID,
-			},
-		)
+		h.auditService.LogFailedAuthAttempt(c.Request.Context(), c, "Failed to create session", err, map[string]interface{}{
+			"user_id": existingUser.ID,
+		})
 		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to create session")
 		return
 	}

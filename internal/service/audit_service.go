@@ -6,6 +6,9 @@ import (
 
 	"giraffecloud/internal/db/ent"
 	"giraffecloud/internal/logging"
+	"giraffecloud/internal/utils"
+
+	"github.com/gin-gonic/gin"
 )
 
 // AuditEventType represents the type of audit event
@@ -61,19 +64,27 @@ func (s *AuditService) LogAuthEvent(ctx context.Context, eventType AuditEventTyp
 }
 
 // LogFailedAuthAttempt logs a failed authentication attempt
-func (s *AuditService) LogFailedAuthAttempt(ctx context.Context, ip string, reason string, details map[string]interface{}) {
+func (s *AuditService) LogFailedAuthAttempt(ctx context.Context, c *gin.Context, reason string, err error, extraDetails ...map[string]interface{}) {
 	logger := logging.GetLogger()
+	ip := utils.GetRealIP(c)
 
-	event := map[string]interface{}{
+	details := map[string]interface{}{
 		"timestamp":   time.Now().UTC(),
 		"event_type": AuditEventLoginFailed,
 		"ip_address": ip,
 		"reason":     reason,
 	}
 
-	// Add any additional details
-	for k, v := range details {
-		event[k] = v
+	// Add error if present
+	if err != nil {
+		details["error"] = err.Error()
+	}
+
+	// Add any extra details
+	if len(extraDetails) > 0 {
+		for k, v := range extraDetails[0] {
+			details[k] = v
+		}
 	}
 
 	// Log the event
