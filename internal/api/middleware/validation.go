@@ -1,12 +1,11 @@
 package middleware
 
 import (
-	"net/http"
-
 	"giraffecloud/internal/api/constants"
 	"giraffecloud/internal/api/dto/common"
 	"giraffecloud/internal/api/dto/v1/auth"
 	"giraffecloud/internal/api/dto/v1/user"
+	"giraffecloud/internal/utils"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
@@ -27,15 +26,13 @@ func NewValidationMiddleware() *ValidationMiddleware {
 // validateRequest is a helper function to validate request data
 func (m *ValidationMiddleware) validateRequest(c *gin.Context, data interface{}, contextKey string) bool {
 	if err := c.ShouldBindJSON(data); err != nil {
-		response := common.NewErrorResponse(common.ErrCodeBadRequest, "Invalid request data", err.Error())
-		c.JSON(http.StatusBadRequest, response)
+		utils.HandleAPIError(c, err, common.ErrCodeBadRequest, "Invalid request data")
 		c.Abort()
 		return false
 	}
 
 	if err := m.validator.Struct(data); err != nil {
-		response := common.NewErrorResponse(common.ErrCodeBadRequest, "Validation failed", err.Error())
-		c.JSON(http.StatusBadRequest, response)
+		utils.HandleAPIError(c, err, common.ErrCodeBadRequest, "Validation failed")
 		c.Abort()
 		return false
 	}

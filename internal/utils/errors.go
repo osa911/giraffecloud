@@ -1,45 +1,61 @@
 package utils
 
 import (
-	"giraffecloud/internal/api/dto/common"
-	"giraffecloud/internal/db/ent"
+	commonDto "giraffecloud/internal/api/dto/common"
 	"giraffecloud/internal/logging"
+	"net/http"
 
 	"github.com/gin-gonic/gin"
 )
 
-// LogError logs an error with a message using the singleton logger
-func LogError(err error, message string) {
-	logger := logging.GetLogger()
-	logger.Error("%s: %v", message, err)
+// Map error codes to HTTP status codes
+var errorStatusMap = map[commonDto.ErrorCode]int{
+	commonDto.ErrCodeValidation:      http.StatusBadRequest,
+	commonDto.ErrCodeNotFound:        http.StatusNotFound,
+	commonDto.ErrCodeUnauthorized:    http.StatusUnauthorized,
+	commonDto.ErrCodeForbidden:       http.StatusForbidden,
+	commonDto.ErrCodeInternalServer:  http.StatusInternalServerError,
+	commonDto.ErrCodeBadRequest:      http.StatusBadRequest,
+	commonDto.ErrCodeTooManyRequests: http.StatusTooManyRequests,
+	commonDto.ErrCodeConflict:        http.StatusConflict,
 }
 
-// HandleAPIError is a utility function for consistent error handling across the API
-// It handles common error types and ensures sensitive error details are only exposed in non-production environments
-func HandleAPIError(c *gin.Context, err error, defaultStatus int, defaultCode common.ErrorCode, defaultMessage string) {
-	// For record not found errors, return 404
-	if ent.IsNotFound(err) {
-		c.JSON(404, common.NewErrorResponse(common.ErrCodeNotFound, "Resource not found", nil))
-		return
+// LogError logs an error with optional message
+func LogError(err error, msg string) {
+	logger := logging.GetLogger()
+	if msg != "" {
+		logger.Error("%s: %v", msg, err)
+	} else {
+		logger.Error("%v", err)
+	}
+}
+
+// HandleAPIError handles API errors in a standardized way
+func HandleAPIError(c *gin.Context, err error, code commonDto.ErrorCode, msg string) {
+	logger := logging.GetLogger()
+
+	// Get status code from map, default to 500 if not found
+	status := errorStatusMap[code]
+	if status == 0 {
+		status = http.StatusInternalServerError
 	}
 
-	// Log the error
-	logger := logging.GetLogger()
+	// Log HTTP error with request details
 	logger.LogHTTPError(
 		c.Request.Method,
 		c.Request.URL.Path,
 		GetRealIP(c),
-		defaultStatus,
-		defaultMessage,
+		status,
+		msg,
 		err,
 	)
 
 	// In production, don't expose error details
 	var errorDetails interface{} = nil
-	if gin.Mode() != gin.ReleaseMode {
-		errorDetails = err
+	if gin.Mode() != gin.ReleaseMode && err != nil {
+		errorDetails = err.Error()
 	}
 
-	// Return the appropriate error response
-	c.JSON(defaultStatus, common.NewErrorResponse(defaultCode, defaultMessage, errorDetails))
+	// Return error response
+	c.JSON(status, commonDto.NewErrorResponse(code, msg, errorDetails))
 }

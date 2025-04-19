@@ -5,6 +5,8 @@ import (
 	"regexp"
 
 	"giraffecloud/internal/api/constants"
+	commonDto "giraffecloud/internal/api/dto/common"
+	"giraffecloud/internal/utils"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
@@ -55,9 +57,10 @@ func validateURL(fl validator.FieldLevel) bool {
 
 // ValidationError represents a validation error
 type ValidationError struct {
-	Field string `json:"field"`
-	Tag   string `json:"tag"`
-	Value string `json:"value"`
+	Field   string `json:"field"`
+	Tag     string `json:"tag"`
+	Value   string `json:"value"`
+	Message string `json:"message"`
 }
 
 // FormatValidationError formats validation errors into a user-friendly response
@@ -65,30 +68,50 @@ func FormatValidationError(err error) []ValidationError {
 	var errors []ValidationError
 	if validationErrors, ok := err.(validator.ValidationErrors); ok {
 		for _, e := range validationErrors {
+			message := getValidationErrorMessage(e)
 			errors = append(errors, ValidationError{
-				Field: e.Field(),
-				Tag:   e.Tag(),
-				Value: e.Param(),
+				Field:   e.Field(),
+				Tag:     e.Tag(),
+				Value:   e.Param(),
+				Message: message,
 			})
 		}
 	}
 	return errors
 }
 
+// getValidationErrorMessage returns a user-friendly error message based on the validation error
+func getValidationErrorMessage(e validator.FieldError) string {
+	switch e.Tag() {
+	case "required":
+		return "This field is required"
+	case "email":
+		return "Invalid email format"
+	case "name":
+		return "Name must be 2-50 characters long and can only contain letters, numbers, spaces, hyphens, and underscores"
+	case "username":
+		return "Username must be 3-30 characters long and can only contain letters, numbers, hyphens, and underscores"
+	case "url":
+		return "Invalid URL format"
+	case "min":
+		return "Value is too short"
+	case "max":
+		return "Value is too long"
+	default:
+		return "Invalid value"
+	}
+}
+
 // ValidateRequest validates the request body against a struct
 func ValidateRequest(v *validator.Validate) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var err error
-		var validationErrors []ValidationError
-
 		// Get the validation struct from context
 		if val, exists := c.Get(constants.ContextKeyValidate); exists {
-			if err = v.Struct(val); err != nil {
-				validationErrors = FormatValidationError(err)
-				c.JSON(400, gin.H{
-					"error": "Validation failed",
-					"errors": validationErrors,
-				})
+			if err := v.Struct(val); err != nil {
+				validationErrors := FormatValidationError(err)
+				// Pass validation errors as details in the error response
+				c.Set("validation_errors", validationErrors)
+				utils.HandleAPIError(c, err, commonDto.ErrCodeValidation, "Validation failed")
 				c.Abort()
 				return
 			}

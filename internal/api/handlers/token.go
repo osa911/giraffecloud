@@ -1,10 +1,11 @@
 package handlers
 
 import (
-	"net/http"
-
+	"giraffecloud/internal/api/constants"
+	"giraffecloud/internal/api/dto/common"
 	"giraffecloud/internal/api/dto/v1/token"
 	"giraffecloud/internal/service"
+	"giraffecloud/internal/utils"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -23,53 +24,53 @@ func NewTokenHandler(tokenService *service.TokenService) *TokenHandler {
 func (h *TokenHandler) CreateToken(c *gin.Context) {
 	var req token.CreateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		utils.HandleAPIError(c, err, common.ErrCodeBadRequest, "Invalid request body")
 		return
 	}
 
-	// Get user ID from context (assuming it's set by auth middleware)
-	userID, exists := c.Get("user_id")
+	// Get user ID from context (set by auth middleware)
+	userID, exists := c.Get(constants.ContextKeyUserID)
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		utils.HandleAPIError(c, nil, common.ErrCodeUnauthorized, "Unauthorized")
 		return
 	}
 
 	response, err := h.tokenService.CreateToken(c.Request.Context(), userID.(uint32), &req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to create token")
 		return
 	}
 
-	c.JSON(http.StatusOK, response)
+	utils.HandleCreated(c, response)
 }
 
 func (h *TokenHandler) ListTokens(c *gin.Context) {
-	userID, exists := c.Get("user_id")
+	userID, exists := c.Get(constants.ContextKeyUserID)
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		utils.HandleAPIError(c, nil, common.ErrCodeUnauthorized, "Unauthorized")
 		return
 	}
 
 	tokens, err := h.tokenService.ListTokens(c.Request.Context(), userID.(uint32))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to list tokens")
 		return
 	}
 
-	c.JSON(http.StatusOK, tokens)
+	utils.HandleSuccess(c, tokens)
 }
 
 func (h *TokenHandler) RevokeToken(c *gin.Context) {
 	tokenID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid token ID"})
+		utils.HandleAPIError(c, err, common.ErrCodeBadRequest, "Invalid token ID")
 		return
 	}
 
 	if err := h.tokenService.RevokeToken(c.Request.Context(), tokenID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to revoke token")
 		return
 	}
 
-	c.Status(http.StatusNoContent)
+	utils.HandleNoContent(c)
 }

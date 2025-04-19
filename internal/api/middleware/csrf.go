@@ -2,7 +2,9 @@ package middleware
 
 import (
 	"giraffecloud/internal/api/constants"
+	"giraffecloud/internal/api/dto/common"
 	"giraffecloud/internal/service"
+	"giraffecloud/internal/utils"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -18,7 +20,8 @@ func CSRFMiddleware(csrfService service.CSRFService) gin.HandlerFunc {
 		csrfCookie, err := c.Cookie(constants.CookieCSRF)
 		csrfHeader := c.GetHeader(constants.HeaderCSRF)
 		if err != nil || !csrfService.ValidateToken(csrfCookie, csrfHeader) {
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "CSRF token invalid or missing"})
+			utils.HandleAPIError(c, nil, common.ErrCodeForbidden, "CSRF token invalid or missing")
+			c.Abort()
 			return
 		}
 		c.Next()

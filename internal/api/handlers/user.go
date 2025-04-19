@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"net/http"
 	"strconv"
 
 	"giraffecloud/internal/api/constants"
@@ -29,13 +28,13 @@ func NewUserHandler(repository repository.UserRepository) *UserHandler {
 func (h *UserHandler) GetProfile(c *gin.Context) {
 	userModel, exists := c.Get(constants.ContextKeyUser)
 	if !exists {
-		utils.HandleAPIError(c, nil, http.StatusUnauthorized, common.ErrCodeUnauthorized, "User not found in context")
+		utils.HandleAPIError(c, nil, common.ErrCodeUnauthorized, "User not found in context")
 		return
 	}
 
 	u, ok := userModel.(*ent.User)
 	if !ok {
-		utils.HandleAPIError(c, nil, http.StatusInternalServerError, common.ErrCodeInternalServer, "Invalid user type in context")
+		utils.HandleAPIError(c, nil, common.ErrCodeInternalServer, "Invalid user type in context")
 		return
 	}
 
@@ -43,41 +42,41 @@ func (h *UserHandler) GetProfile(c *gin.Context) {
 	userResponse := mapper.UserToUserResponse(u)
 
 	// Use proper DTO format with wrapped response
-	c.JSON(http.StatusOK, common.NewSuccessResponse(userResponse))
+	utils.HandleSuccess(c, userResponse)
 }
 
 func (h *UserHandler) UpdateProfile(c *gin.Context) {
 	// Get user from context (set by auth middleware)
 	contextUser, exists := c.Get(constants.ContextKeyUser)
 	if !exists {
-		utils.HandleAPIError(c, nil, http.StatusUnauthorized, common.ErrCodeUnauthorized, "User not found in context")
+		utils.HandleAPIError(c, nil, common.ErrCodeUnauthorized, "User not found in context")
 		return
 	}
 
 	currentUser, ok := contextUser.(*ent.User)
 	if !ok {
-		utils.HandleAPIError(c, nil, http.StatusInternalServerError, common.ErrCodeInternalServer, "Invalid user type in context")
+		utils.HandleAPIError(c, nil, common.ErrCodeInternalServer, "Invalid user type in context")
 		return
 	}
 
 	// Get profile data from context (set by validation middleware)
 	profileData, exists := c.Get(constants.ContextKeyUpdateProfile)
 	if !exists {
-		utils.HandleAPIError(c, nil, http.StatusBadRequest, common.ErrCodeBadRequest, "Missing profile data")
+		utils.HandleAPIError(c, nil, common.ErrCodeBadRequest, "Missing profile data")
 		return
 	}
 
 	// Extract and validate profile data
 	profileUpdate, ok := profileData.(*user.UpdateProfileRequest)
 	if !ok {
-		utils.HandleAPIError(c, nil, http.StatusInternalServerError, common.ErrCodeInternalServer, "Invalid profile data format")
+		utils.HandleAPIError(c, nil, common.ErrCodeInternalServer, "Invalid profile data format")
 		return
 	}
 
 	// Fetch user from database to ensure we have the latest data
 	dbUser, err := h.repository.Get(context.Background(), currentUser.ID)
 	if err != nil {
-		utils.HandleAPIError(c, err, http.StatusNotFound, common.ErrCodeNotFound, "User not found")
+		utils.HandleAPIError(c, err, common.ErrCodeNotFound, "User not found")
 		return
 	}
 
@@ -90,25 +89,25 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 	// Apply update
 	updatedUser, err := h.repository.Update(context.Background(), dbUser.ID, update)
 	if err != nil {
-		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to update profile")
+		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to update profile")
 		return
 	}
 
 	// Return updated user
-	c.JSON(http.StatusOK, common.NewSuccessResponse(mapper.UserToUserResponse(updatedUser)))
+	utils.HandleSuccess(c, mapper.UserToUserResponse(updatedUser))
 }
 
 func (h *UserHandler) DeleteProfile(c *gin.Context) {
 	userID := uint32(c.GetUint(constants.ContextKeyUserID))
 
 	if err := h.repository.Delete(context.Background(), userID); err != nil {
-		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to delete user")
+		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to delete user")
 		return
 	}
 
-	c.JSON(http.StatusOK, common.NewSuccessResponse(gin.H{
+	utils.HandleSuccess(c, gin.H{
 		"message": "User deleted successfully",
-	}))
+	})
 }
 
 func (h *UserHandler) ListUsers(c *gin.Context) {
@@ -129,14 +128,14 @@ func (h *UserHandler) ListUsers(c *gin.Context) {
 	// Get total count
 	totalCount, err := h.repository.Count(context.Background())
 	if err != nil {
-		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to get total count")
+		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to get total count")
 		return
 	}
 
 	// Get users with pagination
 	users, err := h.repository.List(context.Background(), offset, pageSize)
 	if err != nil {
-		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to fetch users")
+		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to fetch users")
 		return
 	}
 
@@ -150,45 +149,45 @@ func (h *UserHandler) ListUsers(c *gin.Context) {
 		PageSize:   pageSize,
 	}
 
-	c.JSON(http.StatusOK, common.NewSuccessResponse(response))
+	utils.HandleSuccess(c, response)
 }
 
 func (h *UserHandler) GetUser(c *gin.Context) {
 	userID, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
-		utils.HandleAPIError(c, err, http.StatusBadRequest, common.ErrCodeValidation, "Invalid user ID")
+		utils.HandleAPIError(c, err, common.ErrCodeValidation, "Invalid user ID")
 		return
 	}
 
 	// Fetch user from database
 	dbUser, err := h.repository.Get(context.Background(), uint32(userID))
 	if err != nil {
-		utils.HandleAPIError(c, err, http.StatusNotFound, common.ErrCodeNotFound, "User not found")
+		utils.HandleAPIError(c, err, common.ErrCodeNotFound, "User not found")
 		return
 	}
 
 	// Return user
-	c.JSON(http.StatusOK, common.NewSuccessResponse(mapper.UserToUserResponse(dbUser)))
+	utils.HandleSuccess(c, mapper.UserToUserResponse(dbUser))
 }
 
 func (h *UserHandler) UpdateUser(c *gin.Context) {
 	userID, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
-		utils.HandleAPIError(c, err, http.StatusBadRequest, common.ErrCodeValidation, "Invalid user ID")
+		utils.HandleAPIError(c, err, common.ErrCodeValidation, "Invalid user ID")
 		return
 	}
 
 	// Fetch user from database
 	dbUser, err := h.repository.Get(context.Background(), uint32(userID))
 	if err != nil {
-		utils.HandleAPIError(c, err, http.StatusNotFound, common.ErrCodeNotFound, "User not found")
+		utils.HandleAPIError(c, err, common.ErrCodeNotFound, "User not found")
 		return
 	}
 
 	// Get user update data from request
 	var userUpdate user.UpdateUserRequest
 	if err := c.ShouldBindJSON(&userUpdate); err != nil {
-		utils.HandleAPIError(c, err, http.StatusBadRequest, common.ErrCodeValidation, "Invalid request data")
+		utils.HandleAPIError(c, err, common.ErrCodeValidation, "Invalid request data")
 		return
 	}
 
@@ -205,28 +204,28 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 	// Apply update
 	updatedUser, err := h.repository.Update(context.Background(), dbUser.ID, update)
 	if err != nil {
-		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to update user")
+		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to update user")
 		return
 	}
 
 	// Return updated user
-	c.JSON(http.StatusOK, common.NewSuccessResponse(mapper.UserToUserResponse(updatedUser)))
+	utils.HandleSuccess(c, mapper.UserToUserResponse(updatedUser))
 }
 
 func (h *UserHandler) DeleteUser(c *gin.Context) {
 	userID, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
-		utils.HandleAPIError(c, err, http.StatusBadRequest, common.ErrCodeValidation, "Invalid user ID")
+		utils.HandleAPIError(c, err, common.ErrCodeValidation, "Invalid user ID")
 		return
 	}
 
 	if err := h.repository.Delete(context.Background(), uint32(userID)); err != nil {
-		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to delete user")
+		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to delete user")
 		return
 	}
 
-	c.JSON(http.StatusOK, common.NewSuccessResponse(gin.H{
+	utils.HandleSuccess(c, gin.H{
 		"message": "User deleted successfully",
-	}))
+	})
 }
 

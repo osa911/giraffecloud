@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"net/http"
 	"time"
 
 	"giraffecloud/internal/api/constants"
@@ -78,8 +77,7 @@ func (m *AuthMiddleware) RequireAuth() gin.HandlerFunc {
 
 		// If user was not authenticated by any method
 		if !authenticated {
-			response := common.NewErrorResponse(common.ErrCodeUnauthorized, "Authentication required, please log in again", nil)
-			c.JSON(http.StatusUnauthorized, response)
+			utils.HandleAPIError(c, nil, common.ErrCodeUnauthorized, "Authentication required, please log in again")
 			c.Abort()
 			return
 		}
@@ -89,8 +87,7 @@ func (m *AuthMiddleware) RequireAuth() gin.HandlerFunc {
 			SetLastLogin(time.Now()).
 			Save(c.Request.Context())
 		if err != nil {
-			response := common.NewErrorResponse(common.ErrCodeInternalServer, "Failed to update user", err)
-			c.JSON(http.StatusInternalServerError, response)
+			utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to update user")
 			c.Abort()
 			return
 		}

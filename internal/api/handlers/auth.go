@@ -126,14 +126,14 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	// Get login data from context (set by ValidateLoginRequest middleware)
 	loginData, exists := c.Get(constants.ContextKeyLogin)
 	if !exists {
-		c.JSON(http.StatusInternalServerError, common.NewErrorResponse(common.ErrCodeInternalServer, "Login data not found in context. Ensure validation middleware is applied.", nil))
+		utils.HandleAPIError(c, nil, common.ErrCodeInternalServer, "Login data not found in context. Ensure validation middleware is applied.")
 		return
 	}
 
 	// Extract token from login data
 	loginPtr, ok := loginData.(*auth.LoginRequest)
 	if !ok {
-		c.JSON(http.StatusInternalServerError, common.NewErrorResponse(common.ErrCodeInternalServer, "Invalid login data format", nil))
+		utils.HandleAPIError(c, nil, common.ErrCodeInternalServer, "Invalid login data format")
 		return
 	}
 
@@ -141,7 +141,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	decodedToken, err := firebase.GetAuthClient().VerifyIDToken(c.Request.Context(), loginPtr.Token)
 	if err != nil {
 		h.auditService.LogFailedAuthAttempt(c.Request.Context(), c, "Invalid Firebase token", err)
-		utils.HandleAPIError(c, err, http.StatusUnauthorized, common.ErrCodeUnauthorized, "Invalid token")
+		utils.HandleAPIError(c, err, common.ErrCodeUnauthorized, "Invalid token")
 		return
 	}
 
@@ -150,7 +150,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	sessionCookie, err := firebase.GetAuthClient().SessionCookie(c.Request.Context(), loginPtr.Token, expiresIn)
 	if err != nil {
 		h.auditService.LogFailedAuthAttempt(c.Request.Context(), c, "Failed to create session cookie", err)
-		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to create session cookie")
+		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to create session cookie")
 		return
 	}
 
@@ -185,12 +185,12 @@ func (h *AuthHandler) Login(c *gin.Context) {
 					"email": email,
 				})
 				logger.Error("Failed to create user: %v", err)
-				utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to create user")
+				utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to create user")
 				return
 			}
 		} else {
 			h.auditService.LogFailedAuthAttempt(c.Request.Context(), c, "Database error", err)
-			utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Database error")
+			utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Database error")
 			return
 		}
 	}
@@ -202,7 +202,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			"user_id": existingUser.ID,
 		})
 		logger.Error("Failed to update user: %v", err)
-		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to update user")
+		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to update user")
 		return
 	}
 
@@ -216,7 +216,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	// Generate a secure session token
 	sessionToken, err := generateSecureToken(64)
 	if err != nil {
-		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to generate session token")
+		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to generate session token")
 		return
 	}
 
@@ -227,14 +227,14 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		h.auditService.LogFailedAuthAttempt(c.Request.Context(), c, "Failed to create session", err, map[string]interface{}{
 			"user_id": existingUser.ID,
 		})
-		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to create session")
+		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to create session")
 		return
 	}
 
 	// Get the session with owner loaded for audit logging
 	sessionWithOwner, err := h.sessionRepo.GetActiveByToken(c.Request.Context(), session.Token)
 	if err != nil {
-		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to load session details")
+		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to load session details")
 		return
 	}
 
@@ -288,23 +288,23 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	// Return user data and session info
 	userResponse := mapper.UserToUserResponse(existingUser)
-	c.JSON(http.StatusOK, common.NewSuccessResponse(auth.LoginResponse{
+	utils.HandleSuccess(c, auth.LoginResponse{
 		User: *userResponse,
-	}))
+	})
 }
 
 func (h *AuthHandler) Register(c *gin.Context) {
 	// Get registration data from context (set by ValidateRegisterRequest middleware)
 	registerData, exists := c.Get(constants.ContextKeyRegister)
 	if !exists {
-		utils.HandleAPIError(c, nil, http.StatusInternalServerError, common.ErrCodeInternalServer, "Registration data not found in context. Ensure validation middleware is applied.")
+		utils.HandleAPIError(c, nil, common.ErrCodeInternalServer, "Registration data not found in context. Ensure validation middleware is applied.")
 		return
 	}
 
 	// Extract and convert to RegisterRequest
 	registerPtr, ok := registerData.(*auth.RegisterRequest)
 	if !ok {
-		utils.HandleAPIError(c, nil, http.StatusInternalServerError, common.ErrCodeInternalServer, "Invalid registration data format")
+		utils.HandleAPIError(c, nil, common.ErrCodeInternalServer, "Invalid registration data format")
 		return
 	}
 
@@ -313,37 +313,37 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	if err == nil {
 		// User exists, return the existing user
 		userResponse := mapper.UserToUserResponse(existingUser)
-		c.JSON(http.StatusOK, common.NewSuccessResponse(auth.RegisterResponse{
+		utils.HandleSuccess(c, auth.RegisterResponse{
 			User: *userResponse,
-		}))
+		})
 		return
 	} else if !ent.IsNotFound(err) {
-		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Database error")
+		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Database error")
 		return
 	}
 
 	// Check if user exists with the same email
 	existingUser, err = h.authRepo.GetUserByEmail(c.Request.Context(), registerPtr.Email)
 	if err == nil {
-		utils.HandleAPIError(c, nil, http.StatusConflict, common.ErrCodeConflict, "Wrong credentials")
+		utils.HandleAPIError(c, nil, common.ErrCodeConflict, "Wrong credentials")
 		return
 	} else if !ent.IsNotFound(err) {
-		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Database error")
+		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Database error")
 		return
 	}
 
 	// Create new user
 	newUser, err := h.authRepo.CreateUser(c.Request.Context(), registerPtr.Token, registerPtr.Email, registerPtr.Name, utils.GetRealIP(c))
 	if err != nil {
-		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to create user")
+		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to create user")
 		return
 	}
 
 	// Return response using mapper with proper DTO format
 	userResponse := mapper.UserToUserResponse(newUser)
-	c.JSON(http.StatusCreated, common.NewSuccessResponse(auth.RegisterResponse{
+	utils.HandleCreated(c, auth.RegisterResponse{
 		User: *userResponse,
-	}))
+	})
 }
 
 func (h *AuthHandler) Logout(c *gin.Context) {
@@ -372,7 +372,7 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 		err = h.sessionRepo.RevokeByToken(c.Request.Context(), sessionCookie)
 		if err != nil {
 			logger.Error("Failed to invalidate session: %v", err)
-			utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to invalidate session")
+			utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to invalidate session")
 			return
 		}
 	}
@@ -395,7 +395,7 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	c.SetCookie(constants.CookieCSRF, "", -1, constants.CookiePathRoot, getCookieDomain(), true, false)
 
 	// Return success response
-	c.JSON(http.StatusOK, common.NewMessageResponse("Logged out successfully"))
+	utils.HandleMessage(c, "Logged out successfully")
 }
 
 func (h *AuthHandler) GetSession(c *gin.Context) {
@@ -412,16 +412,16 @@ func (h *AuthHandler) GetSession(c *gin.Context) {
 				existingUser, err = h.authRepo.UpdateUserLastActivity(c.Request.Context(), existingUser)
 				if err != nil {
 					utils.LogError(err, "Failed to update user's last activity")
-					utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to update user's last activity")
+					utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to update user's last activity")
 					return
 				}
 
 				// Return session response using proper DTO format
 				userResponse := mapper.UserToUserResponse(existingUser)
-				c.JSON(http.StatusOK, common.NewSuccessResponse(auth.SessionValidationResponse{
+				utils.HandleSuccess(c, auth.SessionValidationResponse{
 					Valid: true,
 					User:  userResponse,
-				}))
+				})
 				return
 			}
 		}
@@ -436,7 +436,7 @@ func (h *AuthHandler) GetSession(c *gin.Context) {
 			existingSession, err = h.sessionRepo.UpdateLastUsed(c.Request.Context(), existingSession, nil)
 			if err != nil {
 				utils.LogError(err, "Failed to update session's last used time")
-				utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to update session's last used time")
+				utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to update session's last used time")
 				return
 			}
 
@@ -457,19 +457,19 @@ func (h *AuthHandler) GetSession(c *gin.Context) {
 			if err == nil {
 				// Return session response using proper DTO format
 				userResponse := mapper.UserToUserResponse(owner)
-				c.JSON(http.StatusOK, common.NewSuccessResponse(auth.SessionValidationResponse{
+				utils.HandleSuccess(c, auth.SessionValidationResponse{
 					Valid: true,
 					User:  userResponse,
-				}))
+				})
 				return
 			}
 		}
 	}
 
 	// If we get here, no valid session was found
-	c.JSON(http.StatusOK, common.NewSuccessResponse(auth.SessionValidationResponse{
+	utils.HandleSuccess(c, auth.SessionValidationResponse{
 		Valid: false,
-	}))
+	})
 }
 
 func (h *AuthHandler) RefreshSession(c *gin.Context) {
@@ -501,7 +501,7 @@ func (h *AuthHandler) RefreshSession(c *gin.Context) {
 				existingSession, err = h.sessionRepo.UpdateLastUsed(c.Request.Context(), existingSession, &newExpiration)
 				if err != nil {
 					utils.LogError(err, "Failed to update session")
-					utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to update session")
+					utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to update session")
 					return
 				}
 
@@ -534,13 +534,13 @@ func (h *AuthHandler) RefreshSession(c *gin.Context) {
 		existingUser, err = h.authRepo.UpdateUserLastActivity(c.Request.Context(), existingUser)
 		if err != nil {
 			utils.LogError(err, "Failed to update user's last activity")
-			utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to update user's last activity")
+			utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to update user's last activity")
 			return
 		}
 
-		c.JSON(http.StatusOK, common.NewMessageResponse("Session valid"))
+		utils.HandleMessage(c, "Session valid")
 	} else {
-		c.JSON(http.StatusUnauthorized, common.NewErrorResponse(common.ErrCodeUnauthorized, "No valid session found", nil))
+		utils.HandleAPIError(c, nil, common.ErrCodeUnauthorized, "No valid session found")
 	}
 }
 
@@ -548,7 +548,7 @@ func (h *AuthHandler) VerifyToken(c *gin.Context) {
 	// Get ID token from context (set by validation middleware)
 	verifyData, exists := c.Get(constants.ContextKeyVerifyToken)
 	if !exists {
-		utils.HandleAPIError(c, nil, http.StatusNotFound, common.ErrCodeNotFound, "Verification data not found in context")
+		utils.HandleAPIError(c, nil, common.ErrCodeNotFound, "Verification data not found in context")
 		return
 	}
 
@@ -556,7 +556,7 @@ func (h *AuthHandler) VerifyToken(c *gin.Context) {
 	verifyReq, ok := verifyData.(*auth.VerifyTokenRequest)
 	if !ok {
 		utils.LogError(fmt.Errorf("invalid verification data type: %T", verifyData), "Invalid verification data format")
-		utils.HandleAPIError(c, nil, http.StatusInternalServerError, common.ErrCodeInternalServer, "Invalid verification data format")
+		utils.HandleAPIError(c, nil, common.ErrCodeInternalServer, "Invalid verification data format")
 		return
 	}
 
@@ -564,7 +564,7 @@ func (h *AuthHandler) VerifyToken(c *gin.Context) {
 	decodedToken, err := firebase.GetAuthClient().VerifyIDToken(c.Request.Context(), verifyReq.IDToken)
 	if err != nil {
 		utils.LogError(err, "Failed to verify Firebase ID token")
-		utils.HandleAPIError(c, err, http.StatusUnauthorized, common.ErrCodeUnauthorized, "Invalid ID token")
+		utils.HandleAPIError(c, err, common.ErrCodeUnauthorized, "Invalid ID token")
 		return
 	}
 
@@ -572,7 +572,7 @@ func (h *AuthHandler) VerifyToken(c *gin.Context) {
 	expiresIn := time.Hour * 24 * 7 // 7 days for the session cookie
 	sessionCookie, err := firebase.GetAuthClient().SessionCookie(c.Request.Context(), verifyReq.IDToken, expiresIn)
 	if err != nil {
-		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to create session cookie")
+		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to create session cookie")
 		return
 	}
 
@@ -591,7 +591,7 @@ func (h *AuthHandler) VerifyToken(c *gin.Context) {
 	// Look up user to include in response
 	existingUser, err := h.authRepo.GetUserByFirebaseUID(c.Request.Context(), decodedToken.UID)
 	if err != nil {
-		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to find user")
+		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to find user")
 		return
 	}
 
@@ -599,14 +599,14 @@ func (h *AuthHandler) VerifyToken(c *gin.Context) {
 	existingUser, err = h.authRepo.UpdateUserLastActivity(c.Request.Context(), existingUser)
 	if err != nil {
 		utils.LogError(err, "Failed to update user's last activity")
-		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to update user's last activity")
+		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to update user's last activity")
 		return
 	}
 
 	// Return success response
 	userResponse := mapper.UserToUserResponse(existingUser)
-	c.JSON(http.StatusOK, common.NewSuccessResponse(gin.H{
+	utils.HandleSuccess(c, gin.H{
 		"message": "Session refreshed successfully",
 		"user":    userResponse,
-	}))
+	})
 }

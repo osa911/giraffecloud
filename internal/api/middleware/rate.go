@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"net/http"
 	"strconv"
 	"sync"
 	"time"
@@ -93,8 +92,7 @@ func RateLimitMiddleware(config RateLimitConfig) gin.HandlerFunc {
 		// Check if we can make a request
 		if !limiter.Allow() {
 			// If not, return 429 Too Many Requests
-			response := common.NewErrorResponse(common.ErrCodeTooManyRequests, "Rate limit exceeded. Please try again later.", nil)
-			c.JSON(http.StatusTooManyRequests, response)
+			utils.HandleAPIError(c, nil, common.ErrCodeTooManyRequests, "Rate limit exceeded. Please try again later.")
 			c.Abort()
 			return
 		}

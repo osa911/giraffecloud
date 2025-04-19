@@ -25,7 +25,7 @@ func (h *SessionHandler) GetSessions(c *gin.Context) {
 
 	sessions, err := h.sessionRepo.GetActiveSessions(context.Background(), uint32(userID))
 	if err != nil {
-		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to get sessions")
+		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to get sessions")
 		return
 	}
 
@@ -40,7 +40,7 @@ func (h *SessionHandler) GetSessions(c *gin.Context) {
 		})
 	}
 
-	c.JSON(http.StatusOK, common.NewSuccessResponse(gin.H{"sessions": sessionResponses}))
+	utils.HandleSuccess(c, gin.H{"sessions": sessionResponses})
 }
 
 func (h *SessionHandler) RevokeSession(c *gin.Context) {
@@ -49,13 +49,13 @@ func (h *SessionHandler) RevokeSession(c *gin.Context) {
 
 	session, err := h.sessionRepo.GetUserSession(context.Background(), sessionID, uint32(userID))
 	if err != nil {
-		utils.HandleAPIError(c, err, http.StatusNotFound, common.ErrCodeNotFound, "Session not found")
+		utils.HandleAPIError(c, err, common.ErrCodeNotFound, "Session not found")
 		return
 	}
 
 	// Mark session as inactive
 	if err := h.sessionRepo.Revoke(context.Background(), session); err != nil {
-		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to revoke session")
+		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to revoke session")
 		return
 	}
 
@@ -66,14 +66,14 @@ func (h *SessionHandler) RevokeSession(c *gin.Context) {
 		c.SetCookie(constants.CookieAuthToken, "", -1, constants.CookiePathAPI, "", true, true)
 	}
 
-	c.JSON(http.StatusOK, common.NewMessageResponse("Session successfully revoked"))
+	utils.HandleMessage(c, "Session successfully revoked")
 }
 
 func (h *SessionHandler) RevokeAllSessions(c *gin.Context) {
 	userID := c.GetUint(constants.ContextKeyUserID)
 
 	if err := h.sessionRepo.RevokeAllUserSessions(context.Background(), uint32(userID)); err != nil {
-		utils.HandleAPIError(c, err, http.StatusInternalServerError, common.ErrCodeInternalServer, "Failed to revoke sessions")
+		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to revoke sessions")
 		return
 	}
 
@@ -82,5 +82,5 @@ func (h *SessionHandler) RevokeAllSessions(c *gin.Context) {
 	c.SetCookie(constants.CookieSession, "", -1, constants.CookiePathRoot, "", true, true)
 	c.SetCookie(constants.CookieAuthToken, "", -1, constants.CookiePathAPI, "", true, true)
 
-	c.JSON(http.StatusOK, common.NewMessageResponse("All sessions successfully revoked"))
+	utils.HandleMessage(c, "All sessions successfully revoked")
 }
