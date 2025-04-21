@@ -27,7 +27,8 @@ export type UpdateUserRequest = {
 
 // Form state types
 export type FormState = {
-  name: FormDataEntryValue | null;
+  name: string;
+  email: string;
   error?: string;
 };
 

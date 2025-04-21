@@ -20,6 +20,7 @@ interface ProfilePageProps {
 export default function ProfilePage({ initialUser }: ProfilePageProps) {
   const [state, action, loading] = useActionState(updateProfileAction, {
     name: initialUser.name,
+    email: initialUser.email,
   });
 
   return (
@@ -39,12 +40,10 @@ export default function ProfilePage({ initialUser }: ProfilePageProps) {
                   mb: 2,
                 }}
               >
-                {initialUser?.name?.charAt(0) || "U"}
+                {state.name.charAt(0) || "U"}
               </Avatar>
-              <Typography variant="h6">{initialUser.name}</Typography>
-              <Typography color="text.secondary">
-                {initialUser.email}
-              </Typography>
+              <Typography variant="h6">{state.name}</Typography>
+              <Typography color="text.secondary">{state.email}</Typography>
             </Box>
           </Grid>
           <Grid size={{ xs: 12, md: 8 }}>

@@ -31,17 +31,6 @@ export const getProfile: GetProfileAction = async () => {
   }
 };
 
-export const updateProfile: UpdateProfileAction = async (data) => {
-  try {
-    await getAuthUser();
-    return await serverApi().put<UserResponse>("/user/profile", data);
-  } catch (error) {
-    const apiError = error as ApiError;
-    console.error("Error updating profile:", apiError);
-    throw apiError;
-  }
-};
-
 export const deleteProfile: DeleteProfileAction = async () => {
   try {
     await getAuthUser();
@@ -104,7 +93,7 @@ export const updateProfileAction: UpdateProfileFormAction = async (
   prevState,
   formData
 ) => {
-  const name = formData.get("name");
+  const name = (formData.get("name") as string) || "";
   try {
     await serverApi().put<UserResponse>("/user/profile", {
       name,
