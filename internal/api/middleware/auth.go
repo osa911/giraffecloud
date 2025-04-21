@@ -1,26 +1,40 @@
 package middleware
 
 import (
-	"time"
+	"strings"
 
 	"giraffecloud/internal/api/constants"
 	"giraffecloud/internal/api/dto/common"
 	"giraffecloud/internal/config/firebase"
-	"giraffecloud/internal/db"
 	"giraffecloud/internal/db/ent"
-	"giraffecloud/internal/db/ent/session"
-	"giraffecloud/internal/db/ent/user"
+	"giraffecloud/internal/repository"
+	"giraffecloud/internal/service"
 	"giraffecloud/internal/utils"
 
 	"github.com/gin-gonic/gin"
 )
 
 // AuthMiddleware handles authentication and authorization
-type AuthMiddleware struct{}
+type AuthMiddleware struct {
+	tokenService *service.TokenService
+	authRepo     repository.AuthRepository
+	sessionRepo  repository.SessionRepository
+	userRepo     repository.UserRepository
+}
 
 // NewAuthMiddleware creates a new auth middleware
-func NewAuthMiddleware() *AuthMiddleware {
-	return &AuthMiddleware{}
+func NewAuthMiddleware(
+	tokenService *service.TokenService,
+	authRepo repository.AuthRepository,
+	sessionRepo repository.SessionRepository,
+	userRepo repository.UserRepository,
+) *AuthMiddleware {
+	return &AuthMiddleware{
+		tokenService: tokenService,
+		authRepo:     authRepo,
+		sessionRepo:  sessionRepo,
+		userRepo:     userRepo,
+	}
 }
 
 // RequireAuth middleware
@@ -33,12 +47,10 @@ func (m *AuthMiddleware) RequireAuth() gin.HandlerFunc {
 		sessionCookie, err := c.Cookie(constants.CookieSession)
 		if err == nil && sessionCookie != "" {
 			// Verify the session cookie
-			token, err := firebase.GetAuthClient().VerifySessionCookieAndCheckRevoked(c.Request.Context(), sessionCookie)
+			firebaseToken, err := firebase.GetAuthClient().VerifySessionCookieAndCheckRevoked(c.Request.Context(), sessionCookie)
 			if err == nil {
 				// Look up user by Firebase UID
-				currentUser, err = db.Client.User.Query().
-					Where(user.FirebaseUID(token.UID)).
-					Only(c.Request.Context())
+				currentUser, err = m.authRepo.GetUserByFirebaseUID(c.Request.Context(), firebaseToken.UID)
 				if err == nil {
 					authenticated = true
 				}
@@ -47,28 +59,37 @@ func (m *AuthMiddleware) RequireAuth() gin.HandlerFunc {
 
 		// If not authenticated, check for auth_token cookie (our API token)
 		if !authenticated {
-			authToken, err := c.Cookie(constants.CookieAuthToken)
-			if err == nil && authToken != "" {
+			cookieAuthToken, err := c.Cookie(constants.CookieAuthToken)
+			if err == nil && cookieAuthToken != "" {
 				// Look up session
-				currentSession, err := db.Client.Session.Query().
-					Where(
-						session.Token(authToken),
-						session.IsActive(true),
-						session.ExpiresAtGT(time.Now()),
-					).
-					WithOwner().
-					Only(c.Request.Context())
+				currentSession, err := m.sessionRepo.GetActiveByToken(c.Request.Context(), cookieAuthToken)
 				if err == nil {
 					// Update session last used
-					_, err = db.Client.Session.UpdateOne(currentSession).
-						SetLastUsed(time.Now()).
-						Save(c.Request.Context())
+					_, err = m.sessionRepo.UpdateLastUsed(c.Request.Context(), currentSession, nil)
 					if err != nil {
 						utils.LogError(err, "Failed to update session last used time")
 					}
 
-					currentUser = currentSession.Edges.Owner
-					if currentUser != nil {
+					currentUser, err = m.sessionRepo.GetSessionOwner(c.Request.Context(), currentSession)
+					if err == nil {
+						authenticated = true
+					}
+				}
+			}
+		}
+
+		// If not authenticated, check for Bearer token in Authorization header (CLI token)
+		if !authenticated {
+			cliAuthHeader := c.GetHeader(constants.HeaderAuthorization)
+			if strings.HasPrefix(cliAuthHeader, "Bearer ") {
+				token := strings.TrimPrefix(cliAuthHeader, "Bearer ")
+
+				// Validate token using TokenService
+				cliTokenRecord, err := m.tokenService.ValidateToken(c.Request.Context(), token)
+				if err == nil {
+					// Get user from token using UserRepository
+					currentUser, err = m.userRepo.Get(c.Request.Context(), cliTokenRecord.UserID)
+					if err == nil {
 						authenticated = true
 					}
 				}
@@ -82,10 +103,8 @@ func (m *AuthMiddleware) RequireAuth() gin.HandlerFunc {
 			return
 		}
 
-		// Update last login info
-		_, err = db.Client.User.UpdateOne(currentUser).
-			SetLastLogin(time.Now()).
-			Save(c.Request.Context())
+		// Update last login info using AuthRepository
+		currentUser, err = m.authRepo.UpdateUserLastLogin(c.Request.Context(), currentUser, utils.GetRealIP(c))
 		if err != nil {
 			utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to update user")
 			c.Abort()

@@ -1,12 +1,11 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-
-	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
@@ -59,6 +58,26 @@ var DefaultConfig = Config{
 	Security: SecurityConfig{
 		InsecureSkipVerify: false,
 	},
+}
+
+const (
+	configDir  = ".giraffecloud"
+	configFile = "config"
+)
+
+// GetConfigPath returns the path to the config file
+func GetConfigPath() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	configDirPath := filepath.Join(homeDir, configDir)
+	if err := os.MkdirAll(configDirPath, 0700); err != nil {
+		return "", fmt.Errorf("failed to create config directory: %w", err)
+	}
+
+	return filepath.Join(configDirPath, configFile), nil
 }
 
 func (c *Config) Validate() error {
@@ -179,41 +198,24 @@ func (s *SecurityConfig) Validate() error {
 	return nil
 }
 
+// LoadConfig loads the configuration from disk
 func LoadConfig() (*Config, error) {
-	homeDir, err := os.UserHomeDir()
+	configPath, err := GetConfigPath()
 	if err != nil {
 		return nil, err
 	}
 
-	configPath := filepath.Join(homeDir, ".giraffecloud", "config.yaml")
-
-	// Create config directory if it doesn't exist
-	if err := os.MkdirAll(filepath.Dir(configPath), 0700); err != nil {
-		return nil, err
-	}
-
-	// If config file doesn't exist, create it with defaults
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		config := DefaultConfig
-		data, err := yaml.Marshal(config)
-		if err != nil {
-			return nil, err
-		}
-		if err := os.WriteFile(configPath, data, 0600); err != nil {
-			return nil, err
-		}
-		return &config, nil
-	}
-
-	// Read existing config
 	data, err := os.ReadFile(configPath)
 	if err != nil {
-		return nil, err
+		if os.IsNotExist(err) {
+			return &Config{}, nil
+		}
+		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
 
 	var config Config
-	if err := yaml.Unmarshal(data, &config); err != nil {
-		return nil, err
+	if err := json.Unmarshal(data, &config); err != nil {
+		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
 
 	// Validate config
@@ -224,17 +226,21 @@ func LoadConfig() (*Config, error) {
 	return &config, nil
 }
 
+// SaveConfig saves the configuration to disk
 func SaveConfig(config *Config) error {
-	homeDir, err := os.UserHomeDir()
+	configPath, err := GetConfigPath()
 	if err != nil {
 		return err
 	}
 
-	configPath := filepath.Join(homeDir, ".giraffecloud", "config.yaml")
-	data, err := yaml.Marshal(config)
+	data, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
-	return os.WriteFile(configPath, data, 0600)
+	if err := os.WriteFile(configPath, data, 0600); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+
+	return nil
 }

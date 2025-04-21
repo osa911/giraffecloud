@@ -73,7 +73,7 @@ func (s *Server) initialize() error {
 	// Initialize middleware
 	middleware := &routes.Middleware{
 		Validation: middleware.NewValidationMiddleware(),
-		Auth:       middleware.NewAuthMiddleware(),
+		Auth:       middleware.NewAuthMiddleware(tokenService, repos.Auth, repos.Session, repos.User),
 		CSRF:       csrfService,
 	}
 

@@ -17,5 +17,6 @@ const (
 	CookieDurationWeek = 604800  // 7 days
 
 	// Header names
-	HeaderCSRF = "X-CSRF-Token" // CSRF token header name
+	HeaderCSRF        = "X-CSRF-Token" // CSRF token header name
+	HeaderAuthorization = "Authorization" // Authorization header name
 )
