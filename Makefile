@@ -3,6 +3,7 @@ include makefiles/env.mk
 include makefiles/db.mk
 include makefiles/server.mk
 include makefiles/help.mk
+include makefiles/release.mk
 
 # Default target
 .DEFAULT_GOAL := help

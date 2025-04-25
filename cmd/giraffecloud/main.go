@@ -31,6 +31,12 @@ var connectCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
+		// Get server host from flag if provided
+		host, _ := cmd.Flags().GetString("host")
+		if host != "" {
+			cfg.Server.Host = host
+		}
+
 		// Configure and get logger
 		logging.Configure(&cfg.Logging)
 		logger := logging.GetLogger()
@@ -159,6 +165,12 @@ Example: giraffecloud login --token your-api-token`,
 			cfg = &config.DefaultConfig
 		}
 
+		// Get server host from flag if provided
+		host, _ := cmd.Flags().GetString("host")
+		if host != "" {
+			cfg.Server.Host = host
+		}
+
 		// Update token while preserving other settings
 		cfg.Token = token
 
@@ -172,7 +184,7 @@ Example: giraffecloud login --token your-api-token`,
 			return fmt.Errorf("failed to save token: %w", err)
 		}
 
-		fmt.Println("Successfully logged in to GiraffeCloud")
+		fmt.Printf("Successfully logged in to GiraffeCloud (server: %s)\n", cfg.Server.Host)
 		return nil
 	},
 }
@@ -185,6 +197,10 @@ func init() {
 
 	serviceCmd.AddCommand(installCmd)
 	serviceCmd.AddCommand(uninstallCmd)
+
+	// Add host flag to both connect and login commands
+	connectCmd.Flags().String("host", "", "Server host to connect to (default: api.giraffecloud.com)")
+	loginCmd.Flags().String("host", "", "Server host to connect to (default: api.giraffecloud.com)")
 
 	loginCmd.Flags().String("token", "", "API token for authentication")
 	loginCmd.MarkFlagRequired("token")

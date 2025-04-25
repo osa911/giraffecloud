@@ -1,4 +1,4 @@
-.PHONY: help setup-dev setup-prod validate-env db-init db-migrate db-migrate-create db-migrate-revert db-reset db-backup db-restore db-init-prod db-migrate-prod db-recreate-prod db-backup-prod db-restore-prod dev dev-hot prod build test db-gen db-migrate-status db-hash
+.PHONY: help setup-dev setup-prod validate-env db-init db-migrate db-migrate-create db-migrate-revert db-reset db-backup db-restore db-init-prod db-migrate-prod db-recreate-prod db-backup-prod db-restore-prod dev dev-hot prod build test db-gen db-migrate-status db-hash release release-dry-run snapshot
 
 help:
 	@echo "GiraffeCloud Makefile Commands"
@@ -33,3 +33,8 @@ help:
 	@echo "  prod         - Run production server"
 	@echo "  build        - Build application binary"
 	@echo "  test         - Run tests"
+	@echo ""
+	@echo "Release Management:"
+	@echo "  release-dry-run  - Test the release process without publishing"
+	@echo "  release         - Create and publish a new release"
+	@echo "  snapshot        - Create a snapshot release for testing"

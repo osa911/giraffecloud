@@ -10,7 +10,6 @@ import (
 
 type Config struct {
 	Token     string            `yaml:"token"`
-	Endpoints []EndpointConfig  `yaml:"endpoints"`
 	Server    ServerConfig      `yaml:"server"`
 	Logging   LoggingConfig     `yaml:"logging"`
 	Security  SecurityConfig    `yaml:"security"`
@@ -83,16 +82,6 @@ func GetConfigPath() (string, error) {
 func (c *Config) Validate() error {
 	if c.Token == "" {
 		return fmt.Errorf("token is required")
-	}
-
-	if len(c.Endpoints) == 0 {
-		return fmt.Errorf("at least one endpoint is required")
-	}
-
-	for i, ep := range c.Endpoints {
-		if err := ep.Validate(); err != nil {
-			return fmt.Errorf("endpoint %d: %w", i, err)
-		}
 	}
 
 	if err := c.Server.Validate(); err != nil {
