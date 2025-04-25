@@ -3,7 +3,6 @@ package logging
 import (
 	"errors"
 	"fmt"
-	"giraffecloud/internal/config"
 	"io"
 	"log"
 	"net/http"
@@ -29,7 +28,7 @@ type Logger struct {
 	writer *lumberjack.Logger
 }
 
-func NewLogger(config *config.LoggingConfig) (*Logger, error) {
+func NewLogger(config *Config) (*Logger, error) {
 	// Expand home directory in log file path
 	logFile := config.File
 	if strings.HasPrefix(logFile, "~/") {
@@ -58,7 +57,6 @@ func NewLogger(config *config.LoggingConfig) (*Logger, error) {
 	multiWriter := io.MultiWriter(writer, os.Stdout)
 
 	// Create logger with timestamp and file:line prefix
-	// logger := log.New(multiWriter, "", log.LstdFlags|log.Lshortfile)
 	logger := log.New(multiWriter, "", log.LstdFlags)
 
 	return &Logger{
@@ -155,14 +153,16 @@ func (l *Logger) FormatHTTPMethod(method string) string {
 func (l *Logger) FormatHTTPStatus(status int) string {
 	var color string
 	switch {
-	case status >= 200 && status < 300:
-		color = colorGreen
-	case status >= 300 && status < 400:
-		color = colorCyan
-	case status >= 400 && status < 500:
-		color = colorYellow
-	default:
+	case status >= 500:
 		color = colorRed
+	case status >= 400:
+		color = colorYellow
+	case status >= 300:
+		color = colorCyan
+	case status >= 200:
+		color = colorGreen
+	default:
+		color = colorBlue
 	}
 	return fmt.Sprintf("%s %d %s", color, status, colorReset)
 }

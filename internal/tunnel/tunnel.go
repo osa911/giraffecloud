@@ -1,159 +1,119 @@
 package tunnel
 
 import (
-	"context"
 	"crypto/tls"
 	"fmt"
-	"giraffecloud/internal/config"
-	"giraffecloud/internal/tunnel/handlers"
+	"io"
 	"net"
 	"sync"
 )
 
+// Tunnel represents a secure tunnel connection
 type Tunnel struct {
-	config     *config.Config
-	conn       net.Conn
-	handlers   map[string]handlers.Handler
-	mu         sync.Mutex
-	isRunning  bool
-	ctx        context.Context
-	cancelFunc context.CancelFunc
+	conn     net.Conn
+	local    net.Conn
+	stopChan chan struct{}
+	wg       sync.WaitGroup
+	mu       sync.Mutex
 }
 
-func NewTunnel(config *config.Config) *Tunnel {
-	ctx, cancel := context.WithCancel(context.Background())
-	t := &Tunnel{
-		config:     config,
-		ctx:        ctx,
-		cancelFunc: cancel,
-		handlers:   make(map[string]handlers.Handler),
+// NewTunnel creates a new tunnel instance
+func NewTunnel(localAddr string) (*Tunnel, error) {
+	// Connect to local service
+	local, err := net.Dial("tcp", localAddr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to local service: %w", err)
 	}
 
-	// Initialize handlers for each endpoint
-	for _, ep := range config.Endpoints {
-		handler, err := handlers.NewHandler(ep.Protocol, ep.Local)
-		if err != nil {
-			fmt.Printf("Error creating handler for %s: %v\n", ep.Name, err)
-			continue
-		}
-		t.handlers[ep.Name] = handler
-	}
-
-	return t
+	return &Tunnel{
+		local:    local,
+		stopChan: make(chan struct{}),
+	}, nil
 }
 
-func (t *Tunnel) Connect() error {
+// Connect establishes a tunnel connection to the server
+func (t *Tunnel) Connect(serverAddr string, token string, tlsConfig *tls.Config) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	if t.isRunning {
-		return fmt.Errorf("tunnel is already running")
-	}
-
-	// Create TLS connection
-	conn, err := tls.Dial("tcp", fmt.Sprintf("%s:%d", t.config.Server.Host, t.config.Server.Port), &tls.Config{
-		InsecureSkipVerify: false, // TODO: Add proper certificate verification
-	})
+	// Connect to server with TLS
+	conn, err := tls.Dial("tcp", serverAddr, tlsConfig)
 	if err != nil {
-		return fmt.Errorf("failed to establish TLS connection: %w", err)
-	}
-
-	// Convert endpoints to protocol format
-	endpoints := make([]EndpointInfo, len(t.config.Endpoints))
-	for i, ep := range t.config.Endpoints {
-		endpoints[i] = EndpointInfo{
-			Name:     ep.Name,
-			Protocol: ep.Protocol,
-			Local:    ep.Local,
-			Remote:   ep.Remote,
-		}
+		return fmt.Errorf("failed to connect to server: %w", err)
 	}
 
 	// Perform handshake
-	if err := PerformHandshake(conn, t.config.Token, endpoints); err != nil {
+	if _, err := Perform(conn, token); err != nil {
 		conn.Close()
 		return fmt.Errorf("handshake failed: %w", err)
 	}
 
 	t.conn = conn
-	t.isRunning = true
+	t.wg.Add(2)
 
-	// Start all handlers
-	for name, handler := range t.handlers {
-		go func(name string, h handlers.Handler) {
-			if err := h.Start(); err != nil {
-				fmt.Printf("Error starting handler %s: %v\n", name, err)
-			}
-		}(name, handler)
-	}
-
-	// Start message handling goroutine
-	go t.handleMessages()
+	// Start bidirectional forwarding
+	go t.forward(t.conn, t.local)
+	go t.forward(t.local, t.conn)
 
 	return nil
 }
 
-func (t *Tunnel) handleMessages() {
-	for {
-		select {
-		case <-t.ctx.Done():
-			return
-		default:
-			msg, err := ReadMessage(t.conn)
-			if err != nil {
-				// TODO: Implement reconnection logic
-				fmt.Printf("Error reading message: %v\n", err)
-				return
-			}
-
-			switch msg.Type {
-			case MsgTypeData:
-				// TODO: Handle data messages
-				fmt.Println("Received data message")
-			case MsgTypeClose:
-				fmt.Println("Received close message")
-				return
-			case MsgTypeError:
-				fmt.Printf("Received error message: %s\n", string(msg.Payload))
-			default:
-				fmt.Printf("Unknown message type: %x\n", msg.Type)
-			}
-		}
-	}
-}
-
+// Disconnect closes the tunnel connection
 func (t *Tunnel) Disconnect() error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	if !t.isRunning {
-		return fmt.Errorf("tunnel is not running")
+	if t.conn == nil {
+		return nil
 	}
 
-	// Send close message
-	if t.conn != nil {
-		msg := &Message{
-			Type: MsgTypeClose,
-		}
-		if err := WriteMessage(t.conn, msg); err != nil {
-			fmt.Printf("Error sending close message: %v\n", err)
-		}
-		t.conn.Close()
+	// Signal stop
+	close(t.stopChan)
+
+	// Wait for forwarders to finish
+	t.wg.Wait()
+
+	// Close connections
+	if err := t.conn.Close(); err != nil {
+		return fmt.Errorf("failed to close tunnel connection: %w", err)
+	}
+	if err := t.local.Close(); err != nil {
+		return fmt.Errorf("failed to close local connection: %w", err)
 	}
 
-	t.cancelFunc()
-	t.isRunning = false
+	t.conn = nil
+	t.local = nil
+	t.stopChan = make(chan struct{})
+
 	return nil
 }
 
-func (t *Tunnel) IsRunning() bool {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	return t.isRunning
-}
+// forward copies data from src to dst until either EOF is reached or an error occurs
+func (t *Tunnel) forward(dst, src net.Conn) {
+	defer t.wg.Done()
 
-// TODO: Implement proxy handlers for different protocols
-// This will include:
-// - HTTP/HTTPS proxy
-// - TCP proxy
-// - UDP proxy
+	buffer := make([]byte, 32*1024) // 32KB buffer
+
+	for {
+		select {
+		case <-t.stopChan:
+			return
+		default:
+			n, err := src.Read(buffer)
+			if err != nil {
+				if err != io.EOF {
+					fmt.Printf("Error reading from connection: %v\n", err)
+				}
+				return
+			}
+
+			if n > 0 {
+				_, err := dst.Write(buffer[:n])
+				if err != nil {
+					fmt.Printf("Error writing to connection: %v\n", err)
+					return
+				}
+			}
+		}
+	}
+}

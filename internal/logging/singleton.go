@@ -1,7 +1,6 @@
 package logging
 
 import (
-	"giraffecloud/internal/config"
 	"sync"
 )
 
@@ -9,12 +8,12 @@ var (
 	instance *Logger
 	once     sync.Once
 	mu       sync.RWMutex
-	logConfig *config.LoggingConfig
+	logConfig *Config
 )
 
 // Configure sets the logging configuration.
 // This should be called before any logger usage.
-func Configure(config *config.LoggingConfig) {
+func Configure(config *Config) {
 	mu.Lock()
 	defer mu.Unlock()
 	logConfig = config

@@ -1,18 +1,38 @@
 package main
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
-	"giraffecloud/internal/config"
 	"giraffecloud/internal/logging"
+	"giraffecloud/internal/tunnel"
+	"giraffecloud/internal/version"
 	"os"
 	"os/signal"
 	"syscall"
 
-	"giraffecloud/internal/tunnel"
-	"giraffecloud/internal/version"
-
 	"github.com/spf13/cobra"
 )
+
+var logger *logging.Logger
+
+func initLogger() {
+	// Initialize logger configuration
+	logConfig := &logging.Config{
+		Level:      "info",
+		File:       "~/.giraffecloud/client.log",
+		MaxSize:    100,
+		MaxBackups: 3,
+		MaxAge:     7,
+	}
+
+	var err error
+	logger, err = logging.NewLogger(logConfig)
+	if err != nil {
+		fmt.Printf("Failed to initialize logger: %v\n", err)
+		os.Exit(1)
+	}
+}
 
 var rootCmd = &cobra.Command{
 	Use:   "giraffecloud",
@@ -25,9 +45,9 @@ var connectCmd = &cobra.Command{
 	Use:   "connect",
 	Short: "Connect to GiraffeCloud and establish a tunnel",
 	Run: func(cmd *cobra.Command, args []string) {
-		cfg, err := config.LoadConfig()
+		cfg, err := tunnel.LoadConfig()
 		if err != nil {
-			fmt.Printf("Error loading config: %v\n", err)
+			logger.Error("Failed to load config: %v", err)
 			os.Exit(1)
 		}
 
@@ -37,20 +57,50 @@ var connectCmd = &cobra.Command{
 			cfg.Server.Host = host
 		}
 
-		// Configure and get logger
-		logging.Configure(&cfg.Logging)
-		logger := logging.GetLogger()
+		// Create TLS config
+		tlsConfig := &tls.Config{
+			InsecureSkipVerify: cfg.Security.InsecureSkipVerify,
+		}
 
-		logger.Info("Starting GiraffeCloud tunnel")
-		logger.Debug("Configuration loaded: %+v", cfg)
+		// Load certificates if specified
+		if cfg.Security.CertFile != "" && cfg.Security.KeyFile != "" {
+			cert, err := tls.LoadX509KeyPair(cfg.Security.CertFile, cfg.Security.KeyFile)
+			if err != nil {
+				logger.Error("Failed to load certificates: %v", err)
+				os.Exit(1)
+			}
+			tlsConfig.Certificates = []tls.Certificate{cert}
+		}
 
-		t := tunnel.NewTunnel(cfg)
-		if err := t.Connect(); err != nil {
+		// Load CA if specified
+		if cfg.Security.CAFile != "" {
+			caCert, err := os.ReadFile(cfg.Security.CAFile)
+			if err != nil {
+				logger.Error("Failed to read CA file: %v", err)
+				os.Exit(1)
+			}
+			caCertPool := x509.NewCertPool()
+			if !caCertPool.AppendCertsFromPEM(caCert) {
+				logger.Error("Failed to parse CA certificate")
+				os.Exit(1)
+			}
+			tlsConfig.RootCAs = caCertPool
+		}
+
+		// Create and connect tunnel
+		t, err := tunnel.NewTunnel("localhost:8080") // TODO: Get from config
+		if err != nil {
+			logger.Error("Failed to create tunnel: %v", err)
+			os.Exit(1)
+		}
+
+		serverAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
+		if err := t.Connect(serverAddr, cfg.Token, tlsConfig); err != nil {
 			logger.Error("Failed to connect to GiraffeCloud: %v", err)
 			os.Exit(1)
 		}
 
-		logger.Info("Successfully connected to GiraffeCloud")
+		logger.Info("Connected to GiraffeCloud at %s", serverAddr)
 
 		// Set up signal handling
 		sigChan := make(chan os.Signal, 1)
@@ -58,15 +108,15 @@ var connectCmd = &cobra.Command{
 
 		// Wait for signal
 		sig := <-sigChan
-		logger.Info("Received signal %v, shutting down...", sig)
+		logger.Info("Received signal %v, initiating shutdown...", sig)
 
 		// Graceful shutdown
 		if err := t.Disconnect(); err != nil {
-			logger.Error("Error during shutdown: %v", err)
+			logger.Error("Failed to disconnect tunnel: %v", err)
 			os.Exit(1)
 		}
 
-		logger.Info("Shutdown complete")
+		logger.Info("Successfully disconnected from GiraffeCloud")
 	},
 }
 
@@ -80,18 +130,6 @@ var installCmd = &cobra.Command{
 	Use:   "install",
 	Short: "Install GiraffeCloud as a system service",
 	Run: func(cmd *cobra.Command, args []string) {
-		cfg, err := config.LoadConfig()
-		if err != nil {
-			fmt.Printf("Error loading config: %v\n", err)
-			os.Exit(1)
-		}
-
-		// Configure and get logger
-		logging.Configure(&cfg.Logging)
-		logger := logging.GetLogger()
-
-		logger.Info("Installing GiraffeCloud service")
-
 		sm, err := tunnel.NewServiceManager()
 		if err != nil {
 			logger.Error("Failed to create service manager: %v", err)
@@ -111,18 +149,6 @@ var uninstallCmd = &cobra.Command{
 	Use:   "uninstall",
 	Short: "Uninstall GiraffeCloud system service",
 	Run: func(cmd *cobra.Command, args []string) {
-		cfg, err := config.LoadConfig()
-		if err != nil {
-			fmt.Printf("Error loading config: %v\n", err)
-			os.Exit(1)
-		}
-
-		// Configure and get logger
-		logging.Configure(&cfg.Logging)
-		logger := logging.GetLogger()
-
-		logger.Info("Uninstalling GiraffeCloud service")
-
 		sm, err := tunnel.NewServiceManager()
 		if err != nil {
 			logger.Error("Failed to create service manager: %v", err)
@@ -142,7 +168,7 @@ var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print version information",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println(version.Info())
+		logger.Info("GiraffeCloud version: %s", version.Info())
 	},
 }
 
@@ -155,15 +181,19 @@ Example: giraffecloud login --token your-api-token`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		token, err := cmd.Flags().GetString("token")
 		if err != nil {
-			return fmt.Errorf("failed to get token flag: %w", err)
+			logger.Error("Failed to get token flag: %v", err)
+			return err
 		}
 
 		// Load existing config or use defaults
-		cfg, err := config.LoadConfig()
+		cfg, err := tunnel.LoadConfig()
 		if err != nil {
-			// If config doesn't exist, start with defaults
-			cfg = &config.DefaultConfig
+			logger.Error("Failed to load config: %v", err)
+			return err
 		}
+
+		// Update token while preserving other settings
+		cfg.Token = token
 
 		// Get server host from flag if provided
 		host, _ := cmd.Flags().GetString("host")
@@ -171,25 +201,22 @@ Example: giraffecloud login --token your-api-token`,
 			cfg.Server.Host = host
 		}
 
-		// Update token while preserving other settings
-		cfg.Token = token
-
-		// Validate the config
-		if err := cfg.Validate(); err != nil {
-			return fmt.Errorf("invalid configuration: %w", err)
-		}
-
 		// Save the updated config
-		if err := config.SaveConfig(cfg); err != nil {
-			return fmt.Errorf("failed to save token: %w", err)
+		if err := tunnel.SaveConfig(cfg); err != nil {
+			logger.Error("Failed to save config: %v", err)
+			return err
 		}
 
-		fmt.Printf("Successfully logged in to GiraffeCloud (server: %s)\n", cfg.Server.Host)
+		logger.Info("Successfully logged in to GiraffeCloud (server: %s)", cfg.Server.Host)
 		return nil
 	},
 }
 
 func init() {
+	// Initialize logger first
+	initLogger()
+	logger.Info("Initializing GiraffeCloud CLI")
+
 	rootCmd.AddCommand(connectCmd)
 	rootCmd.AddCommand(serviceCmd)
 	rootCmd.AddCommand(versionCmd)
@@ -204,11 +231,15 @@ func init() {
 
 	loginCmd.Flags().String("token", "", "API token for authentication")
 	loginCmd.MarkFlagRequired("token")
+
+	logger.Debug("CLI commands and flags initialized")
 }
 
 func main() {
+	defer logger.Close()
+
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Println(err)
+		logger.Error("Command execution failed: %v", err)
 		os.Exit(1)
 	}
 }

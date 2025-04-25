@@ -1,7 +1,6 @@
 package server
 
 import (
-	"giraffecloud/internal/config"
 	"giraffecloud/internal/db"
 	"giraffecloud/internal/repository"
 
@@ -11,7 +10,6 @@ import (
 // Server represents the HTTP server
 type Server struct {
 	router *gin.Engine
-	cfg    *config.Config
 	db     *db.Database
 }
 
@@ -21,4 +19,10 @@ type Repositories struct {
 	Auth    repository.AuthRepository
 	Session repository.SessionRepository
 	Token   repository.TokenRepository
+}
+
+// Config holds the server configuration
+type Config struct {
+	// Port is the server port number (e.g. "8080")
+	Port string
 }

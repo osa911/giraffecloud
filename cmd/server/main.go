@@ -3,7 +3,6 @@ package main
 import (
 	"os"
 
-	"giraffecloud/internal/config"
 	"giraffecloud/internal/config/firebase"
 	"giraffecloud/internal/db"
 	"giraffecloud/internal/logging"
@@ -13,7 +12,7 @@ import (
 
 func main() {
 	// Initialize logger configuration
-	logConfig := &config.LoggingConfig{
+	logConfig := &logging.Config{
 		Level:      os.Getenv("LOG_LEVEL"),
 		File:       os.Getenv("LOG_FILE"),
 		MaxSize:    100,
@@ -26,7 +25,7 @@ func main() {
 		logConfig.Level = "info"
 	}
 	if logConfig.File == "" {
-		logConfig.File = "~/.giraffecloud/api.log"
+		logConfig.File = "./logs/api.log"
 	}
 
 	// Configure and get logger
@@ -57,17 +56,23 @@ func main() {
 	logger.Info("Started session cleanup task")
 
 	// Initialize server
-	cfg := &config.Config{
-		Logging: *logConfig, // Use the same logging config
+	cfg := &server.Config{
+		Port:    os.Getenv("PORT"),
 	}
-	srv, err := server.NewServer(cfg, database)
+
+	// Use default values if not set
+	if cfg.Port == "" {
+		cfg.Port = "8080"
+	}
+
+	// Create and start server
+	srv, err := server.NewServer(database)
 	if err != nil {
 		logger.Error("Failed to create server: %v", err)
 		os.Exit(1)
 	}
 
-	// Start server
-	if err := srv.Start(); err != nil {
+	if err := srv.Start(cfg); err != nil {
 		logger.Error("Failed to start server: %v", err)
 		os.Exit(1)
 	}

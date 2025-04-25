@@ -3,7 +3,7 @@ package middleware
 import (
 	"fmt"
 	"giraffecloud/internal/api/constants"
-	"giraffecloud/internal/config"
+	"giraffecloud/internal/tunnel"
 
 	"github.com/gin-gonic/gin"
 )
@@ -24,7 +24,7 @@ func CLIAuthMiddleware() gin.HandlerFunc {
 		}
 
 		// Load config to get token
-		cfg, err := config.LoadConfig()
+		cfg, err := tunnel.LoadConfig()
 		if err != nil {
 			c.Next() // Continue to let other auth methods handle it
 			return

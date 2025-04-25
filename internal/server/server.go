@@ -3,11 +3,9 @@ package server
 import (
 	"fmt"
 	"io"
-	"os"
 
 	"giraffecloud/internal/api/handlers"
 	"giraffecloud/internal/api/middleware"
-	"giraffecloud/internal/config"
 	"giraffecloud/internal/db"
 	"giraffecloud/internal/logging"
 	"giraffecloud/internal/repository"
@@ -18,10 +16,7 @@ import (
 )
 
 // NewServer creates a new server instance
-func NewServer(cfg *config.Config, db *db.Database) (*Server, error) {
-	if cfg == nil {
-		return nil, fmt.Errorf("config cannot be nil")
-	}
+func NewServer(db *db.Database) (*Server, error) {
 	if db == nil {
 		return nil, fmt.Errorf("database cannot be nil")
 	}
@@ -29,7 +24,6 @@ func NewServer(cfg *config.Config, db *db.Database) (*Server, error) {
 	// Create server instance
 	s := &Server{
 		router: gin.New(),
-		cfg:    cfg,
 		db:     db,
 	}
 
@@ -94,13 +88,8 @@ func (s *Server) initializeRepositories() *Repositories {
 }
 
 // Start starts the server
-func (s *Server) Start() error {
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
-
+func (s *Server) Start(cfg *Config) error {
 	logger := logging.GetLogger()
-	logger.Info("Starting server on port " + port)
-	return s.router.Run(":" + port)
+	logger.Info("Starting server on port " + cfg.Port)
+	return s.router.Run(":" + cfg.Port)
 }
