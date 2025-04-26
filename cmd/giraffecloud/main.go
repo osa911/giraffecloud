@@ -2,7 +2,6 @@ package main
 
 import (
 	"crypto/tls"
-	"crypto/x509"
 	"fmt"
 	"giraffecloud/internal/logging"
 	"giraffecloud/internal/tunnel"
@@ -47,7 +46,7 @@ var connectCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg, err := tunnel.LoadConfig()
 		if err != nil {
-			logger.Error("Failed to load config: %v", err)
+			logger.Error("Error loading config: %v", err)
 			os.Exit(1)
 		}
 
@@ -60,31 +59,6 @@ var connectCmd = &cobra.Command{
 		// Create TLS config
 		tlsConfig := &tls.Config{
 			InsecureSkipVerify: cfg.Security.InsecureSkipVerify,
-		}
-
-		// Load certificates if specified
-		if cfg.Security.CertFile != "" && cfg.Security.KeyFile != "" {
-			cert, err := tls.LoadX509KeyPair(cfg.Security.CertFile, cfg.Security.KeyFile)
-			if err != nil {
-				logger.Error("Failed to load certificates: %v", err)
-				os.Exit(1)
-			}
-			tlsConfig.Certificates = []tls.Certificate{cert}
-		}
-
-		// Load CA if specified
-		if cfg.Security.CAFile != "" {
-			caCert, err := os.ReadFile(cfg.Security.CAFile)
-			if err != nil {
-				logger.Error("Failed to read CA file: %v", err)
-				os.Exit(1)
-			}
-			caCertPool := x509.NewCertPool()
-			if !caCertPool.AppendCertsFromPEM(caCert) {
-				logger.Error("Failed to parse CA certificate")
-				os.Exit(1)
-			}
-			tlsConfig.RootCAs = caCertPool
 		}
 
 		// Create and connect tunnel

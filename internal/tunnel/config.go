@@ -27,10 +27,9 @@ type Config struct {
 
 	// Security configuration
 	Security struct {
-		InsecureSkipVerify bool   `json:"insecure_skip_verify"` // Skip TLS verification
-		CertFile          string `json:"cert_file"`            // Path to client cert
-		KeyFile           string `json:"key_file"`             // Path to client key
-		CAFile            string `json:"ca_file"`              // Path to CA cert
+		// InsecureSkipVerify should only be used for development/testing
+		// When true, the client will not verify the server's certificate
+		InsecureSkipVerify bool `json:"insecure_skip_verify"`
 	} `json:"security"`
 
 	// Logging configuration
@@ -52,10 +51,7 @@ var DefaultConfig = Config{
 	},
 	Protocol: "http",
 	Security: struct {
-		InsecureSkipVerify bool   `json:"insecure_skip_verify"`
-		CertFile          string `json:"cert_file"`
-		KeyFile           string `json:"key_file"`
-		CAFile            string `json:"ca_file"`
+		InsecureSkipVerify bool `json:"insecure_skip_verify"`
 	}{
 		InsecureSkipVerify: false,
 	},
@@ -152,14 +148,6 @@ func (c *Config) Validate() error {
 		// valid protocols
 	default:
 		return fmt.Errorf("invalid protocol: %s", c.Protocol)
-	}
-
-	if c.Security.CertFile != "" && c.Security.KeyFile == "" {
-		return fmt.Errorf("key_file is required when cert_file is specified")
-	}
-
-	if c.Security.KeyFile != "" && c.Security.CertFile == "" {
-		return fmt.Errorf("cert_file is required when key_file is specified")
 	}
 
 	if err := c.Logging.Validate(); err != nil {
