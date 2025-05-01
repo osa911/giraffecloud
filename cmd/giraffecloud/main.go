@@ -62,12 +62,7 @@ var connectCmd = &cobra.Command{
 		}
 
 		// Create and connect tunnel
-		t, err := tunnel.NewTunnel("localhost:8080") // TODO: Get from config
-		if err != nil {
-			logger.Error("Failed to create tunnel: %v", err)
-			os.Exit(1)
-		}
-
+		t := tunnel.NewTunnel()
 		serverAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 		if err := t.Connect(serverAddr, cfg.Token, tlsConfig); err != nil {
 			logger.Error("Failed to connect to GiraffeCloud: %v", err)
@@ -75,6 +70,7 @@ var connectCmd = &cobra.Command{
 		}
 
 		logger.Info("Connected to GiraffeCloud at %s", serverAddr)
+		logger.Info("Tunnel is running. Press Ctrl+C to stop.")
 
 		// Set up signal handling
 		sigChan := make(chan os.Signal, 1)
@@ -199,10 +195,11 @@ func init() {
 	serviceCmd.AddCommand(installCmd)
 	serviceCmd.AddCommand(uninstallCmd)
 
-	// Add host flag to both connect and login commands
+	// Add host flag to connect command
 	connectCmd.Flags().String("host", "", "Server host to connect to (default: api.giraffecloud.com)")
-	loginCmd.Flags().String("host", "", "Server host to connect to (default: api.giraffecloud.com)")
 
+	// Add host flag to login command
+	loginCmd.Flags().String("host", "", "Server host to connect to (default: api.giraffecloud.com)")
 	loginCmd.Flags().String("token", "", "API token for authentication")
 	loginCmd.MarkFlagRequired("token")
 
