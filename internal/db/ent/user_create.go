@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"giraffecloud/internal/db/ent/session"
 	"giraffecloud/internal/db/ent/token"
+	"giraffecloud/internal/db/ent/tunnel"
 	"giraffecloud/internal/db/ent/user"
 	"time"
 
@@ -181,6 +182,21 @@ func (uc *UserCreate) AddTokens(t ...*Token) *UserCreate {
 		ids[i] = t[i].ID
 	}
 	return uc.AddTokenIDs(ids...)
+}
+
+// AddTunnelIDs adds the "tunnels" edge to the Tunnel entity by IDs.
+func (uc *UserCreate) AddTunnelIDs(ids ...int) *UserCreate {
+	uc.mutation.AddTunnelIDs(ids...)
+	return uc
+}
+
+// AddTunnels adds the "tunnels" edges to the Tunnel entity.
+func (uc *UserCreate) AddTunnels(t ...*Tunnel) *UserCreate {
+	ids := make([]int, len(t))
+	for i := range t {
+		ids[i] = t[i].ID
+	}
+	return uc.AddTunnelIDs(ids...)
 }
 
 // Mutation returns the UserMutation object of the builder.
@@ -357,6 +373,22 @@ func (uc *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(token.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := uc.mutation.TunnelsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.TunnelsTable,
+			Columns: []string{user.TunnelsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(tunnel.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

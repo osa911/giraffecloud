@@ -6,6 +6,7 @@ import (
 	"giraffecloud/internal/db/ent/schema"
 	"giraffecloud/internal/db/ent/session"
 	"giraffecloud/internal/db/ent/token"
+	"giraffecloud/internal/db/ent/tunnel"
 	"giraffecloud/internal/db/ent/user"
 	"time"
 
@@ -59,6 +60,37 @@ func init() {
 	tokenDescID := tokenFields[0].Descriptor()
 	// token.DefaultID holds the default value on creation for the id field.
 	token.DefaultID = tokenDescID.Default.(func() uuid.UUID)
+	tunnelMixin := schema.Tunnel{}.Mixin()
+	tunnelMixinFields0 := tunnelMixin[0].Fields()
+	_ = tunnelMixinFields0
+	tunnelFields := schema.Tunnel{}.Fields()
+	_ = tunnelFields
+	// tunnelDescCreatedAt is the schema descriptor for created_at field.
+	tunnelDescCreatedAt := tunnelMixinFields0[0].Descriptor()
+	// tunnel.DefaultCreatedAt holds the default value on creation for the created_at field.
+	tunnel.DefaultCreatedAt = tunnelDescCreatedAt.Default.(func() time.Time)
+	// tunnelDescUpdatedAt is the schema descriptor for updated_at field.
+	tunnelDescUpdatedAt := tunnelMixinFields0[1].Descriptor()
+	// tunnel.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	tunnel.DefaultUpdatedAt = tunnelDescUpdatedAt.Default.(func() time.Time)
+	// tunnel.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	tunnel.UpdateDefaultUpdatedAt = tunnelDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// tunnelDescDomain is the schema descriptor for domain field.
+	tunnelDescDomain := tunnelFields[0].Descriptor()
+	// tunnel.DomainValidator is a validator for the "domain" field. It is called by the builders before save.
+	tunnel.DomainValidator = tunnelDescDomain.Validators[0].(func(string) error)
+	// tunnelDescToken is the schema descriptor for token field.
+	tunnelDescToken := tunnelFields[1].Descriptor()
+	// tunnel.TokenValidator is a validator for the "token" field. It is called by the builders before save.
+	tunnel.TokenValidator = tunnelDescToken.Validators[0].(func(string) error)
+	// tunnelDescIsActive is the schema descriptor for is_active field.
+	tunnelDescIsActive := tunnelFields[3].Descriptor()
+	// tunnel.DefaultIsActive holds the default value on creation for the is_active field.
+	tunnel.DefaultIsActive = tunnelDescIsActive.Default.(bool)
+	// tunnelDescTargetPort is the schema descriptor for target_port field.
+	tunnelDescTargetPort := tunnelFields[4].Descriptor()
+	// tunnel.TargetPortValidator is a validator for the "target_port" field. It is called by the builders before save.
+	tunnel.TargetPortValidator = tunnelDescTargetPort.Validators[0].(func(int) error)
 	userMixin := schema.User{}.Mixin()
 	userMixinFields0 := userMixin[0].Fields()
 	_ = userMixinFields0

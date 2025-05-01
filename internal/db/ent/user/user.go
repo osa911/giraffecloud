@@ -38,6 +38,8 @@ const (
 	EdgeSessions = "sessions"
 	// EdgeTokens holds the string denoting the tokens edge name in mutations.
 	EdgeTokens = "tokens"
+	// EdgeTunnels holds the string denoting the tunnels edge name in mutations.
+	EdgeTunnels = "tunnels"
 	// Table holds the table name of the user in the database.
 	Table = "users"
 	// SessionsTable is the table that holds the sessions relation/edge.
@@ -54,6 +56,13 @@ const (
 	TokensInverseTable = "tokens"
 	// TokensColumn is the table column denoting the tokens relation/edge.
 	TokensColumn = "user_id"
+	// TunnelsTable is the table that holds the tunnels relation/edge.
+	TunnelsTable = "tunnels"
+	// TunnelsInverseTable is the table name for the Tunnel entity.
+	// It exists in this package in order to avoid circular dependency with the "tunnel" package.
+	TunnelsInverseTable = "tunnels"
+	// TunnelsColumn is the table column denoting the tunnels relation/edge.
+	TunnelsColumn = "user_id"
 )
 
 // Columns holds all SQL columns for user fields.
@@ -181,6 +190,20 @@ func ByTokens(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newTokensStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
+
+// ByTunnelsCount orders the results by tunnels count.
+func ByTunnelsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newTunnelsStep(), opts...)
+	}
+}
+
+// ByTunnels orders the results by tunnels terms.
+func ByTunnels(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newTunnelsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
 func newSessionsStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -193,5 +216,12 @@ func newTokensStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(TokensInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, TokensTable, TokensColumn),
+	)
+}
+func newTunnelsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(TunnelsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, TunnelsTable, TunnelsColumn),
 	)
 }

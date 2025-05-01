@@ -686,6 +686,29 @@ func HasTokensWith(preds ...predicate.Token) predicate.User {
 	})
 }
 
+// HasTunnels applies the HasEdge predicate on the "tunnels" edge.
+func HasTunnels() predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, TunnelsTable, TunnelsColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasTunnelsWith applies the HasEdge predicate on the "tunnels" edge with a given conditions (other predicates).
+func HasTunnelsWith(preds ...predicate.Tunnel) predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := newTunnelsStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
 // And groups predicates with the AND operator between them.
 func And(predicates ...predicate.User) predicate.User {
 	return predicate.User(sql.AndPredicates(predicates...))

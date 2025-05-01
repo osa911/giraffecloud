@@ -9,6 +9,7 @@ import (
 	"giraffecloud/internal/db/ent/predicate"
 	"giraffecloud/internal/db/ent/session"
 	"giraffecloud/internal/db/ent/token"
+	"giraffecloud/internal/db/ent/tunnel"
 	"giraffecloud/internal/db/ent/user"
 	"time"
 
@@ -203,6 +204,21 @@ func (uu *UserUpdate) AddTokens(t ...*Token) *UserUpdate {
 	return uu.AddTokenIDs(ids...)
 }
 
+// AddTunnelIDs adds the "tunnels" edge to the Tunnel entity by IDs.
+func (uu *UserUpdate) AddTunnelIDs(ids ...int) *UserUpdate {
+	uu.mutation.AddTunnelIDs(ids...)
+	return uu
+}
+
+// AddTunnels adds the "tunnels" edges to the Tunnel entity.
+func (uu *UserUpdate) AddTunnels(t ...*Tunnel) *UserUpdate {
+	ids := make([]int, len(t))
+	for i := range t {
+		ids[i] = t[i].ID
+	}
+	return uu.AddTunnelIDs(ids...)
+}
+
 // Mutation returns the UserMutation object of the builder.
 func (uu *UserUpdate) Mutation() *UserMutation {
 	return uu.mutation
@@ -248,6 +264,27 @@ func (uu *UserUpdate) RemoveTokens(t ...*Token) *UserUpdate {
 		ids[i] = t[i].ID
 	}
 	return uu.RemoveTokenIDs(ids...)
+}
+
+// ClearTunnels clears all "tunnels" edges to the Tunnel entity.
+func (uu *UserUpdate) ClearTunnels() *UserUpdate {
+	uu.mutation.ClearTunnels()
+	return uu
+}
+
+// RemoveTunnelIDs removes the "tunnels" edge to Tunnel entities by IDs.
+func (uu *UserUpdate) RemoveTunnelIDs(ids ...int) *UserUpdate {
+	uu.mutation.RemoveTunnelIDs(ids...)
+	return uu
+}
+
+// RemoveTunnels removes "tunnels" edges to Tunnel entities.
+func (uu *UserUpdate) RemoveTunnels(t ...*Tunnel) *UserUpdate {
+	ids := make([]int, len(t))
+	for i := range t {
+		ids[i] = t[i].ID
+	}
+	return uu.RemoveTunnelIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -417,6 +454,51 @@ func (uu *UserUpdate) sqlSave(ctx context.Context) (n int, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(token.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if uu.mutation.TunnelsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.TunnelsTable,
+			Columns: []string{user.TunnelsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(tunnel.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := uu.mutation.RemovedTunnelsIDs(); len(nodes) > 0 && !uu.mutation.TunnelsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.TunnelsTable,
+			Columns: []string{user.TunnelsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(tunnel.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := uu.mutation.TunnelsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.TunnelsTable,
+			Columns: []string{user.TunnelsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(tunnel.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
@@ -616,6 +698,21 @@ func (uuo *UserUpdateOne) AddTokens(t ...*Token) *UserUpdateOne {
 	return uuo.AddTokenIDs(ids...)
 }
 
+// AddTunnelIDs adds the "tunnels" edge to the Tunnel entity by IDs.
+func (uuo *UserUpdateOne) AddTunnelIDs(ids ...int) *UserUpdateOne {
+	uuo.mutation.AddTunnelIDs(ids...)
+	return uuo
+}
+
+// AddTunnels adds the "tunnels" edges to the Tunnel entity.
+func (uuo *UserUpdateOne) AddTunnels(t ...*Tunnel) *UserUpdateOne {
+	ids := make([]int, len(t))
+	for i := range t {
+		ids[i] = t[i].ID
+	}
+	return uuo.AddTunnelIDs(ids...)
+}
+
 // Mutation returns the UserMutation object of the builder.
 func (uuo *UserUpdateOne) Mutation() *UserMutation {
 	return uuo.mutation
@@ -661,6 +758,27 @@ func (uuo *UserUpdateOne) RemoveTokens(t ...*Token) *UserUpdateOne {
 		ids[i] = t[i].ID
 	}
 	return uuo.RemoveTokenIDs(ids...)
+}
+
+// ClearTunnels clears all "tunnels" edges to the Tunnel entity.
+func (uuo *UserUpdateOne) ClearTunnels() *UserUpdateOne {
+	uuo.mutation.ClearTunnels()
+	return uuo
+}
+
+// RemoveTunnelIDs removes the "tunnels" edge to Tunnel entities by IDs.
+func (uuo *UserUpdateOne) RemoveTunnelIDs(ids ...int) *UserUpdateOne {
+	uuo.mutation.RemoveTunnelIDs(ids...)
+	return uuo
+}
+
+// RemoveTunnels removes "tunnels" edges to Tunnel entities.
+func (uuo *UserUpdateOne) RemoveTunnels(t ...*Tunnel) *UserUpdateOne {
+	ids := make([]int, len(t))
+	for i := range t {
+		ids[i] = t[i].ID
+	}
+	return uuo.RemoveTunnelIDs(ids...)
 }
 
 // Where appends a list predicates to the UserUpdate builder.
@@ -860,6 +978,51 @@ func (uuo *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) 
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(token.FieldID, field.TypeUUID),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if uuo.mutation.TunnelsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.TunnelsTable,
+			Columns: []string{user.TunnelsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(tunnel.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := uuo.mutation.RemovedTunnelsIDs(); len(nodes) > 0 && !uuo.mutation.TunnelsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.TunnelsTable,
+			Columns: []string{user.TunnelsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(tunnel.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := uuo.mutation.TunnelsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.TunnelsTable,
+			Columns: []string{user.TunnelsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(tunnel.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

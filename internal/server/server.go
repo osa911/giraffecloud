@@ -2,7 +2,6 @@ package server
 
 import (
 	"fmt"
-	"io"
 
 	"giraffecloud/internal/api/handlers"
 	"giraffecloud/internal/api/middleware"
@@ -11,6 +10,8 @@ import (
 	"giraffecloud/internal/repository"
 	"giraffecloud/internal/server/routes"
 	"giraffecloud/internal/service"
+	"io"
+	"os"
 
 	"github.com/gin-gonic/gin"
 )
@@ -20,23 +21,14 @@ func NewServer(db *db.Database) (*Server, error) {
 	if db == nil {
 		return nil, fmt.Errorf("database cannot be nil")
 	}
-
-	// Create server instance
-	s := &Server{
+	return &Server{
 		router: gin.New(),
 		db:     db,
-	}
-
-	// Initialize all components and set up routes
-	if err := s.initialize(); err != nil {
-		return nil, fmt.Errorf("failed to initialize server: %w", err)
-	}
-
-	return s, nil
+	}, nil
 }
 
-// initialize sets up all the server components
-func (s *Server) initialize() error {
+// Init initializes the server
+func (s *Server) Init() error {
 	// Disable default logger
 	gin.SetMode(gin.ReleaseMode)
 	gin.DefaultWriter = io.Discard
@@ -49,11 +41,24 @@ func (s *Server) initialize() error {
 	auditService := service.NewAuditService()
 	csrfService := service.NewCSRFService()
 
+	// Initialize Caddy service
+	caddyService := service.NewCaddyService(&service.CaddyConfig{
+		AdminAPI: os.Getenv("CADDY_ADMIN_API"),
+	})
+
+	// Load initial Caddy configuration
+	if err := caddyService.LoadConfig(); err != nil {
+		return err
+	}
+
 	// Initialize repositories
 	repos := s.initializeRepositories()
 
 	// Initialize token service
 	tokenService := service.NewTokenService(repos.Token)
+
+	// Initialize tunnel service with Caddy service
+	tunnelService := service.NewTunnelService(repos.Tunnel, caddyService)
 
 	// Initialize handlers
 	handlers := &routes.Handlers{
@@ -62,6 +67,7 @@ func (s *Server) initialize() error {
 		Health:  handlers.NewHealthHandler(s.db.DB),
 		Session: handlers.NewSessionHandler(repos.Session),
 		Token:   handlers.NewTokenHandler(tokenService),
+		Tunnel:  handlers.NewTunnelHandler(tunnelService),
 	}
 
 	// Initialize middleware
@@ -84,6 +90,7 @@ func (s *Server) initializeRepositories() *Repositories {
 		Auth:    repository.NewAuthRepository(s.db.DB),
 		Session: repository.NewSessionRepository(s.db.DB),
 		Token:   repository.NewTokenRepository(s.db.DB),
+		Tunnel:  repository.NewTunnelRepository(s.db.DB),
 	}
 }
 

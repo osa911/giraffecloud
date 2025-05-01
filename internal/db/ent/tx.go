@@ -16,6 +16,8 @@ type Tx struct {
 	Session *SessionClient
 	// Token is the client for interacting with the Token builders.
 	Token *TokenClient
+	// Tunnel is the client for interacting with the Tunnel builders.
+	Tunnel *TunnelClient
 	// User is the client for interacting with the User builders.
 	User *UserClient
 
@@ -151,6 +153,7 @@ func (tx *Tx) Client() *Client {
 func (tx *Tx) init() {
 	tx.Session = NewSessionClient(tx.config)
 	tx.Token = NewTokenClient(tx.config)
+	tx.Tunnel = NewTunnelClient(tx.config)
 	tx.User = NewUserClient(tx.config)
 }
 

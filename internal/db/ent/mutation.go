@@ -9,6 +9,7 @@ import (
 	"giraffecloud/internal/db/ent/predicate"
 	"giraffecloud/internal/db/ent/session"
 	"giraffecloud/internal/db/ent/token"
+	"giraffecloud/internal/db/ent/tunnel"
 	"giraffecloud/internal/db/ent/user"
 	"sync"
 	"time"
@@ -29,6 +30,7 @@ const (
 	// Node types.
 	TypeSession = "Session"
 	TypeToken   = "Token"
+	TypeTunnel  = "Tunnel"
 	TypeUser    = "User"
 )
 
@@ -1585,6 +1587,835 @@ func (m *TokenMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown Token edge %s", name)
 }
 
+// TunnelMutation represents an operation that mutates the Tunnel nodes in the graph.
+type TunnelMutation struct {
+	config
+	op             Op
+	typ            string
+	id             *int
+	created_at     *time.Time
+	updated_at     *time.Time
+	domain         *string
+	token          *string
+	client_ip      *string
+	is_active      *bool
+	target_port    *int
+	addtarget_port *int
+	clearedFields  map[string]struct{}
+	owner          *uint32
+	clearedowner   bool
+	done           bool
+	oldValue       func(context.Context) (*Tunnel, error)
+	predicates     []predicate.Tunnel
+}
+
+var _ ent.Mutation = (*TunnelMutation)(nil)
+
+// tunnelOption allows management of the mutation configuration using functional options.
+type tunnelOption func(*TunnelMutation)
+
+// newTunnelMutation creates new mutation for the Tunnel entity.
+func newTunnelMutation(c config, op Op, opts ...tunnelOption) *TunnelMutation {
+	m := &TunnelMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeTunnel,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withTunnelID sets the ID field of the mutation.
+func withTunnelID(id int) tunnelOption {
+	return func(m *TunnelMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *Tunnel
+		)
+		m.oldValue = func(ctx context.Context) (*Tunnel, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().Tunnel.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withTunnel sets the old Tunnel of the mutation.
+func withTunnel(node *Tunnel) tunnelOption {
+	return func(m *TunnelMutation) {
+		m.oldValue = func(context.Context) (*Tunnel, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m TunnelMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m TunnelMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *TunnelMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *TunnelMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().Tunnel.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *TunnelMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *TunnelMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the Tunnel entity.
+// If the Tunnel object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TunnelMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *TunnelMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *TunnelMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *TunnelMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the Tunnel entity.
+// If the Tunnel object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TunnelMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *TunnelMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetDomain sets the "domain" field.
+func (m *TunnelMutation) SetDomain(s string) {
+	m.domain = &s
+}
+
+// Domain returns the value of the "domain" field in the mutation.
+func (m *TunnelMutation) Domain() (r string, exists bool) {
+	v := m.domain
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDomain returns the old "domain" field's value of the Tunnel entity.
+// If the Tunnel object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TunnelMutation) OldDomain(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDomain is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDomain requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDomain: %w", err)
+	}
+	return oldValue.Domain, nil
+}
+
+// ResetDomain resets all changes to the "domain" field.
+func (m *TunnelMutation) ResetDomain() {
+	m.domain = nil
+}
+
+// SetToken sets the "token" field.
+func (m *TunnelMutation) SetToken(s string) {
+	m.token = &s
+}
+
+// Token returns the value of the "token" field in the mutation.
+func (m *TunnelMutation) Token() (r string, exists bool) {
+	v := m.token
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldToken returns the old "token" field's value of the Tunnel entity.
+// If the Tunnel object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TunnelMutation) OldToken(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldToken is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldToken requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldToken: %w", err)
+	}
+	return oldValue.Token, nil
+}
+
+// ResetToken resets all changes to the "token" field.
+func (m *TunnelMutation) ResetToken() {
+	m.token = nil
+}
+
+// SetClientIP sets the "client_ip" field.
+func (m *TunnelMutation) SetClientIP(s string) {
+	m.client_ip = &s
+}
+
+// ClientIP returns the value of the "client_ip" field in the mutation.
+func (m *TunnelMutation) ClientIP() (r string, exists bool) {
+	v := m.client_ip
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldClientIP returns the old "client_ip" field's value of the Tunnel entity.
+// If the Tunnel object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TunnelMutation) OldClientIP(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldClientIP is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldClientIP requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldClientIP: %w", err)
+	}
+	return oldValue.ClientIP, nil
+}
+
+// ClearClientIP clears the value of the "client_ip" field.
+func (m *TunnelMutation) ClearClientIP() {
+	m.client_ip = nil
+	m.clearedFields[tunnel.FieldClientIP] = struct{}{}
+}
+
+// ClientIPCleared returns if the "client_ip" field was cleared in this mutation.
+func (m *TunnelMutation) ClientIPCleared() bool {
+	_, ok := m.clearedFields[tunnel.FieldClientIP]
+	return ok
+}
+
+// ResetClientIP resets all changes to the "client_ip" field.
+func (m *TunnelMutation) ResetClientIP() {
+	m.client_ip = nil
+	delete(m.clearedFields, tunnel.FieldClientIP)
+}
+
+// SetIsActive sets the "is_active" field.
+func (m *TunnelMutation) SetIsActive(b bool) {
+	m.is_active = &b
+}
+
+// IsActive returns the value of the "is_active" field in the mutation.
+func (m *TunnelMutation) IsActive() (r bool, exists bool) {
+	v := m.is_active
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldIsActive returns the old "is_active" field's value of the Tunnel entity.
+// If the Tunnel object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TunnelMutation) OldIsActive(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldIsActive is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldIsActive requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldIsActive: %w", err)
+	}
+	return oldValue.IsActive, nil
+}
+
+// ResetIsActive resets all changes to the "is_active" field.
+func (m *TunnelMutation) ResetIsActive() {
+	m.is_active = nil
+}
+
+// SetTargetPort sets the "target_port" field.
+func (m *TunnelMutation) SetTargetPort(i int) {
+	m.target_port = &i
+	m.addtarget_port = nil
+}
+
+// TargetPort returns the value of the "target_port" field in the mutation.
+func (m *TunnelMutation) TargetPort() (r int, exists bool) {
+	v := m.target_port
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTargetPort returns the old "target_port" field's value of the Tunnel entity.
+// If the Tunnel object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TunnelMutation) OldTargetPort(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTargetPort is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTargetPort requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTargetPort: %w", err)
+	}
+	return oldValue.TargetPort, nil
+}
+
+// AddTargetPort adds i to the "target_port" field.
+func (m *TunnelMutation) AddTargetPort(i int) {
+	if m.addtarget_port != nil {
+		*m.addtarget_port += i
+	} else {
+		m.addtarget_port = &i
+	}
+}
+
+// AddedTargetPort returns the value that was added to the "target_port" field in this mutation.
+func (m *TunnelMutation) AddedTargetPort() (r int, exists bool) {
+	v := m.addtarget_port
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetTargetPort resets all changes to the "target_port" field.
+func (m *TunnelMutation) ResetTargetPort() {
+	m.target_port = nil
+	m.addtarget_port = nil
+}
+
+// SetUserID sets the "user_id" field.
+func (m *TunnelMutation) SetUserID(u uint32) {
+	m.owner = &u
+}
+
+// UserID returns the value of the "user_id" field in the mutation.
+func (m *TunnelMutation) UserID() (r uint32, exists bool) {
+	v := m.owner
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUserID returns the old "user_id" field's value of the Tunnel entity.
+// If the Tunnel object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TunnelMutation) OldUserID(ctx context.Context) (v uint32, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUserID: %w", err)
+	}
+	return oldValue.UserID, nil
+}
+
+// ResetUserID resets all changes to the "user_id" field.
+func (m *TunnelMutation) ResetUserID() {
+	m.owner = nil
+}
+
+// SetOwnerID sets the "owner" edge to the User entity by id.
+func (m *TunnelMutation) SetOwnerID(id uint32) {
+	m.owner = &id
+}
+
+// ClearOwner clears the "owner" edge to the User entity.
+func (m *TunnelMutation) ClearOwner() {
+	m.clearedowner = true
+	m.clearedFields[tunnel.FieldUserID] = struct{}{}
+}
+
+// OwnerCleared reports if the "owner" edge to the User entity was cleared.
+func (m *TunnelMutation) OwnerCleared() bool {
+	return m.clearedowner
+}
+
+// OwnerID returns the "owner" edge ID in the mutation.
+func (m *TunnelMutation) OwnerID() (id uint32, exists bool) {
+	if m.owner != nil {
+		return *m.owner, true
+	}
+	return
+}
+
+// OwnerIDs returns the "owner" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// OwnerID instead. It exists only for internal usage by the builders.
+func (m *TunnelMutation) OwnerIDs() (ids []uint32) {
+	if id := m.owner; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetOwner resets all changes to the "owner" edge.
+func (m *TunnelMutation) ResetOwner() {
+	m.owner = nil
+	m.clearedowner = false
+}
+
+// Where appends a list predicates to the TunnelMutation builder.
+func (m *TunnelMutation) Where(ps ...predicate.Tunnel) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the TunnelMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *TunnelMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.Tunnel, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *TunnelMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *TunnelMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (Tunnel).
+func (m *TunnelMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *TunnelMutation) Fields() []string {
+	fields := make([]string, 0, 8)
+	if m.created_at != nil {
+		fields = append(fields, tunnel.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, tunnel.FieldUpdatedAt)
+	}
+	if m.domain != nil {
+		fields = append(fields, tunnel.FieldDomain)
+	}
+	if m.token != nil {
+		fields = append(fields, tunnel.FieldToken)
+	}
+	if m.client_ip != nil {
+		fields = append(fields, tunnel.FieldClientIP)
+	}
+	if m.is_active != nil {
+		fields = append(fields, tunnel.FieldIsActive)
+	}
+	if m.target_port != nil {
+		fields = append(fields, tunnel.FieldTargetPort)
+	}
+	if m.owner != nil {
+		fields = append(fields, tunnel.FieldUserID)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *TunnelMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case tunnel.FieldCreatedAt:
+		return m.CreatedAt()
+	case tunnel.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case tunnel.FieldDomain:
+		return m.Domain()
+	case tunnel.FieldToken:
+		return m.Token()
+	case tunnel.FieldClientIP:
+		return m.ClientIP()
+	case tunnel.FieldIsActive:
+		return m.IsActive()
+	case tunnel.FieldTargetPort:
+		return m.TargetPort()
+	case tunnel.FieldUserID:
+		return m.UserID()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *TunnelMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case tunnel.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case tunnel.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case tunnel.FieldDomain:
+		return m.OldDomain(ctx)
+	case tunnel.FieldToken:
+		return m.OldToken(ctx)
+	case tunnel.FieldClientIP:
+		return m.OldClientIP(ctx)
+	case tunnel.FieldIsActive:
+		return m.OldIsActive(ctx)
+	case tunnel.FieldTargetPort:
+		return m.OldTargetPort(ctx)
+	case tunnel.FieldUserID:
+		return m.OldUserID(ctx)
+	}
+	return nil, fmt.Errorf("unknown Tunnel field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *TunnelMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case tunnel.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case tunnel.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case tunnel.FieldDomain:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDomain(v)
+		return nil
+	case tunnel.FieldToken:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetToken(v)
+		return nil
+	case tunnel.FieldClientIP:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetClientIP(v)
+		return nil
+	case tunnel.FieldIsActive:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetIsActive(v)
+		return nil
+	case tunnel.FieldTargetPort:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTargetPort(v)
+		return nil
+	case tunnel.FieldUserID:
+		v, ok := value.(uint32)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUserID(v)
+		return nil
+	}
+	return fmt.Errorf("unknown Tunnel field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *TunnelMutation) AddedFields() []string {
+	var fields []string
+	if m.addtarget_port != nil {
+		fields = append(fields, tunnel.FieldTargetPort)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *TunnelMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case tunnel.FieldTargetPort:
+		return m.AddedTargetPort()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *TunnelMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case tunnel.FieldTargetPort:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddTargetPort(v)
+		return nil
+	}
+	return fmt.Errorf("unknown Tunnel numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *TunnelMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(tunnel.FieldClientIP) {
+		fields = append(fields, tunnel.FieldClientIP)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *TunnelMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *TunnelMutation) ClearField(name string) error {
+	switch name {
+	case tunnel.FieldClientIP:
+		m.ClearClientIP()
+		return nil
+	}
+	return fmt.Errorf("unknown Tunnel nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *TunnelMutation) ResetField(name string) error {
+	switch name {
+	case tunnel.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case tunnel.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case tunnel.FieldDomain:
+		m.ResetDomain()
+		return nil
+	case tunnel.FieldToken:
+		m.ResetToken()
+		return nil
+	case tunnel.FieldClientIP:
+		m.ResetClientIP()
+		return nil
+	case tunnel.FieldIsActive:
+		m.ResetIsActive()
+		return nil
+	case tunnel.FieldTargetPort:
+		m.ResetTargetPort()
+		return nil
+	case tunnel.FieldUserID:
+		m.ResetUserID()
+		return nil
+	}
+	return fmt.Errorf("unknown Tunnel field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *TunnelMutation) AddedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.owner != nil {
+		edges = append(edges, tunnel.EdgeOwner)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *TunnelMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case tunnel.EdgeOwner:
+		if id := m.owner; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *TunnelMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 1)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *TunnelMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *TunnelMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.clearedowner {
+		edges = append(edges, tunnel.EdgeOwner)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *TunnelMutation) EdgeCleared(name string) bool {
+	switch name {
+	case tunnel.EdgeOwner:
+		return m.clearedowner
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *TunnelMutation) ClearEdge(name string) error {
+	switch name {
+	case tunnel.EdgeOwner:
+		m.ClearOwner()
+		return nil
+	}
+	return fmt.Errorf("unknown Tunnel unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *TunnelMutation) ResetEdge(name string) error {
+	switch name {
+	case tunnel.EdgeOwner:
+		m.ResetOwner()
+		return nil
+	}
+	return fmt.Errorf("unknown Tunnel edge %s", name)
+}
+
 // UserMutation represents an operation that mutates the User nodes in the graph.
 type UserMutation struct {
 	config
@@ -1608,6 +2439,9 @@ type UserMutation struct {
 	tokens          map[uuid.UUID]struct{}
 	removedtokens   map[uuid.UUID]struct{}
 	clearedtokens   bool
+	tunnels         map[int]struct{}
+	removedtunnels  map[int]struct{}
+	clearedtunnels  bool
 	done            bool
 	oldValue        func(context.Context) (*User, error)
 	predicates      []predicate.User
@@ -2237,6 +3071,60 @@ func (m *UserMutation) ResetTokens() {
 	m.removedtokens = nil
 }
 
+// AddTunnelIDs adds the "tunnels" edge to the Tunnel entity by ids.
+func (m *UserMutation) AddTunnelIDs(ids ...int) {
+	if m.tunnels == nil {
+		m.tunnels = make(map[int]struct{})
+	}
+	for i := range ids {
+		m.tunnels[ids[i]] = struct{}{}
+	}
+}
+
+// ClearTunnels clears the "tunnels" edge to the Tunnel entity.
+func (m *UserMutation) ClearTunnels() {
+	m.clearedtunnels = true
+}
+
+// TunnelsCleared reports if the "tunnels" edge to the Tunnel entity was cleared.
+func (m *UserMutation) TunnelsCleared() bool {
+	return m.clearedtunnels
+}
+
+// RemoveTunnelIDs removes the "tunnels" edge to the Tunnel entity by IDs.
+func (m *UserMutation) RemoveTunnelIDs(ids ...int) {
+	if m.removedtunnels == nil {
+		m.removedtunnels = make(map[int]struct{})
+	}
+	for i := range ids {
+		delete(m.tunnels, ids[i])
+		m.removedtunnels[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedTunnels returns the removed IDs of the "tunnels" edge to the Tunnel entity.
+func (m *UserMutation) RemovedTunnelsIDs() (ids []int) {
+	for id := range m.removedtunnels {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// TunnelsIDs returns the "tunnels" edge IDs in the mutation.
+func (m *UserMutation) TunnelsIDs() (ids []int) {
+	for id := range m.tunnels {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetTunnels resets all changes to the "tunnels" edge.
+func (m *UserMutation) ResetTunnels() {
+	m.tunnels = nil
+	m.clearedtunnels = false
+	m.removedtunnels = nil
+}
+
 // Where appends a list predicates to the UserMutation builder.
 func (m *UserMutation) Where(ps ...predicate.User) {
 	m.predicates = append(m.predicates, ps...)
@@ -2550,12 +3438,15 @@ func (m *UserMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *UserMutation) AddedEdges() []string {
-	edges := make([]string, 0, 2)
+	edges := make([]string, 0, 3)
 	if m.sessions != nil {
 		edges = append(edges, user.EdgeSessions)
 	}
 	if m.tokens != nil {
 		edges = append(edges, user.EdgeTokens)
+	}
+	if m.tunnels != nil {
+		edges = append(edges, user.EdgeTunnels)
 	}
 	return edges
 }
@@ -2576,18 +3467,27 @@ func (m *UserMutation) AddedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case user.EdgeTunnels:
+		ids := make([]ent.Value, 0, len(m.tunnels))
+		for id := range m.tunnels {
+			ids = append(ids, id)
+		}
+		return ids
 	}
 	return nil
 }
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *UserMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 2)
+	edges := make([]string, 0, 3)
 	if m.removedsessions != nil {
 		edges = append(edges, user.EdgeSessions)
 	}
 	if m.removedtokens != nil {
 		edges = append(edges, user.EdgeTokens)
+	}
+	if m.removedtunnels != nil {
+		edges = append(edges, user.EdgeTunnels)
 	}
 	return edges
 }
@@ -2608,18 +3508,27 @@ func (m *UserMutation) RemovedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case user.EdgeTunnels:
+		ids := make([]ent.Value, 0, len(m.removedtunnels))
+		for id := range m.removedtunnels {
+			ids = append(ids, id)
+		}
+		return ids
 	}
 	return nil
 }
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *UserMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 2)
+	edges := make([]string, 0, 3)
 	if m.clearedsessions {
 		edges = append(edges, user.EdgeSessions)
 	}
 	if m.clearedtokens {
 		edges = append(edges, user.EdgeTokens)
+	}
+	if m.clearedtunnels {
+		edges = append(edges, user.EdgeTunnels)
 	}
 	return edges
 }
@@ -2632,6 +3541,8 @@ func (m *UserMutation) EdgeCleared(name string) bool {
 		return m.clearedsessions
 	case user.EdgeTokens:
 		return m.clearedtokens
+	case user.EdgeTunnels:
+		return m.clearedtunnels
 	}
 	return false
 }
@@ -2653,6 +3564,9 @@ func (m *UserMutation) ResetEdge(name string) error {
 		return nil
 	case user.EdgeTokens:
 		m.ResetTokens()
+		return nil
+	case user.EdgeTunnels:
+		m.ResetTunnels()
 		return nil
 	}
 	return fmt.Errorf("unknown User edge %s", name)

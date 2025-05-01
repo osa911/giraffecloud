@@ -49,9 +49,11 @@ type UserEdges struct {
 	Sessions []*Session `json:"sessions,omitempty"`
 	// Tokens holds the value of the tokens edge.
 	Tokens []*Token `json:"tokens,omitempty"`
+	// Tunnels holds the value of the tunnels edge.
+	Tunnels []*Tunnel `json:"tunnels,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [2]bool
+	loadedTypes [3]bool
 }
 
 // SessionsOrErr returns the Sessions value or an error if the edge
@@ -70,6 +72,15 @@ func (e UserEdges) TokensOrErr() ([]*Token, error) {
 		return e.Tokens, nil
 	}
 	return nil, &NotLoadedError{edge: "tokens"}
+}
+
+// TunnelsOrErr returns the Tunnels value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) TunnelsOrErr() ([]*Tunnel, error) {
+	if e.loadedTypes[2] {
+		return e.Tunnels, nil
+	}
+	return nil, &NotLoadedError{edge: "tunnels"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -190,6 +201,11 @@ func (u *User) QuerySessions() *SessionQuery {
 // QueryTokens queries the "tokens" edge of the User entity.
 func (u *User) QueryTokens() *TokenQuery {
 	return NewUserClient(u.config).QueryTokens(u)
+}
+
+// QueryTunnels queries the "tunnels" edge of the User entity.
+func (u *User) QueryTunnels() *TunnelQuery {
+	return NewUserClient(u.config).QueryTunnels(u)
 }
 
 // Update returns a builder for updating this User.

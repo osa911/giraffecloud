@@ -9,6 +9,7 @@ import (
 	"giraffecloud/internal/db/ent/predicate"
 	"giraffecloud/internal/db/ent/session"
 	"giraffecloud/internal/db/ent/token"
+	"giraffecloud/internal/db/ent/tunnel"
 	"giraffecloud/internal/db/ent/user"
 	"math"
 
@@ -27,6 +28,7 @@ type UserQuery struct {
 	predicates   []predicate.User
 	withSessions *SessionQuery
 	withTokens   *TokenQuery
+	withTunnels  *TunnelQuery
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -100,6 +102,28 @@ func (uq *UserQuery) QueryTokens() *TokenQuery {
 			sqlgraph.From(user.Table, user.FieldID, selector),
 			sqlgraph.To(token.Table, token.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, false, user.TokensTable, user.TokensColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(uq.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryTunnels chains the current query on the "tunnels" edge.
+func (uq *UserQuery) QueryTunnels() *TunnelQuery {
+	query := (&TunnelClient{config: uq.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := uq.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := uq.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(tunnel.Table, tunnel.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.TunnelsTable, user.TunnelsColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(uq.driver.Dialect(), step)
 		return fromU, nil
@@ -301,6 +325,7 @@ func (uq *UserQuery) Clone() *UserQuery {
 		predicates:   append([]predicate.User{}, uq.predicates...),
 		withSessions: uq.withSessions.Clone(),
 		withTokens:   uq.withTokens.Clone(),
+		withTunnels:  uq.withTunnels.Clone(),
 		// clone intermediate query.
 		sql:  uq.sql.Clone(),
 		path: uq.path,
@@ -326,6 +351,17 @@ func (uq *UserQuery) WithTokens(opts ...func(*TokenQuery)) *UserQuery {
 		opt(query)
 	}
 	uq.withTokens = query
+	return uq
+}
+
+// WithTunnels tells the query-builder to eager-load the nodes that are connected to
+// the "tunnels" edge. The optional arguments are used to configure the query builder of the edge.
+func (uq *UserQuery) WithTunnels(opts ...func(*TunnelQuery)) *UserQuery {
+	query := (&TunnelClient{config: uq.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	uq.withTunnels = query
 	return uq
 }
 
@@ -407,9 +443,10 @@ func (uq *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 	var (
 		nodes       = []*User{}
 		_spec       = uq.querySpec()
-		loadedTypes = [2]bool{
+		loadedTypes = [3]bool{
 			uq.withSessions != nil,
 			uq.withTokens != nil,
+			uq.withTunnels != nil,
 		}
 	)
 	_spec.ScanValues = func(columns []string) ([]any, error) {
@@ -441,6 +478,13 @@ func (uq *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 		if err := uq.loadTokens(ctx, query, nodes,
 			func(n *User) { n.Edges.Tokens = []*Token{} },
 			func(n *User, e *Token) { n.Edges.Tokens = append(n.Edges.Tokens, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := uq.withTunnels; query != nil {
+		if err := uq.loadTunnels(ctx, query, nodes,
+			func(n *User) { n.Edges.Tunnels = []*Tunnel{} },
+			func(n *User, e *Tunnel) { n.Edges.Tunnels = append(n.Edges.Tunnels, e) }); err != nil {
 			return nil, err
 		}
 	}
@@ -493,6 +537,36 @@ func (uq *UserQuery) loadTokens(ctx context.Context, query *TokenQuery, nodes []
 	}
 	query.Where(predicate.Token(func(s *sql.Selector) {
 		s.Where(sql.InValues(s.C(user.TokensColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.UserID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "user_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (uq *UserQuery) loadTunnels(ctx context.Context, query *TunnelQuery, nodes []*User, init func(*User), assign func(*User, *Tunnel)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[uint32]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(tunnel.FieldUserID)
+	}
+	query.Where(predicate.Tunnel(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.TunnelsColumn), fks...))
 	}))
 	neighbors, err := query.All(ctx)
 	if err != nil {

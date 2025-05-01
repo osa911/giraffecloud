@@ -60,6 +60,32 @@ var (
 			},
 		},
 	}
+	// TunnelsColumns holds the columns for the "tunnels" table.
+	TunnelsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "domain", Type: field.TypeString, Unique: true},
+		{Name: "token", Type: field.TypeString, Unique: true},
+		{Name: "client_ip", Type: field.TypeString, Nullable: true},
+		{Name: "is_active", Type: field.TypeBool, Default: true},
+		{Name: "target_port", Type: field.TypeInt},
+		{Name: "user_id", Type: field.TypeUint32},
+	}
+	// TunnelsTable holds the schema information for the "tunnels" table.
+	TunnelsTable = &schema.Table{
+		Name:       "tunnels",
+		Columns:    TunnelsColumns,
+		PrimaryKey: []*schema.Column{TunnelsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "tunnels_users_tunnels",
+				Columns:    []*schema.Column{TunnelsColumns[8]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+	}
 	// UsersColumns holds the columns for the "users" table.
 	UsersColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeUint32, Increment: true},
@@ -84,6 +110,7 @@ var (
 	Tables = []*schema.Table{
 		SessionsTable,
 		TokensTable,
+		TunnelsTable,
 		UsersTable,
 	}
 )
@@ -91,4 +118,5 @@ var (
 func init() {
 	SessionsTable.ForeignKeys[0].RefTable = UsersTable
 	TokensTable.ForeignKeys[0].RefTable = UsersTable
+	TunnelsTable.ForeignKeys[0].RefTable = UsersTable
 }

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"giraffecloud/internal/db/ent/session"
 	"giraffecloud/internal/db/ent/token"
+	"giraffecloud/internal/db/ent/tunnel"
 	"giraffecloud/internal/db/ent/user"
 	"reflect"
 	"sync"
@@ -77,6 +78,7 @@ func checkColumn(table, column string) error {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
 			session.Table: session.ValidColumn,
 			token.Table:   token.ValidColumn,
+			tunnel.Table:  tunnel.ValidColumn,
 			user.Table:    user.ValidColumn,
 		})
 	})

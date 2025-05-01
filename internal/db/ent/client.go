@@ -13,6 +13,7 @@ import (
 
 	"giraffecloud/internal/db/ent/session"
 	"giraffecloud/internal/db/ent/token"
+	"giraffecloud/internal/db/ent/tunnel"
 	"giraffecloud/internal/db/ent/user"
 
 	"entgo.io/ent"
@@ -31,6 +32,8 @@ type Client struct {
 	Session *SessionClient
 	// Token is the client for interacting with the Token builders.
 	Token *TokenClient
+	// Tunnel is the client for interacting with the Tunnel builders.
+	Tunnel *TunnelClient
 	// User is the client for interacting with the User builders.
 	User *UserClient
 }
@@ -46,6 +49,7 @@ func (c *Client) init() {
 	c.Schema = migrate.NewSchema(c.driver)
 	c.Session = NewSessionClient(c.config)
 	c.Token = NewTokenClient(c.config)
+	c.Tunnel = NewTunnelClient(c.config)
 	c.User = NewUserClient(c.config)
 }
 
@@ -141,6 +145,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		config:  cfg,
 		Session: NewSessionClient(cfg),
 		Token:   NewTokenClient(cfg),
+		Tunnel:  NewTunnelClient(cfg),
 		User:    NewUserClient(cfg),
 	}, nil
 }
@@ -163,6 +168,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		config:  cfg,
 		Session: NewSessionClient(cfg),
 		Token:   NewTokenClient(cfg),
+		Tunnel:  NewTunnelClient(cfg),
 		User:    NewUserClient(cfg),
 	}, nil
 }
@@ -194,6 +200,7 @@ func (c *Client) Close() error {
 func (c *Client) Use(hooks ...Hook) {
 	c.Session.Use(hooks...)
 	c.Token.Use(hooks...)
+	c.Tunnel.Use(hooks...)
 	c.User.Use(hooks...)
 }
 
@@ -202,6 +209,7 @@ func (c *Client) Use(hooks ...Hook) {
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	c.Session.Intercept(interceptors...)
 	c.Token.Intercept(interceptors...)
+	c.Tunnel.Intercept(interceptors...)
 	c.User.Intercept(interceptors...)
 }
 
@@ -212,6 +220,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.Session.mutate(ctx, m)
 	case *TokenMutation:
 		return c.Token.mutate(ctx, m)
+	case *TunnelMutation:
+		return c.Tunnel.mutate(ctx, m)
 	case *UserMutation:
 		return c.User.mutate(ctx, m)
 	default:
@@ -517,6 +527,155 @@ func (c *TokenClient) mutate(ctx context.Context, m *TokenMutation) (Value, erro
 	}
 }
 
+// TunnelClient is a client for the Tunnel schema.
+type TunnelClient struct {
+	config
+}
+
+// NewTunnelClient returns a client for the Tunnel from the given config.
+func NewTunnelClient(c config) *TunnelClient {
+	return &TunnelClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `tunnel.Hooks(f(g(h())))`.
+func (c *TunnelClient) Use(hooks ...Hook) {
+	c.hooks.Tunnel = append(c.hooks.Tunnel, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `tunnel.Intercept(f(g(h())))`.
+func (c *TunnelClient) Intercept(interceptors ...Interceptor) {
+	c.inters.Tunnel = append(c.inters.Tunnel, interceptors...)
+}
+
+// Create returns a builder for creating a Tunnel entity.
+func (c *TunnelClient) Create() *TunnelCreate {
+	mutation := newTunnelMutation(c.config, OpCreate)
+	return &TunnelCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of Tunnel entities.
+func (c *TunnelClient) CreateBulk(builders ...*TunnelCreate) *TunnelCreateBulk {
+	return &TunnelCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *TunnelClient) MapCreateBulk(slice any, setFunc func(*TunnelCreate, int)) *TunnelCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &TunnelCreateBulk{err: fmt.Errorf("calling to TunnelClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*TunnelCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &TunnelCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for Tunnel.
+func (c *TunnelClient) Update() *TunnelUpdate {
+	mutation := newTunnelMutation(c.config, OpUpdate)
+	return &TunnelUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *TunnelClient) UpdateOne(t *Tunnel) *TunnelUpdateOne {
+	mutation := newTunnelMutation(c.config, OpUpdateOne, withTunnel(t))
+	return &TunnelUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *TunnelClient) UpdateOneID(id int) *TunnelUpdateOne {
+	mutation := newTunnelMutation(c.config, OpUpdateOne, withTunnelID(id))
+	return &TunnelUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for Tunnel.
+func (c *TunnelClient) Delete() *TunnelDelete {
+	mutation := newTunnelMutation(c.config, OpDelete)
+	return &TunnelDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *TunnelClient) DeleteOne(t *Tunnel) *TunnelDeleteOne {
+	return c.DeleteOneID(t.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *TunnelClient) DeleteOneID(id int) *TunnelDeleteOne {
+	builder := c.Delete().Where(tunnel.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &TunnelDeleteOne{builder}
+}
+
+// Query returns a query builder for Tunnel.
+func (c *TunnelClient) Query() *TunnelQuery {
+	return &TunnelQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeTunnel},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a Tunnel entity by its id.
+func (c *TunnelClient) Get(ctx context.Context, id int) (*Tunnel, error) {
+	return c.Query().Where(tunnel.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *TunnelClient) GetX(ctx context.Context, id int) *Tunnel {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryOwner queries the owner edge of a Tunnel.
+func (c *TunnelClient) QueryOwner(t *Tunnel) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := t.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(tunnel.Table, tunnel.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, tunnel.OwnerTable, tunnel.OwnerColumn),
+		)
+		fromV = sqlgraph.Neighbors(t.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *TunnelClient) Hooks() []Hook {
+	return c.hooks.Tunnel
+}
+
+// Interceptors returns the client interceptors.
+func (c *TunnelClient) Interceptors() []Interceptor {
+	return c.inters.Tunnel
+}
+
+func (c *TunnelClient) mutate(ctx context.Context, m *TunnelMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&TunnelCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&TunnelUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&TunnelUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&TunnelDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown Tunnel mutation op: %q", m.Op())
+	}
+}
+
 // UserClient is a client for the User schema.
 type UserClient struct {
 	config
@@ -657,6 +816,22 @@ func (c *UserClient) QueryTokens(u *User) *TokenQuery {
 	return query
 }
 
+// QueryTunnels queries the tunnels edge of a User.
+func (c *UserClient) QueryTunnels(u *User) *TunnelQuery {
+	query := (&TunnelClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := u.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(tunnel.Table, tunnel.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.TunnelsTable, user.TunnelsColumn),
+		)
+		fromV = sqlgraph.Neighbors(u.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // Hooks returns the client hooks.
 func (c *UserClient) Hooks() []Hook {
 	return c.hooks.User
@@ -685,9 +860,9 @@ func (c *UserClient) mutate(ctx context.Context, m *UserMutation) (Value, error)
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		Session, Token, User []ent.Hook
+		Session, Token, Tunnel, User []ent.Hook
 	}
 	inters struct {
-		Session, Token, User []ent.Interceptor
+		Session, Token, Tunnel, User []ent.Interceptor
 	}
 )

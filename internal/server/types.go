@@ -19,6 +19,7 @@ type Repositories struct {
 	Auth    repository.AuthRepository
 	Session repository.SessionRepository
 	Token   repository.TokenRepository
+	Tunnel  repository.TunnelRepository
 }
 
 // Config holds the server configuration
