@@ -1,8 +1,6 @@
 // Package caddy provides integration with Caddy server for dynamic reverse proxy configuration.
 package caddy
 
-import "fmt"
-
 // CaddyConfig contains all the configuration constants for Caddy integration
 const (
 	// DefaultSocketPath is the default Unix socket path for Caddy admin API
@@ -14,9 +12,6 @@ const (
 
 	// DefaultAdminEndpoint is the base endpoint for Caddy's admin API
 	DefaultAdminEndpoint = "config/"
-
-	// UnixSocketURLPrefix is the URL scheme prefix for Unix socket connections
-	UnixSocketURLPrefix = "http://"
 )
 
 // CaddyPaths provides standardized paths for Caddy-related files
@@ -25,12 +20,9 @@ var CaddyPaths = struct {
 	Socket string
 	// Config is the path to the Caddyfile
 	Config string
-	// SocketURL is the complete Unix socket URL with proper scheme
-	SocketURL string
 }{
-	Socket:    DefaultSocketPath,
-	Config:    DefaultConfigPath,
-	SocketURL: fmt.Sprintf("%s%s", UnixSocketURLPrefix, "localhost"),
+	Socket: DefaultSocketPath,
+	Config: DefaultConfigPath,
 }
 
 /*
