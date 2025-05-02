@@ -55,18 +55,26 @@ func (s *Server) Init() error {
 	logger.Info("Global logger initialized")
 
 	// Set up global middleware with our custom logger
+	logger.Info("Setting up global middleware...")
 	routes.SetupGlobalMiddleware(s.router, logger)
-	fmt.Println("Global middleware setup completed")
+	logger.Info("Global middleware setup completed")
 
 	// Initialize services
+	logger.Info("Initializing core services...")
 	auditService := service.NewAuditService()
 	csrfService := service.NewCSRFService()
+	logger.Info("Core services initialized")
 
 	var caddyService service.CaddyService
 	if os.Getenv("ENV") == "production" {
 		// Initialize Caddy service
 		adminAPI := os.Getenv("CADDY_ADMIN_API")
 		logger.Info("Initializing Caddy service with admin API: %s", adminAPI)
+
+		if adminAPI == "" {
+			logger.Error("CADDY_ADMIN_API environment variable is not set")
+			return fmt.Errorf("CADDY_ADMIN_API environment variable is required in production")
+		}
 
 		caddyService = service.NewCaddyService(&service.CaddyConfig{
 			AdminAPI: adminAPI,
@@ -84,15 +92,22 @@ func (s *Server) Init() error {
 	}
 
 	// Initialize repositories
+	logger.Info("Initializing repositories...")
 	repos := s.initializeRepositories()
+	logger.Info("Repositories initialized")
 
 	// Initialize token service
+	logger.Info("Initializing token service...")
 	tokenService := service.NewTokenService(repos.Token)
+	logger.Info("Token service initialized")
 
-	// Initialize tunnel service with Caddy service (can be nil in dev mode)
+	// Initialize tunnel service
+	logger.Info("Initializing tunnel service...")
 	tunnelService := service.NewTunnelService(repos.Tunnel, caddyService)
+	logger.Info("Tunnel service initialized")
 
 	// Initialize handlers
+	logger.Info("Initializing handlers...")
 	handlers := &routes.Handlers{
 		Auth:    handlers.NewAuthHandler(repos.Auth, repos.Session, csrfService, auditService),
 		User:    handlers.NewUserHandler(repos.User),
@@ -101,28 +116,50 @@ func (s *Server) Init() error {
 		Token:   handlers.NewTokenHandler(tokenService),
 		Tunnel:  handlers.NewTunnelHandler(tunnelService),
 	}
+	logger.Info("Handlers initialized")
 
 	// Initialize middleware
+	logger.Info("Initializing middleware components...")
 	middleware := &routes.Middleware{
 		Validation: middleware.NewValidationMiddleware(),
 		Auth:       middleware.NewAuthMiddleware(tokenService, repos.Auth, repos.Session, repos.User),
 		CSRF:       csrfService,
 	}
+	logger.Info("Middleware components initialized")
 
 	// Set up all routes
+	logger.Info("Setting up routes...")
 	routes.Setup(s.router, handlers, middleware)
+	logger.Info("Routes setup completed")
 
 	return nil
 }
 
 // initializeRepositories creates all repository instances
 func (s *Server) initializeRepositories() *Repositories {
+	logger := logging.GetGlobalLogger()
+
+	logger.Info("Creating User repository...")
+	userRepo := repository.NewUserRepository(s.db.DB)
+
+	logger.Info("Creating Auth repository...")
+	authRepo := repository.NewAuthRepository(s.db.DB)
+
+	logger.Info("Creating Session repository...")
+	sessionRepo := repository.NewSessionRepository(s.db.DB)
+
+	logger.Info("Creating Token repository...")
+	tokenRepo := repository.NewTokenRepository(s.db.DB)
+
+	logger.Info("Creating Tunnel repository...")
+	tunnelRepo := repository.NewTunnelRepository(s.db.DB)
+
 	return &Repositories{
-		User:    repository.NewUserRepository(s.db.DB),
-		Auth:    repository.NewAuthRepository(s.db.DB),
-		Session: repository.NewSessionRepository(s.db.DB),
-		Token:   repository.NewTokenRepository(s.db.DB),
-		Tunnel:  repository.NewTunnelRepository(s.db.DB),
+		User:    userRepo,
+		Auth:    authRepo,
+		Session: sessionRepo,
+		Token:   tokenRepo,
+		Tunnel:  tunnelRepo,
 	}
 }
 
