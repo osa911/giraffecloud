@@ -182,15 +182,32 @@ db-init-prod: validate-prod-env db-gen
 	@source $(PROD_ENV) && createdb -h $$DB_HOST -p $$DB_PORT -U $$DB_USER $$DB_NAME || true
 	@echo "Production database created successfully"
 
-# Production migration command (requires explicit confirmation)
-db-migrate-prod: validate-prod-env check_atlas_installation
+# Production database recreation with Docker
+db-recreate-prod: validate-prod-env db-gen
+	@echo "Dropping and recreating production database..."
+	@if [ "$(FORCE)" = "1" ]; then \
+		source $(PROD_ENV) && \
+		echo "Terminating all connections and recreating database $$DB_NAME..." && \
+		docker exec -i giraffecloud_postgres psql -U $$DB_USER -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='$$DB_NAME' AND pid <> pg_backend_pid();" && \
+		docker exec -i giraffecloud_postgres dropdb -U $$DB_USER $$DB_NAME || true && \
+		docker exec -i giraffecloud_postgres createdb -U $$DB_USER $$DB_NAME && \
+		echo "Production database recreated successfully. Run 'make db-migrate-prod FORCE=1' to apply migrations."; \
+	else \
+		echo "This is a destructive operation. Run with FORCE=1 to proceed:"; \
+		echo "  make db-recreate-prod FORCE=1"; \
+		exit 1; \
+	fi
+
+# Update migration command to use Docker
+db-migrate-prod: validate-prod-env
+	$(call check_atlas_installation)
 	@echo "WARNING: You are about to apply migrations to PRODUCTION!"
 	@if [ "$(FORCE)" = "1" ]; then \
 		echo "Applying migrations to production..."; \
 		source $(PROD_ENV) && atlas migrate apply \
 			--env prod \
-			--var db_dev_url="postgres://$$DB_USER:$$DB_PASSWORD@$$DB_HOST:$$DB_PORT/$$DB_NAME?sslmode=$$DB_SSL_MODE" \
-			--var db_url="postgres://$$DB_USER:$$DB_PASSWORD@$$DB_HOST:$$DB_PORT/$$DB_NAME?sslmode=$$DB_SSL_MODE" \
+			--var db_dev_url="postgres://$$DB_USER:$$DB_PASSWORD@postgres:5432/$$DB_NAME?sslmode=$$DB_SSL_MODE" \
+			--var db_url="postgres://$$DB_USER:$$DB_PASSWORD@postgres:5432/$$DB_NAME?sslmode=$$DB_SSL_MODE" \
 			--dry-run; \
 		echo "Dry run completed. Review the changes above."; \
 		echo "To apply the changes, run with CONFIRM=1:"; \
@@ -199,31 +216,12 @@ db-migrate-prod: validate-prod-env check_atlas_installation
 			echo "Applying migrations..."; \
 			source $(PROD_ENV) && atlas migrate apply \
 				--env prod \
-				--var db_dev_url="postgres://$$DB_USER:$$DB_PASSWORD@$$DB_HOST:$$DB_PORT/$$DB_NAME?sslmode=$$DB_SSL_MODE" \
-				--var db_url="postgres://$$DB_USER:$$DB_PASSWORD@$$DB_HOST:$$DB_PORT/$$DB_NAME?sslmode=$$DB_SSL_MODE"; \
-			echo "Production migrations applied successfully"; \
+				--var db_dev_url="postgres://$$DB_USER:$$DB_PASSWORD@postgres:5432/$$DB_NAME?sslmode=$$DB_SSL_MODE" \
+				--var db_url="postgres://$$DB_USER:$$DB_PASSWORD@postgres:5432/$$DB_NAME?sslmode=$$DB_SSL_MODE"; \
 		fi \
 	else \
 		echo "This is a production operation. Run with FORCE=1 to proceed:"; \
 		echo "  make db-migrate-prod FORCE=1"; \
-		exit 1; \
-	fi
-
-db-recreate-prod: validate-prod-env db-gen
-	@echo "Dropping and recreating production database..."
-	@if [ "$(FORCE)" = "1" ]; then \
-		$(call check_postgres_connection,$(PROD_ENV)); \
-		source $(PROD_ENV) && \
-			echo "Terminating all connections to $$DB_NAME..." && \
-			psql -h $$DB_HOST -p $$DB_PORT -U $$DB_USER -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='$$DB_NAME' AND pid <> pg_backend_pid();" && \
-			echo "Dropping database $$DB_NAME..." && \
-			dropdb -h $$DB_HOST -p $$DB_PORT -U $$DB_USER $$DB_NAME || true && \
-			echo "Creating database $$DB_NAME..." && \
-			createdb -h $$DB_HOST -p $$DB_PORT -U $$DB_USER $$DB_NAME; \
-		echo "Production database recreated successfully. Run 'make db-migrate-prod FORCE=1' to apply migrations."; \
-	else \
-		echo "This is a destructive operation. Run with FORCE=1 to proceed:"; \
-		echo "  make db-recreate-prod FORCE=1"; \
 		exit 1; \
 	fi
 
