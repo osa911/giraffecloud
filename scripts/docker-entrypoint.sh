@@ -22,22 +22,17 @@ if [ -z "$CADDY_ADMIN_API" ]; then
     exit 1
 fi
 
-# Extract host and port from CADDY_ADMIN_API
-CADDY_HOST=$(echo "$CADDY_ADMIN_API" | sed -E 's|^https?://||' | cut -d: -f1)
-CADDY_PORT=$(echo "$CADDY_ADMIN_API" | sed -E 's|^https?://||' | cut -d: -f2)
+echo "Checking Caddy connectivity..."
 
-echo "Checking Caddy connectivity at $CADDY_HOST:$CADDY_PORT..."
-
-# Try to connect to Caddy
+# Try to connect to Caddy using curl
 max_retries=5
 retries=0
 
-until nc -z -v -w5 $CADDY_HOST $CADDY_PORT; do
+until curl -s --unix-socket /run/caddy/admin.sock http://localhost/config/ > /dev/null; do
     retries=$((retries+1))
     if [ $retries -ge $max_retries ]; then
         echo "ERROR: Failed to connect to Caddy after $retries attempts."
-        echo "Please ensure Caddy is running and accessible at $CADDY_ADMIN_API"
-        echo "If running on host machine, use host.docker.internal instead of localhost"
+        echo "Please ensure Caddy is running and the Unix socket exists at /run/caddy/admin.sock"
         exit 1
     fi
     echo "Waiting for Caddy... ($retries/$max_retries)"
@@ -45,15 +40,6 @@ until nc -z -v -w5 $CADDY_HOST $CADDY_PORT; do
 done
 
 echo "Caddy is reachable!"
-
-# Test Caddy API endpoint
-echo "Testing Caddy API..."
-if curl -s -f "$CADDY_ADMIN_API/config/" > /dev/null; then
-    echo "Caddy API is responding correctly!"
-else
-    echo "ERROR: Caddy API test failed. Ensure Caddy admin API is enabled and accessible."
-    exit 1
-fi
 
 # Wait for PostgreSQL to be ready
 if [ -n "$DB_HOST" ] && [ -n "$DB_PORT" ]; then
