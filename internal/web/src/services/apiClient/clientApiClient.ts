@@ -28,24 +28,6 @@ function getCookie(name: string): string | null {
   return null;
 }
 
-// Request interceptor for debug logging
-axiosClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
-  // Debug the request in development only
-  if (process.env.NODE_ENV === "development") {
-    console.debug("API Request:", {
-      method: config.method,
-      url: config.url,
-      data: config.data
-        ? JSON.stringify(config.data).substring(0, 100) + "..."
-        : "(no data)",
-      headers: Object.keys(config.headers || {}),
-      withCredentials: config.withCredentials,
-    });
-  }
-
-  return config;
-});
-
 // Response interceptor for error handling
 axiosClient.interceptors.response.use(
   (response: AxiosResponse) => {
