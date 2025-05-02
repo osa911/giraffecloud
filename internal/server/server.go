@@ -17,6 +17,8 @@ import (
 
 // NewServer creates a new server instance
 func NewServer(db *db.Database) (*Server, error) {
+	logger := logging.GetGlobalLogger()
+
 	if db == nil {
 		return nil, fmt.Errorf("database cannot be nil")
 	}
@@ -24,16 +26,18 @@ func NewServer(db *db.Database) (*Server, error) {
 	// Set Gin mode based on environment
 	if os.Getenv("ENV") == "production" {
 		gin.SetMode(gin.ReleaseMode)
-		fmt.Println("Server initializing in PRODUCTION mode")
+		logger.Info("Server initializing in PRODUCTION mode")
 	} else {
 		gin.SetMode(gin.DebugMode)
-		fmt.Println("Server initializing in DEVELOPMENT mode")
+		logger.Info("Server initializing in DEVELOPMENT mode")
 	}
 
+	logger.Info("Creating Gin engine...")
 	engine := gin.New()
 	engine.Use(gin.Recovery())
 
 	// Configure trusted proxies
+	logger.Info("Configuring trusted proxies...")
 	engine.SetTrustedProxies([]string{
 		"127.0.0.1",      // localhost
 		"::1",            // localhost IPv6
@@ -41,6 +45,7 @@ func NewServer(db *db.Database) (*Server, error) {
 		"192.168.0.0/16", // private network
 		"10.0.0.0/8",     // private network
 	})
+	logger.Info("Trusted proxies configured")
 
 	return &Server{
 		router: engine,

@@ -84,6 +84,7 @@ func main() {
 	logger.Info("Starting session cleanup task...")
 	sessionCleanup := tasks.NewSessionCleanup(entClient)
 	sessionCleanup.Start()
+	defer sessionCleanup.Stop()
 	logger.Info("Session cleanup task started successfully")
 
 	// Initialize server
@@ -111,6 +112,7 @@ func main() {
 		logger.Error("Failed to create server: %v\nStack trace:\n%s", err, debug.Stack())
 		os.Exit(1)
 	}
+	logger.Info("Server instance created successfully")
 
 	// Initialize server
 	logger.Info("Initializing server...")
@@ -122,7 +124,7 @@ func main() {
 
 	logger.Info("Starting server on port %s...", cfg.Port)
 	if err := srv.Start(cfg); err != nil {
-		logger.Error("Failed to start server: %v\nStack trace:\n%s", err, debug.Stack())
+		logger.Error("Server failed to start: %v\nStack trace:\n%s", err, debug.Stack())
 		os.Exit(1)
 	}
 }
