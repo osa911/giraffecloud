@@ -16,7 +16,7 @@ const (
 	DefaultAdminEndpoint = "config/"
 
 	// UnixSocketURLPrefix is the URL scheme prefix for Unix socket connections
-	UnixSocketURLPrefix = "http+unix://"
+	UnixSocketURLPrefix = "http://"
 )
 
 // CaddyPaths provides standardized paths for Caddy-related files
@@ -30,7 +30,7 @@ var CaddyPaths = struct {
 }{
 	Socket:    DefaultSocketPath,
 	Config:    DefaultConfigPath,
-	SocketURL: fmt.Sprintf("%s%s", UnixSocketURLPrefix, DefaultSocketPath),
+	SocketURL: fmt.Sprintf("%s%s", UnixSocketURLPrefix, "localhost"),
 }
 
 /*
