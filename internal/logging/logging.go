@@ -122,14 +122,6 @@ func (l *Logger) GetWriter() io.Writer {
 	return l.multiWriter
 }
 
-// Log levels
-const (
-	LevelDebug = "debug"
-	LevelInfo  = "info"
-	LevelWarn  = "warn"
-	LevelError = "error"
-)
-
 // Log methods with colors (always enabled for better visibility)
 func (l *Logger) Debug(format string, v ...interface{}) {
 	prefix := colorBlue + "[DEBUG]" + colorReset
