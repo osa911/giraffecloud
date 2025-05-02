@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"giraffecloud/internal/logging"
+	"io"
 	"net/http"
 	"os"
 	"sync"
@@ -14,6 +15,7 @@ import (
 type CaddyService interface {
 	ConfigureRoute(domain string, targetIP string, targetPort int) error
 	RemoveRoute(domain string) error
+	ValidateConnection() error
 	LoadConfig() error
 }
 
@@ -36,10 +38,45 @@ func NewCaddyService(cfg *CaddyConfig) CaddyService {
 	}
 }
 
+// ValidateConnection checks if we can connect to Caddy's admin API
+func (s *caddyService) ValidateConnection() error {
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/config/", s.adminAPI), nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to connect to Caddy admin API at %s: %w", s.adminAPI, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("Caddy admin API returned unexpected status %d: %s", resp.StatusCode, string(body))
+	}
+
+	s.logger.Info("Successfully connected to Caddy admin API")
+	return nil
+}
+
 // ConfigureRoute adds or updates a reverse proxy route in Caddy
 func (s *caddyService) ConfigureRoute(domain string, targetIP string, targetPort int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// First, check if the route already exists
+	req, err := http.NewRequest(http.MethodGet,
+		fmt.Sprintf("%s/config/apps/http/servers/main/routes", s.adminAPI), nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to get existing routes: %w", err)
+	}
+	defer resp.Body.Close()
 
 	// Create route configuration
 	config := map[string]interface{}{
@@ -79,7 +116,7 @@ func (s *caddyService) ConfigureRoute(domain string, targetIP string, targetPort
 	}
 
 	// Send config to Caddy
-	req, err := http.NewRequest(http.MethodPut,
+	req, err = http.NewRequest(http.MethodPut,
 		fmt.Sprintf("%s/config/apps/http/servers/main/routes/%s", s.adminAPI, domain),
 		bytes.NewBuffer(jsonConfig))
 	if err != nil {
@@ -88,14 +125,15 @@ func (s *caddyService) ConfigureRoute(domain string, targetIP string, targetPort
 
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err = http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to configure route: status %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed to configure route (status %d): %s", resp.StatusCode, string(body))
 	}
 
 	s.logger.Info("Successfully configured route for domain: %s -> %s:%d", domain, targetIP, targetPort)
@@ -122,7 +160,8 @@ func (s *caddyService) RemoveRoute(domain string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to remove route: status %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed to remove route (status %d): %s", resp.StatusCode, string(body))
 	}
 
 	s.logger.Info("Successfully removed route for domain: %s", domain)
@@ -137,7 +176,20 @@ func (s *caddyService) LoadConfig() error {
 	// Read base configuration file
 	baseConfig, err := os.ReadFile("configs/caddy/Caddyfile.base")
 	if err != nil {
-		return fmt.Errorf("failed to read base config: %w", err)
+		s.logger.Error("Failed to read base config file: %v", err)
+		// Use minimal default configuration if file not found
+		baseConfig = []byte(`{
+			"apps": {
+				"http": {
+					"servers": {
+						"main": {
+							"listen": [":80"],
+							"routes": []
+						}
+					}
+				}
+			}
+		}`)
 	}
 
 	// Send base config to Caddy
@@ -152,12 +204,12 @@ func (s *caddyService) LoadConfig() error {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
+		return fmt.Errorf("failed to send request to %s: %w", s.adminAPI, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to load config: status %d", resp.StatusCode)
+		return fmt.Errorf("failed to load config at %s: status %d", s.adminAPI, resp.StatusCode)
 	}
 
 	s.logger.Info("Successfully loaded base Caddy configuration")

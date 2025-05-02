@@ -65,14 +65,20 @@ func (s *Server) Init() error {
 	var caddyService service.CaddyService
 	if os.Getenv("ENV") == "production" {
 		// Initialize Caddy service
+		adminAPI := os.Getenv("CADDY_ADMIN_API")
+		logger.Info("Initializing Caddy service with admin API: %s", adminAPI)
+
 		caddyService = service.NewCaddyService(&service.CaddyConfig{
-			AdminAPI: os.Getenv("CADDY_ADMIN_API"),
+			AdminAPI: adminAPI,
 		})
 
 		// Load initial Caddy configuration
+		logger.Info("Loading initial Caddy configuration...")
 		if err := caddyService.LoadConfig(); err != nil {
-			return err
+			logger.Error("Failed to load Caddy configuration: %v", err)
+			return fmt.Errorf("failed to load Caddy configuration: %w", err)
 		}
+		logger.Info("Caddy configuration loaded successfully")
 	} else {
 		logger.Info("Skipping Caddy initialization in development mode")
 	}
