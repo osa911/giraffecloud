@@ -1,0 +1,166 @@
+{
+  "admin": {
+    "listen": "unix//run/caddy/admin.sock",
+    "origins": ["http://unix", "http://127.0.0.1"]
+  },
+  "apps": {
+    "http": {
+      "servers": {
+        "srv0": {
+          "listen": [":443", ":80"],
+          "routes": [
+            {
+              "match": [{ "host": ["osa911.com"] }],
+              "handle": [
+                {
+                  "handler": "static_response",
+                  "status_code": 403,
+                  "body": "Forbidden"
+                }
+              ]
+            },
+            {
+              "match": [{ "host": ["photo.osa911.com"] }],
+              "handle": [
+                {
+                  "handler": "reverse_proxy",
+                  "upstreams": [{ "dial": "localhost:2283" }]
+                }
+              ]
+            },
+            {
+              "match": [{ "host": ["api.giraffecloud.xyz"] }],
+              "handle": [
+                {
+                  "handler": "encode",
+                  "encodings": {
+                    "gzip": {},
+                    "zstd": {}
+                  }
+                },
+                {
+                  "handler": "headers",
+                  "response": {
+                    "set": {
+                      "Strict-Transport-Security": [
+                        "max-age=31536000; includeSubDomains; preload"
+                      ],
+                      "Permissions-Policy": ["interest-cohort=()"],
+                      "X-XSS-Protection": ["1; mode=block"],
+                      "X-Content-Type-Options": ["nosniff"],
+                      "Referrer-Policy": ["strict-origin-when-cross-origin"],
+                      "Content-Security-Policy": [
+                        "default-src 'self'; frame-ancestors 'none'; form-action 'self'"
+                      ]
+                    },
+                    "delete": ["Server"]
+                  }
+                },
+                {
+                  "handler": "subroute",
+                  "routes": [
+                    {
+                      "match": [
+                        {
+                          "method": ["OPTIONS"],
+                          "header": {
+                            "Origin": ["*"],
+                            "Access-Control-Request-Method": ["*"]
+                          }
+                        }
+                      ],
+                      "handle": [
+                        {
+                          "handler": "headers",
+                          "response": {
+                            "set": {
+                              "Access-Control-Allow-Origin": [
+                                "{http.request.header.Origin}"
+                              ],
+                              "Access-Control-Allow-Methods": [
+                                "GET, POST, PUT, DELETE, OPTIONS"
+                              ],
+                              "Access-Control-Allow-Headers": [
+                                "Content-Type, Authorization, X-Requested-With"
+                              ],
+                              "Access-Control-Allow-Credentials": ["true"],
+                              "Access-Control-Max-Age": ["86400"]
+                            }
+                          }
+                        },
+                        {
+                          "handler": "static_response",
+                          "status_code": 204,
+                          "body": ""
+                        }
+                      ]
+                    },
+                    {
+                      "match": [
+                        {
+                          "header_regexp": {
+                            "Origin": {
+                              "pattern": "(https://giraffecloud\\.xyz|https://www\\.giraffecloud\\.xyz|http://localhost:3000)"
+                            }
+                          }
+                        }
+                      ],
+                      "handle": [
+                        {
+                          "handler": "headers",
+                          "response": {
+                            "set": {
+                              "Access-Control-Allow-Origin": [
+                                "{http.request.header.Origin}"
+                              ],
+                              "Access-Control-Allow-Methods": [
+                                "GET, POST, PUT, DELETE, OPTIONS"
+                              ],
+                              "Access-Control-Allow-Headers": [
+                                "Content-Type, Authorization, X-Requested-With"
+                              ],
+                              "Access-Control-Allow-Credentials": ["true"]
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "handle": [
+                        {
+                          "handler": "reverse_proxy",
+                          "upstreams": [{ "dial": "localhost:8080" }],
+                          "headers": {
+                            "request": {
+                              "set": {
+                                "Host": ["{http.request.host}"],
+                                "X-Real-IP": ["{http.request.remote}"]
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "errors": {
+            "routes": [
+              {
+                "handle": [
+                  {
+                    "handler": "static_response",
+                    "body": "{http.error.status_code} {http.error.status_text}",
+                    "status_code": "{http.error.status_code}"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

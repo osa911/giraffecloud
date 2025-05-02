@@ -3,7 +3,6 @@
     admin unix//run/caddy/admin.sock {
         origins http://unix
     }
-    auto_https disable_redirects
 }
 
 osa911.com {
