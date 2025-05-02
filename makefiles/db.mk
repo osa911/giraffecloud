@@ -234,9 +234,14 @@ db-migrate-prod: validate-prod-env
 # Production backup commands
 db-backup-prod: validate-prod-env $(PROD_BACKUP_DIR)
 	@echo "Creating production database backup..."
-	$(call check_postgres_connection,$(PROD_ENV))
-	@. $(PROD_ENV) && pg_dump -h $$DB_HOST -p $$DB_PORT -U $$DB_USER -Fc $$DB_NAME > $(PROD_BACKUP_DIR)/$$DB_NAME_$$(date +%Y%m%d_%H%M%S).dump
-	@echo "Backup created successfully"
+	@if [ ! -f "$(PROD_ENV)" ]; then \
+		echo "Error: Production environment file $(PROD_ENV) not found"; \
+		exit 1; \
+	fi
+	@set -a && . $(PROD_ENV) && set +a && \
+	echo "Creating backup of database $$DB_NAME..." && \
+	docker exec -i giraffecloud_postgres pg_dump -U "$$DB_USER" -Fc "$$DB_NAME" > $(PROD_BACKUP_DIR)/$$DB_NAME_$$(date +%Y%m%d_%H%M%S).dump
+	@echo "Backup created successfully in $(PROD_BACKUP_DIR)"
 
 db-restore-prod: validate-prod-env
 	@if [ -z "$(BACKUP)" ]; then \
@@ -249,16 +254,19 @@ db-restore-prod: validate-prod-env
 	fi
 	@if [ "$(FORCE)" = "1" ]; then \
 		echo "Restoring production database from $(BACKUP)..."; \
-		$(call check_postgres_connection,$(PROD_ENV)); \
-		. $(PROD_ENV) && \
-			echo "Terminating all connections to $$DB_NAME..." && \
-			psql -h $$DB_HOST -p $$DB_PORT -U $$DB_USER -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='$$DB_NAME' AND pid <> pg_backend_pid();" && \
-			echo "Dropping database $$DB_NAME..." && \
-			dropdb -h $$DB_HOST -p $$DB_PORT -U $$DB_USER $$DB_NAME || true && \
-			echo "Creating database $$DB_NAME..." && \
-			createdb -h $$DB_HOST -p $$DB_PORT -U $$DB_USER $$DB_NAME && \
-			echo "Restoring from backup..." && \
-			pg_restore -h $$DB_HOST -p $$DB_PORT -U $$DB_USER -d $$DB_NAME $(BACKUP); \
+		if [ ! -f "$(PROD_ENV)" ]; then \
+			echo "Error: Production environment file $(PROD_ENV) not found"; \
+			exit 1; \
+		fi; \
+		set -a && . $(PROD_ENV) && set +a && \
+		echo "Terminating all connections to $$DB_NAME..." && \
+		docker exec -i giraffecloud_postgres psql -U "$$DB_USER" -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='$$DB_NAME' AND pid <> pg_backend_pid();" && \
+		echo "Dropping database $$DB_NAME..." && \
+		docker exec -i giraffecloud_postgres dropdb -U "$$DB_USER" "$$DB_NAME" || true && \
+		echo "Creating database $$DB_NAME..." && \
+		docker exec -i giraffecloud_postgres createdb -U "$$DB_USER" "$$DB_NAME" && \
+		echo "Restoring from backup..." && \
+		cat $(BACKUP) | docker exec -i giraffecloud_postgres pg_restore -U "$$DB_USER" -d "$$DB_NAME" && \
 		echo "Production database restored successfully"; \
 	else \
 		echo "This is a destructive operation that will overwrite the current database."; \
