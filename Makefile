@@ -1,6 +1,8 @@
 # Include all makefiles
 include makefiles/env.mk
-include makefiles/db.mk
+include makefiles/db/common.mk
+include makefiles/db/dev.mk
+include makefiles/db/prod.mk
 include makefiles/server.mk
 include makefiles/help.mk
 include makefiles/release.mk
