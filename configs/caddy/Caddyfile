@@ -1,0 +1,25 @@
+{
+    # Global options
+    admin localhost:2019  # Caddy admin API endpoint
+    auto_https off       # Disable HTTPS for local development
+    local_certs         # Use local certificates
+}
+
+# Default server block for development
+:8080 {
+    # Enable compression
+    encode gzip
+
+    # Reverse proxy to your Go API server
+    reverse_proxy localhost:8081 {
+        header_up Host {host}
+        header_up X-Real-IP {remote}
+        header_up X-Forwarded-For {remote}
+        header_up X-Forwarded-Proto {scheme}
+    }
+
+    # Handle errors
+    handle_errors {
+        respond "{http.error.status_code} {http.error.status_text}" {http.error.status_code}
+    }
+}
