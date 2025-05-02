@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -35,10 +36,31 @@ type LogConfig struct {
 	MaxAge     int    // Maximum number of days to retain old log files
 }
 
+// colorStripper is a custom writer that strips ANSI color codes
+type colorStripper struct {
+	writer io.Writer
+	re     *regexp.Regexp
+}
+
+func newColorStripper(w io.Writer) *colorStripper {
+	return &colorStripper{
+		writer: w,
+		re:     regexp.MustCompile("\033\\[[0-9;]*m"),
+	}
+}
+
+func (cs *colorStripper) Write(p []byte) (n int, err error) {
+	clean := cs.re.ReplaceAll(p, []byte{})
+	_, err = cs.writer.Write(clean)
+	return len(p), err // Return original length to satisfy io.Writer
+}
+
 type Logger struct {
 	*log.Logger
-	writer      *lumberjack.Logger
-	multiWriter io.Writer
+	fileWriter   *lumberjack.Logger
+	stdoutWriter io.Writer
+	multiWriter  io.Writer
+	useColors    bool
 }
 
 // Singleton pattern variables
@@ -86,7 +108,7 @@ func newLogger(config *LogConfig) (*Logger, error) {
 	}
 
 	// Set up log rotation
-	writer := &lumberjack.Logger{
+	fileWriter := &lumberjack.Logger{
 		Filename:   logFile,
 		MaxSize:    config.MaxSize,    // MB
 		MaxBackups: config.MaxBackups,
@@ -94,27 +116,29 @@ func newLogger(config *LogConfig) (*Logger, error) {
 		Compress:   true,
 	}
 
-	var stdoutWriter io.Writer
-	if os.Getenv("ENV") == "production" {
-		stdoutWriter = log.New(os.Stdout, "", log.LstdFlags).Writer()
-	} else {
-		stdoutWriter = os.Stdout
-	}
+	// Create a color-stripped writer for the file
+	strippedFileWriter := newColorStripper(fileWriter)
 
-	multiWriter := io.MultiWriter(writer, stdoutWriter)
+	// Always use stdout for terminal output
+	stdoutWriter := os.Stdout
 
-	// Create logger with timestamp and file:line prefix
-	logger := log.New(multiWriter, "", log.LstdFlags)
+	// Create a multi-writer that writes to both file and stdout
+	multiWriter := io.MultiWriter(strippedFileWriter, stdoutWriter)
+
+	// Create logger with timestamp and microseconds
+	logger := log.New(multiWriter, "", log.LstdFlags|log.Lmicroseconds)
 
 	return &Logger{
-		Logger:      logger,
-		writer:      writer,
-		multiWriter: multiWriter,
+		Logger:       logger,
+		fileWriter:   fileWriter,
+		stdoutWriter: stdoutWriter,
+		multiWriter:  multiWriter,
+		useColors:    true, // Always enable colors since we strip them for file output
 	}, nil
 }
 
 func (l *Logger) Close() error {
-	return l.writer.Close()
+	return l.fileWriter.Close()
 }
 
 // GetWriter returns the logger's multiWriter
@@ -122,24 +146,36 @@ func (l *Logger) GetWriter() io.Writer {
 	return l.multiWriter
 }
 
-// Log methods with colors (always enabled for better visibility)
+// Log methods with optional colors
 func (l *Logger) Debug(format string, v ...interface{}) {
-	prefix := colorBlue + "[DEBUG]" + colorReset
+	prefix := "[DEBUG]"
+	if l.useColors {
+		prefix = colorBlue + prefix + colorReset
+	}
 	l.Printf(prefix+" "+format, v...)
 }
 
 func (l *Logger) Info(format string, v ...interface{}) {
-	prefix := colorGreen + "[INFO]" + colorReset
+	prefix := "[INFO]"
+	if l.useColors {
+		prefix = colorGreen + prefix + colorReset
+	}
 	l.Printf(prefix+" "+format, v...)
 }
 
 func (l *Logger) Warn(format string, v ...interface{}) {
-	prefix := colorYellow + "[WARN]" + colorReset
+	prefix := "[WARN]"
+	if l.useColors {
+		prefix = colorYellow + prefix + colorReset
+	}
 	l.Printf(prefix+" "+format, v...)
 }
 
 func (l *Logger) Error(format string, v ...interface{}) {
-	prefix := colorRed + "[ERROR]" + colorReset
+	prefix := "[ERROR]"
+	if l.useColors {
+		prefix = colorRed + prefix + colorReset
+	}
 	l.Printf(prefix+" "+format, v...)
 }
 
@@ -214,10 +250,6 @@ func (l *Logger) FormatHTTPStatus(status int) string {
 
 // LogHTTPRequest logs an HTTP request with colored output
 func (l *Logger) LogHTTPRequest(method, path, clientIP string, status, bytes int, latency string) {
-	if os.Getenv("ENV") == "production" {
-		return
-	}
-
 	methodFormatted := l.FormatHTTPMethod(method)
 	statusFormatted := l.FormatHTTPStatus(status)
 
@@ -233,7 +265,6 @@ func (l *Logger) LogHTTPRequest(method, path, clientIP string, status, bytes int
 
 // LogHTTPError logs an HTTP error with colored output
 func (l *Logger) LogHTTPError(method, path, clientIP string, status int, message string, err error) {
-
 	methodFormatted := l.FormatHTTPMethod(method)
 	statusFormatted := l.FormatHTTPStatus(status)
 
@@ -270,13 +301,13 @@ func (l *Logger) GinLoggerConfig() gin.HandlerFunc {
 			var statusColor string
 			switch {
 			case param.StatusCode >= 200 && param.StatusCode < 300:
-				statusColor = "\033[42;1m" // Green background + bold
+				statusColor = colorGreen // Green background
 			case param.StatusCode >= 300 && param.StatusCode < 400:
-				statusColor = "\033[43;1m" // Yellow background + bold
+				statusColor = colorYellow // Yellow background
 			case param.StatusCode >= 400 && param.StatusCode < 500:
-				statusColor = "\033[41;1m" // Red background + bold
+				statusColor = colorRed // Red background
 			default:
-				statusColor = "\033[45;1m" // Magenta background + bold
+				statusColor = colorMagenta // Magenta background
 			}
 
 			// Format timestamp with milliseconds

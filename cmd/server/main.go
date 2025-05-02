@@ -37,7 +37,7 @@ func main() {
 	// Use environment-specific log file paths
 	if logConfig.File == "" {
 		if os.Getenv("ENV") == "production" {
-			logConfig.File = "/app/logs/api.log"  // Docker-friendly path
+			logConfig.File = "/app/logs/api.log"
 		} else {
 			logConfig.File = "./logs/api.log"
 		}
