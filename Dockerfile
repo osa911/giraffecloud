@@ -1,8 +1,8 @@
-# Use a minimal Alpine image
-FROM alpine:3.19
+# Use official Golang Alpine image
+FROM golang:1.24-alpine
 
-# Install runtime dependencies and Go
-RUN apk add --no-cache ca-certificates tzdata netcat-openbsd make bash curl go
+# Install runtime dependencies
+RUN apk add --no-cache ca-certificates tzdata netcat-openbsd make bash curl
 
 # Set working directory
 WORKDIR /app
@@ -11,10 +11,8 @@ WORKDIR /app
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
 # Set up Go environment
-ENV GOPATH=/go \
-    GOCACHE=/go/cache \
-    GO111MODULE=on \
-    PATH=$PATH:/usr/local/go/bin:/go/bin
+ENV GOCACHE=/go/cache \
+    GO111MODULE=on
 
 # Create Go directories and set permissions
 RUN mkdir -p /go/{pkg/mod,cache} && \
