@@ -21,7 +21,7 @@ services:
       - ./logs:/app/logs
     networks:
       giraffecloud_net:
-        ipv4_address: 172.17.0.2 # Fixed IP for the API container
+        ipv4_address: 172.20.0.2
 
   postgres:
     image: postgres:16-alpine
@@ -37,7 +37,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
     networks:
       giraffecloud_net:
-        ipv4_address: 172.17.0.3 # Fixed IP for the postgres container
+        ipv4_address: 172.20.0.3
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
       interval: 10s
@@ -49,8 +49,8 @@ networks:
     name: giraffecloud_net
     ipam:
       config:
-        - subnet: 172.17.0.0/16
-          gateway: 172.17.0.1
+        - subnet: 172.20.0.0/16
+          gateway: 172.20.0.1
 
 volumes:
   postgres_data:
