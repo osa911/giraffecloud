@@ -7,7 +7,6 @@ import (
 	"giraffecloud/internal/logging"
 	"io"
 	"net/http"
-	"os"
 	"sync"
 )
 
@@ -173,45 +172,6 @@ func (s *caddyService) LoadConfig() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Read base configuration file
-	baseConfig, err := os.ReadFile("configs/caddy/Caddyfile.base")
-	if err != nil {
-		s.logger.Error("Failed to read base config file: %v", err)
-		// Use minimal default configuration if file not found
-		baseConfig = []byte(`{
-			"apps": {
-				"http": {
-					"servers": {
-						"main": {
-							"listen": [":80"],
-							"routes": []
-						}
-					}
-				}
-			}
-		}`)
-	}
-
-	// Send base config to Caddy
-	req, err := http.NewRequest(http.MethodPut,
-		fmt.Sprintf("%s/load", s.adminAPI),
-		bytes.NewBuffer(baseConfig))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request to %s: %w", s.adminAPI, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to load config at %s: status %d", s.adminAPI, resp.StatusCode)
-	}
-
-	s.logger.Info("Successfully loaded base Caddy configuration")
-	return nil
+	// Just validate the connection to Caddy
+	return s.ValidateConnection()
 }
