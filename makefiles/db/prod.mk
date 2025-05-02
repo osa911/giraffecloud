@@ -1,8 +1,6 @@
 # Production database commands
 .PHONY: db-init-prod db-migrate-prod db-recreate-prod db-backup-prod db-restore-prod
 
-include makefiles/db/common.mk
-
 # Initialize production database
 db-init-prod: validate-prod-env db-gen
 	@echo "Creating production database..."

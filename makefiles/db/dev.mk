@@ -1,8 +1,6 @@
 # Development database commands
 .PHONY: db-init db-migrate-apply db-migrate-create db-migrate-revert db-reset db-backup db-restore
 
-include makefiles/db/common.mk
-
 # Initialize development database
 db-init: validate-dev-env db-gen
 	@echo "Creating development database if it doesn't exist..."
