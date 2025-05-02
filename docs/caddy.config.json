@@ -81,7 +81,7 @@
                                 "GET, POST, PUT, DELETE, OPTIONS"
                               ],
                               "Access-Control-Allow-Headers": [
-                                "Content-Type, Authorization, X-Requested-With"
+                                "Content-Type, Authorization, X-Requested-With, X-CSRF-Token, X-XSS-Protection"
                               ],
                               "Access-Control-Allow-Credentials": ["true"],
                               "Access-Control-Max-Age": ["86400"]
@@ -100,7 +100,7 @@
                         {
                           "header_regexp": {
                             "Origin": {
-                              "pattern": "(https://giraffecloud\\.xyz|https://www\\.giraffecloud\\.xyz|http://localhost:3000)"
+                              "pattern": "(https://giraffecloud\\.xyz|https://www\\.giraffecloud\\.xyz)"
                             }
                           }
                         }
@@ -117,7 +117,7 @@
                                 "GET, POST, PUT, DELETE, OPTIONS"
                               ],
                               "Access-Control-Allow-Headers": [
-                                "Content-Type, Authorization, X-Requested-With"
+                                "Content-Type, Authorization, X-Requested-With, X-CSRF-Token, X-XSS-Protection"
                               ],
                               "Access-Control-Allow-Credentials": ["true"]
                             }
