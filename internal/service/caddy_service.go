@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 )
 
@@ -24,6 +25,7 @@ type CaddyService interface {
 type caddyService struct {
 	logger   *logging.Logger
 	client   *http.Client
+	baseURL  string
 	mu       sync.RWMutex
 }
 
@@ -42,14 +44,15 @@ func NewCaddyService() CaddyService {
 	client := &http.Client{Transport: transport}
 
 	return &caddyService{
-		logger: logging.GetGlobalLogger(),
-		client: client,
+		logger:   logging.GetGlobalLogger(),
+		client:   client,
+		baseURL:  "http://unix",
 	}
 }
 
 // ValidateConnection checks if we can connect to Caddy's admin API
 func (s *caddyService) ValidateConnection() error {
-	req, err := http.NewRequest(http.MethodGet, "/"+caddy.DefaultAdminEndpoint, nil)
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/%s", s.baseURL, strings.TrimPrefix(caddy.DefaultAdminEndpoint, "/")), nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -113,7 +116,7 @@ func (s *caddyService) ConfigureRoute(domain string, targetIP string, targetPort
 
 	// Send config to Caddy
 	req, err := http.NewRequest(http.MethodPut,
-		"/"+caddy.DefaultAdminEndpoint+"apps/http/servers/main/routes/"+domain,
+		s.baseURL+"/"+caddy.DefaultAdminEndpoint+"apps/http/servers/main/routes/"+domain,
 		bytes.NewBuffer(jsonConfig))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
@@ -143,7 +146,7 @@ func (s *caddyService) RemoveRoute(domain string) error {
 
 	// Send DELETE request to Caddy
 	req, err := http.NewRequest(http.MethodDelete,
-		"/"+caddy.DefaultAdminEndpoint+"apps/http/servers/main/routes/"+domain,
+		s.baseURL+"/"+caddy.DefaultAdminEndpoint+"apps/http/servers/main/routes/"+domain,
 		nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
