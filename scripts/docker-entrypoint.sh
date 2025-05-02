@@ -11,16 +11,10 @@ if [ ! -f "$ENV_FILE" ]; then
     exit 1
 fi
 
-# Load environment variables first so we can use CADDY_ADMIN_API
+# Load environment variables
 set -a
 source "$ENV_FILE"
 set +a
-
-# Check if CADDY_ADMIN_API is set
-if [ -z "$CADDY_ADMIN_API" ]; then
-    echo "ERROR: CADDY_ADMIN_API environment variable is not set"
-    exit 1
-fi
 
 echo "Checking Caddy connectivity..."
 
