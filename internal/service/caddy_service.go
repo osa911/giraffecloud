@@ -30,19 +30,22 @@ type caddyService struct {
 
 // NewCaddyService creates a new Caddy service instance
 func NewCaddyService() CaddyService {
-	// Create a custom HTTP client that uses Unix domain sockets
-	client := &http.Client{
-		Transport: &http.Transport{
-			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-				return net.Dial("unix", caddy.CaddyPaths.Socket)
-			},
+	socketPath := caddy.CaddyPaths.Socket
+
+	// Create a custom transport that uses Unix domain socket
+	transport := &http.Transport{
+		DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
+			return net.Dial("unix", socketPath)
 		},
 	}
+
+	// Create an HTTP client with the Unix socket transport
+	client := &http.Client{Transport: transport}
 
 	return &caddyService{
 		logger:   logging.GetGlobalLogger(),
 		client:   client,
-		baseURL:  caddy.CaddyPaths.SocketURL,
+		baseURL:  "http://localhost", // Use localhost as the host for Unix socket requests
 	}
 }
 
