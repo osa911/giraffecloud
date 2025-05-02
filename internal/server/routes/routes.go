@@ -26,6 +26,16 @@ func Setup(router *gin.Engine, h *Handlers, m *Middleware) {
 // SetupGlobalMiddleware configures middleware that applies to all routes
 func SetupGlobalMiddleware(router *gin.Engine, logger *logging.Logger) {
 	router.Use(gin.Recovery())
+	router.Use(func(c *gin.Context) {
+		logger.Info("RemoteAddr:", c.Request.RemoteAddr)
+		logger.Info("ClientIP:", c.ClientIP())
+		logger.Info("RequestURI:", c.Request.RequestURI)
+		logger.Info("Method:", c.Request.Method)
+		logger.Info("UserAgent:", c.Request.UserAgent())
+		logger.Info("Referer:", c.Request.Referer())
+		logger.Info("================================================")
+		c.Next()
+	})
 	router.Use(middleware.RequestLogger(logger))
 	router.Use(middleware.CORS())
 	router.Use(middleware.SecurityHeaders())

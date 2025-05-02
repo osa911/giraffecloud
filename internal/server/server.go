@@ -178,10 +178,5 @@ func (s *Server) Start(cfg *Config) error {
 		logger.Info("- Caddy Config: %s", caddy.CaddyPaths.Config)
 	}
 
-	s.router.Use(func(c *gin.Context) {
-		fmt.Println("RemoteAddr:", c.Request.RemoteAddr)
-		c.Next()
-	})
-
 	return s.router.Run(":" + cfg.Port)
 }
