@@ -1,32 +1,8 @@
-# Build stage
-FROM golang:1.24.1-alpine AS builder
-
-# Install build dependencies
-RUN apk add --no-cache git
-
-# Set working directory
-WORKDIR /app
-
-# Copy go mod and sum files
-COPY go.mod go.sum ./
-
-# Download dependencies
-RUN go mod download
-
-# Copy source code
-COPY . .
-
-# Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -o /app/server ./cmd/server
-
-# Final stage - use the same golang image as the base
-FROM golang:1.24.1-alpine
+# Use a minimal Alpine image
+FROM alpine:3.19
 
 # Install runtime dependencies
 RUN apk add --no-cache ca-certificates tzdata netcat-openbsd make bash curl
-
-# Verify Go installation
-RUN go version
 
 # Set working directory
 WORKDIR /app
@@ -34,20 +10,17 @@ WORKDIR /app
 # Create a non-root user and group
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
-# Copy the binary, Makefile, and scripts
-COPY --from=builder /app/server /app/server
+# Copy application files
 COPY Makefile /app/
 COPY makefiles/ /app/makefiles/
 COPY scripts/ /app/scripts/
+COPY cmd /app/cmd
+COPY internal /app/internal
+COPY go.mod go.sum /app/
 
-# Copy source code for 'go run' commands
-COPY --from=builder /app/cmd /app/cmd
-COPY --from=builder /app/internal /app/internal
-COPY --from=builder /app/go.mod /app/go.sum /app/
-
-# Copy any additional required files
+# Copy config files
 COPY internal/config/env/.env.production /app/internal/config/env/.env.production
-COPY --from=builder /app/internal/config/firebase/service-account.json /app/internal/config/firebase/service-account.json
+COPY internal/config/firebase/service-account.json /app/internal/config/firebase/service-account.json
 
 # Make scripts executable
 RUN chmod +x /app/scripts/*.sh
