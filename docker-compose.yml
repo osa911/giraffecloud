@@ -20,12 +20,12 @@ services:
     volumes:
       - ./logs:/app/logs
       - /run/caddy/admin.sock:/run/caddy/admin.sock
-      - ${HOST_GOROOT:-/usr/local/go}:/usr/local/go
-      - ${HOST_GOPATH:-/root/go}:/go
+      - go_modules:/go/pkg/mod
+      - go_cache:/go/cache
     environment:
-      - GOROOT=/usr/local/go
       - GOPATH=/go
-      - PATH=/usr/local/go/bin:${PATH}
+      - GOCACHE=/go/cache
+      - GO111MODULE=on
     networks:
       giraffecloud_net:
         ipv4_address: 172.20.0.2
@@ -62,4 +62,8 @@ networks:
 
 volumes:
   postgres_data:
+    driver: local
+  go_modules:
+    driver: local
+  go_cache:
     driver: local
