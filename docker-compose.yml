@@ -19,6 +19,7 @@ services:
     <<: *env-file
     volumes:
       - ./logs:/app/logs
+      - /run/caddy/admin.sock:/run/caddy/admin.sock
     networks:
       giraffecloud_net:
         ipv4_address: 172.20.0.2
