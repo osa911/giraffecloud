@@ -1,6 +1,8 @@
 {
     # Use Unix socket for admin API - more secure and no IP binding issues
-    admin unix//run/caddy/admin.sock
+    admin unix//run/caddy/admin.sock {
+        origins http://unix
+    }
     auto_https disable_redirects
 }
 
@@ -20,14 +22,9 @@ api.giraffecloud.xyz {
 
     # Reverse proxy to your Go API server running in Docker
     reverse_proxy localhost:8080 {
-        health_path /health
-        health_interval 30s
-
         # Header forwarding
         header_up Host {host}
         header_up X-Real-IP {remote}
-        header_up X-Forwarded-For {remote}
-        header_up X-Forwarded-Proto {scheme}
     }
 
     # Handle preflight OPTIONS requests
