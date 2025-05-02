@@ -17,9 +17,10 @@ services:
       - postgres
     restart: unless-stopped
     <<: *env-file
+    user: root
     volumes:
       - ./logs:/app/logs
-      - /run/caddy/admin.sock:/run/caddy/admin.sock
+      - /run/caddy/admin.sock:/run/caddy/admin.sock:ro
       - go_modules:/go/pkg/mod
       - go_cache:/go/cache
     environment:
