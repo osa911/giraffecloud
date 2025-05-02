@@ -16,7 +16,7 @@ const (
 	DefaultAdminEndpoint = "config/"
 
 	// UnixSocketURLPrefix is the URL scheme prefix for Unix socket connections
-	UnixSocketURLPrefix = "unix://"
+	UnixSocketURLPrefix = "http+unix://"
 )
 
 // CaddyPaths provides standardized paths for Caddy-related files
