@@ -23,7 +23,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /app/server ./cmd/server
 FROM golang:1.24.1-alpine
 
 # Install runtime dependencies
-RUN apk add --no-cache ca-certificates tzdata netcat-openbsd make bash
+RUN apk add --no-cache ca-certificates tzdata netcat-openbsd make bash curl
 
 # Verify Go installation
 RUN go version

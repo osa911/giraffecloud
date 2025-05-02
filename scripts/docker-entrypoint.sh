@@ -11,6 +11,50 @@ if [ ! -f "$ENV_FILE" ]; then
     exit 1
 fi
 
+# Load environment variables first so we can use CADDY_ADMIN_API
+set -a
+source "$ENV_FILE"
+set +a
+
+# Check if CADDY_ADMIN_API is set
+if [ -z "$CADDY_ADMIN_API" ]; then
+    echo "ERROR: CADDY_ADMIN_API environment variable is not set"
+    exit 1
+fi
+
+# Extract host and port from CADDY_ADMIN_API
+CADDY_HOST=$(echo "$CADDY_ADMIN_API" | sed -E 's|^https?://||' | cut -d: -f1)
+CADDY_PORT=$(echo "$CADDY_ADMIN_API" | sed -E 's|^https?://||' | cut -d: -f2)
+
+echo "Checking Caddy connectivity at $CADDY_HOST:$CADDY_PORT..."
+
+# Try to connect to Caddy
+max_retries=5
+retries=0
+
+until nc -z -v -w5 $CADDY_HOST $CADDY_PORT; do
+    retries=$((retries+1))
+    if [ $retries -ge $max_retries ]; then
+        echo "ERROR: Failed to connect to Caddy after $retries attempts."
+        echo "Please ensure Caddy is running and accessible at $CADDY_ADMIN_API"
+        echo "If running on host machine, use host.docker.internal instead of localhost"
+        exit 1
+    fi
+    echo "Waiting for Caddy... ($retries/$max_retries)"
+    sleep 2
+done
+
+echo "Caddy is reachable!"
+
+# Test Caddy API endpoint
+echo "Testing Caddy API..."
+if curl -s -f "$CADDY_ADMIN_API/config/" > /dev/null; then
+    echo "Caddy API is responding correctly!"
+else
+    echo "ERROR: Caddy API test failed. Ensure Caddy admin API is enabled and accessible."
+    exit 1
+fi
+
 # Wait for PostgreSQL to be ready
 if [ -n "$DB_HOST" ] && [ -n "$DB_PORT" ]; then
     echo "Checking PostgreSQL connection at $DB_HOST:$DB_PORT..."
@@ -41,11 +85,6 @@ fi
 # Create logs directory if needed
 mkdir -p /app/logs
 echo "Log directory created at /app/logs"
-
-# Load environment variables
-set -a
-source "$ENV_FILE"
-set +a
 
 # Run the production server using the Makefile
 echo "Starting server with Makefile..."

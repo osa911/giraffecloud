@@ -21,6 +21,8 @@ services:
       - ./logs:/app/logs
     networks:
       - giraffecloud_net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   postgres:
     image: postgres:16-alpine
