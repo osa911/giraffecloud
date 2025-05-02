@@ -18,11 +18,10 @@ set +a
 
 echo "Checking Caddy connectivity..."
 
-# Try to connect to Caddy using curl
+# Try to connect to Caddy using curl over Unix socket with http+unix scheme
 max_retries=5
 retries=0
-
-until curl -s --unix-socket /run/caddy/admin.sock http://localhost/config/ > /dev/null; do
+until curl -s --unix-socket /run/caddy/admin.sock http://unix/config/ > /dev/null; do
     retries=$((retries+1))
     if [ $retries -ge $max_retries ]; then
         echo "ERROR: Failed to connect to Caddy after $retries attempts."
