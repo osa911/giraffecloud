@@ -6,6 +6,7 @@ import (
 
 	"giraffecloud/internal/api/handlers"
 	"giraffecloud/internal/api/middleware"
+	"giraffecloud/internal/caddy"
 	"giraffecloud/internal/db"
 	"giraffecloud/internal/logging"
 	"giraffecloud/internal/repository"
@@ -72,18 +73,12 @@ func (s *Server) Init() error {
 
 	var caddyService service.CaddyService
 	if os.Getenv("ENV") == "production" {
-		// Initialize Caddy service
-		adminAPI := os.Getenv("CADDY_ADMIN_API")
-		logger.Info("Initializing Caddy service with admin API: %s", adminAPI)
+		// Initialize Caddy service using standardized configuration
+		logger.Info("Initializing Caddy service...")
+		logger.Info("Using Caddy socket path: %s", caddy.CaddyPaths.Socket)
+		logger.Info("Using Caddy config path: %s", caddy.CaddyPaths.Config)
 
-		if adminAPI == "" {
-			logger.Error("CADDY_ADMIN_API environment variable is not set")
-			return fmt.Errorf("CADDY_ADMIN_API environment variable is required in production")
-		}
-
-		caddyService = service.NewCaddyService(&service.CaddyConfig{
-			AdminAPI: adminAPI,
-		})
+		caddyService = service.NewCaddyService()
 
 		// Load initial Caddy configuration
 		logger.Info("Loading initial Caddy configuration...")
@@ -172,5 +167,16 @@ func (s *Server) initializeRepositories() *Repositories {
 func (s *Server) Start(cfg *Config) error {
 	logger := logging.GetGlobalLogger()
 	logger.Info("Starting server on port " + cfg.Port)
+
+	// Log important environment variables
+	logger.Info("Server configuration:")
+	logger.Info("- Port: %s", cfg.Port)
+	logger.Info("- Environment: %s", os.Getenv("ENV"))
+	logger.Info("- Database URL: %s", os.Getenv("DATABASE_URL"))
+	if os.Getenv("ENV") == "production" {
+		logger.Info("- Caddy Socket: %s", caddy.CaddyPaths.Socket)
+		logger.Info("- Caddy Config: %s", caddy.CaddyPaths.Config)
+	}
+
 	return s.router.Run(":" + cfg.Port)
 }

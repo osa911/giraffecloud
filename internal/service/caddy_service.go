@@ -2,10 +2,12 @@ package service
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"giraffecloud/internal/logging"
 	"io"
+	"net"
 	"net/http"
 	"sync"
 )
@@ -19,34 +21,38 @@ type CaddyService interface {
 }
 
 type caddyService struct {
-	adminAPI string
 	logger   *logging.Logger
+	client   *http.Client
 	mu       sync.RWMutex
 }
 
-// CaddyConfig represents Caddy configuration options
-type CaddyConfig struct {
-	AdminAPI string // Caddy admin API endpoint
-}
-
 // NewCaddyService creates a new Caddy service instance
-func NewCaddyService(cfg *CaddyConfig) CaddyService {
+func NewCaddyService() CaddyService {
+	// Create a custom HTTP client that uses Unix domain sockets
+	client := &http.Client{
+		Transport: &http.Transport{
+			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
+				return net.Dial("unix", "/run/caddy/admin.sock")
+			},
+		},
+	}
+
 	return &caddyService{
-		adminAPI: cfg.AdminAPI,
-		logger:   logging.GetGlobalLogger(),
+		logger: logging.GetGlobalLogger(),
+		client: client,
 	}
 }
 
 // ValidateConnection checks if we can connect to Caddy's admin API
 func (s *caddyService) ValidateConnection() error {
-	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/config/", s.adminAPI), nil)
+	req, err := http.NewRequest(http.MethodGet, "/config/", nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := s.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to connect to Caddy admin API at %s: %w", s.adminAPI, err)
+		return fmt.Errorf("failed to connect to Caddy admin API: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -63,19 +69,6 @@ func (s *caddyService) ValidateConnection() error {
 func (s *caddyService) ConfigureRoute(domain string, targetIP string, targetPort int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	// First, check if the route already exists
-	req, err := http.NewRequest(http.MethodGet,
-		fmt.Sprintf("%s/config/apps/http/servers/main/routes", s.adminAPI), nil)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to get existing routes: %w", err)
-	}
-	defer resp.Body.Close()
 
 	// Create route configuration
 	config := map[string]interface{}{
@@ -115,8 +108,8 @@ func (s *caddyService) ConfigureRoute(domain string, targetIP string, targetPort
 	}
 
 	// Send config to Caddy
-	req, err = http.NewRequest(http.MethodPut,
-		fmt.Sprintf("%s/config/apps/http/servers/main/routes/%s", s.adminAPI, domain),
+	req, err := http.NewRequest(http.MethodPut,
+		"/config/apps/http/servers/main/routes/"+domain,
 		bytes.NewBuffer(jsonConfig))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
@@ -124,7 +117,7 @@ func (s *caddyService) ConfigureRoute(domain string, targetIP string, targetPort
 
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err = http.DefaultClient.Do(req)
+	resp, err := s.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -146,13 +139,13 @@ func (s *caddyService) RemoveRoute(domain string) error {
 
 	// Send DELETE request to Caddy
 	req, err := http.NewRequest(http.MethodDelete,
-		fmt.Sprintf("%s/config/apps/http/servers/main/routes/%s", s.adminAPI, domain),
+		"/config/apps/http/servers/main/routes/"+domain,
 		nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := s.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
