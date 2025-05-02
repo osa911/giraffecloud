@@ -11,9 +11,13 @@ import (
 )
 
 func main() {
+	// Set development environment variables
+	if os.Getenv("ENV") != "production" {
+		os.Setenv("ENV", "development")
+	}
+
 	// Initialize logger configuration
-	logConfig := &logging.Config{
-		Level:      os.Getenv("LOG_LEVEL"),
+	logConfig := &logging.LogConfig{
 		File:       os.Getenv("LOG_FILE"),
 		MaxSize:    100,
 		MaxBackups: 3,
@@ -21,17 +25,18 @@ func main() {
 	}
 
 	// Use default values if not set
-	if logConfig.Level == "" {
-		logConfig.Level = "info"
-	}
 	if logConfig.File == "" {
 		logConfig.File = "./logs/api.log"
 	}
 
 	// Configure and get logger
-	logging.Configure(logConfig)
-	logger := logging.GetLogger()
+	if err := logging.InitLogger(logConfig); err != nil {
+		panic(err)
+	}
+	logger := logging.GetGlobalLogger()
 	defer logger.Close()
+
+	logger.Info("Starting server in %s mode", os.Getenv("ENV"))
 
 	// Initialize database connection
 	entClient, err := db.Initialize()
@@ -57,7 +62,7 @@ func main() {
 
 	// Initialize server
 	cfg := &server.Config{
-		Port:    os.Getenv("PORT"),
+		Port: os.Getenv("PORT"),
 	}
 
 	// Use default values if not set
@@ -69,6 +74,12 @@ func main() {
 	srv, err := server.NewServer(database)
 	if err != nil {
 		logger.Error("Failed to create server: %v", err)
+		os.Exit(1)
+	}
+
+	// Initialize server
+	if err := srv.Init(); err != nil {
+		logger.Error("Failed to initialize server: %v", err)
 		os.Exit(1)
 	}
 

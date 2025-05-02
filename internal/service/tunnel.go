@@ -65,7 +65,7 @@ func (s *tunnelService) CreateTunnel(ctx context.Context, userID uint32, domain 
 	}
 
 	// If tunnel has a client IP, configure Caddy route
-	if tunnel.ClientIP != "" {
+	if tunnel.ClientIP != "" && s.caddyService != nil {
 		if err := s.caddyService.ConfigureRoute(tunnel.Domain, tunnel.ClientIP, tunnel.TargetPort); err != nil {
 			// Log error but don't fail the tunnel creation
 			// The route will be configured when the client connects
@@ -95,7 +95,7 @@ func (s *tunnelService) DeleteTunnel(ctx context.Context, userID uint32, tunnelI
 	}
 
 	// Remove Caddy route if tunnel is active and has a client IP
-	if tunnel.IsActive && tunnel.ClientIP != "" {
+	if tunnel.IsActive && tunnel.ClientIP != "" && s.caddyService != nil {
 		if err := s.caddyService.RemoveRoute(tunnel.Domain); err != nil {
 			// Log error but don't fail the deletion
 			fmt.Printf("Warning: Failed to remove Caddy route: %v\n", err)
@@ -120,12 +120,12 @@ func (s *tunnelService) UpdateTunnel(ctx context.Context, userID uint32, tunnelI
 	}
 
 	// Handle Caddy configuration updates
-	if tunnel.IsActive && tunnel.ClientIP != "" {
+	if tunnel.IsActive && tunnel.ClientIP != "" && s.caddyService != nil {
 		// Configure new route
 		if err := s.caddyService.ConfigureRoute(tunnel.Domain, tunnel.ClientIP, tunnel.TargetPort); err != nil {
 			fmt.Printf("Warning: Failed to configure Caddy route: %v\n", err)
 		}
-	} else if !tunnel.IsActive && currentTunnel.IsActive {
+	} else if !tunnel.IsActive && currentTunnel.IsActive && s.caddyService != nil {
 		// Remove route if tunnel was deactivated
 		if err := s.caddyService.RemoveRoute(tunnel.Domain); err != nil {
 			fmt.Printf("Warning: Failed to remove Caddy route: %v\n", err)
@@ -154,7 +154,7 @@ func (s *tunnelService) UpdateClientIP(ctx context.Context, id uint32, clientIP 
 	}
 
 	// Configure Caddy route if tunnel is active
-	if tunnel.IsActive {
+	if tunnel.IsActive && s.caddyService != nil {
 		if err := s.caddyService.ConfigureRoute(tunnel.Domain, clientIP, tunnel.TargetPort); err != nil {
 			return fmt.Errorf("failed to configure Caddy route: %w", err)
 		}

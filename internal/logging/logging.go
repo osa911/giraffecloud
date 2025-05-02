@@ -9,26 +9,67 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
+	"github.com/gin-gonic/gin"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 // ANSI color codes for terminal output
 const (
-	colorRed    = "\033[97;41m" // White text on red background
-	colorGreen  = "\033[97;42m" // White text on green background
-	colorYellow = "\033[90;43m" // Black text on yellow background
-	colorBlue   = "\033[97;44m" // White text on blue background
-	colorCyan   = "\033[97;46m" // White text on cyan background
-	colorReset  = "\033[0m"
+	colorRed     = "\033[97;41m" // White text on red background
+	colorGreen   = "\033[97;42m" // White text on green background
+	colorYellow  = "\033[90;43m" // Black text on yellow background
+	colorBlue    = "\033[97;44m" // White text on blue background
+	colorCyan    = "\033[97;46m" // White text on cyan background
+	colorMagenta = "\033[97;45m" // White text on magenta background
+	colorReset   = "\033[0m"
 )
+
+// LogConfig holds configuration for the logger
+type LogConfig struct {
+	File       string // Log file path
+	MaxSize    int    // Maximum size in megabytes before log rotation
+	MaxBackups int    // Maximum number of old log files to retain
+	MaxAge     int    // Maximum number of days to retain old log files
+}
 
 type Logger struct {
 	*log.Logger
-	writer *lumberjack.Logger
+	writer      *lumberjack.Logger
+	multiWriter io.Writer
 }
 
-func NewLogger(config *Config) (*Logger, error) {
+// Singleton pattern variables
+var (
+	globalLogger *Logger
+	initOnce     sync.Once
+	loggerMutex  sync.RWMutex
+)
+
+// InitLogger sets up the global logger instance
+func InitLogger(config *LogConfig) error {
+	var err error
+	initOnce.Do(func() {
+		var logger *Logger
+		logger, err = newLogger(config)
+		if err == nil {
+			globalLogger = logger
+		}
+	})
+	return err
+}
+
+// GetGlobalLogger returns the global logger instance
+func GetGlobalLogger() *Logger {
+	loggerMutex.RLock()
+	defer loggerMutex.RUnlock()
+	return globalLogger
+}
+
+// newLogger creates a new logger instance (internal function)
+func newLogger(config *LogConfig) (*Logger, error) {
 	// Expand home directory in log file path
 	logFile := config.File
 	if strings.HasPrefix(logFile, "~/") {
@@ -53,20 +94,32 @@ func NewLogger(config *Config) (*Logger, error) {
 		Compress:   true,
 	}
 
-	// Create a multi-writer that writes to both file and stdout
-	multiWriter := io.MultiWriter(writer, os.Stdout)
+	var stdoutWriter io.Writer
+	if os.Getenv("ENV") == "production" {
+		stdoutWriter = log.New(os.Stdout, "", log.LstdFlags).Writer()
+	} else {
+		stdoutWriter = os.Stdout
+	}
+
+	multiWriter := io.MultiWriter(writer, stdoutWriter)
 
 	// Create logger with timestamp and file:line prefix
 	logger := log.New(multiWriter, "", log.LstdFlags)
 
 	return &Logger{
-		Logger: logger,
-		writer: writer,
+		Logger:      logger,
+		writer:      writer,
+		multiWriter: multiWriter,
 	}, nil
 }
 
 func (l *Logger) Close() error {
 	return l.writer.Close()
+}
+
+// GetWriter returns the logger's multiWriter
+func (l *Logger) GetWriter() io.Writer {
+	return l.multiWriter
 }
 
 // Log levels
@@ -169,7 +222,7 @@ func (l *Logger) FormatHTTPStatus(status int) string {
 
 // LogHTTPRequest logs an HTTP request with colored output
 func (l *Logger) LogHTTPRequest(method, path, clientIP string, status, bytes int, latency string) {
-	if os.Getenv("LOG_REQUESTS") != "true" {
+	if os.Getenv("ENV") == "production" {
 		return
 	}
 
@@ -188,9 +241,6 @@ func (l *Logger) LogHTTPRequest(method, path, clientIP string, status, bytes int
 
 // LogHTTPError logs an HTTP error with colored output
 func (l *Logger) LogHTTPError(method, path, clientIP string, status int, message string, err error) {
-	if os.Getenv("LOG_REQUESTS") != "true" {
-		return
-	}
 
 	methodFormatted := l.FormatHTTPMethod(method)
 	statusFormatted := l.FormatHTTPStatus(status)
@@ -203,4 +253,55 @@ func (l *Logger) LogHTTPError(method, path, clientIP string, status int, message
 		message,
 		err,
 	)
+}
+
+// FormatLatency formats latency with appropriate unit
+func FormatLatency(duration time.Duration) string {
+	switch {
+	case duration.Nanoseconds() < 1000:
+		return fmt.Sprintf("%dns", duration.Nanoseconds())
+	case duration.Nanoseconds() < 1000000:
+		return fmt.Sprintf("%.3fµs", float64(duration.Nanoseconds())/1000)
+	case duration.Nanoseconds() < 1000000000:
+		return fmt.Sprintf("%.3fms", float64(duration.Nanoseconds())/1000000)
+	default:
+		return fmt.Sprintf("%.3fs", duration.Seconds())
+	}
+}
+
+// GinLoggerConfig returns a Gin logger middleware with our custom format
+func (l *Logger) GinLoggerConfig() gin.HandlerFunc {
+	return gin.LoggerWithConfig(gin.LoggerConfig{
+		Output: l.multiWriter,
+		Formatter: func(param gin.LogFormatterParams) string {
+			// Get status color (using background colors)
+			var statusColor string
+			switch {
+			case param.StatusCode >= 200 && param.StatusCode < 300:
+				statusColor = "\033[42;1m" // Green background + bold
+			case param.StatusCode >= 300 && param.StatusCode < 400:
+				statusColor = "\033[43;1m" // Yellow background + bold
+			case param.StatusCode >= 400 && param.StatusCode < 500:
+				statusColor = "\033[41;1m" // Red background + bold
+			default:
+				statusColor = "\033[45;1m" // Magenta background + bold
+			}
+
+			// Format timestamp with milliseconds
+			timestamp := param.TimeStamp.Format("2006/01/02-15:04:05.000")
+
+			// Return single line log format
+			return fmt.Sprintf("[%s] %s | %s %s | %s%d%s | %s | %s\n",
+				timestamp,
+				param.ClientIP,
+				param.Method,
+				param.Path,
+				statusColor,
+				param.StatusCode,
+				colorReset,
+				FormatLatency(param.Latency),
+				param.ErrorMessage,
+			)
+		},
+	})
 }

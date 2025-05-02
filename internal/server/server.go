@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"os"
 
 	"giraffecloud/internal/api/handlers"
 	"giraffecloud/internal/api/middleware"
@@ -10,8 +11,6 @@ import (
 	"giraffecloud/internal/repository"
 	"giraffecloud/internal/server/routes"
 	"giraffecloud/internal/service"
-	"io"
-	"os"
 
 	"github.com/gin-gonic/gin"
 )
@@ -22,7 +21,17 @@ func NewServer(db *db.Database) (*Server, error) {
 		return nil, fmt.Errorf("database cannot be nil")
 	}
 
+	// Set Gin mode based on environment
+	if os.Getenv("ENV") == "production" {
+		gin.SetMode(gin.ReleaseMode)
+		fmt.Println("Server initializing in PRODUCTION mode")
+	} else {
+		gin.SetMode(gin.DebugMode)
+		fmt.Println("Server initializing in DEVELOPMENT mode")
+	}
+
 	engine := gin.New()
+	engine.Use(gin.Recovery())
 
 	// Configure trusted proxies
 	engine.SetTrustedProxies([]string{
@@ -41,26 +50,31 @@ func NewServer(db *db.Database) (*Server, error) {
 
 // Init initializes the server
 func (s *Server) Init() error {
-	// Disable default logger
-	gin.SetMode(gin.ReleaseMode)
-	gin.DefaultWriter = io.Discard
+	// Get the already configured logger
+	logger := logging.GetGlobalLogger()
+	logger.Info("Global logger initialized")
 
-	// Set up global middleware
-	logger := logging.GetLogger()
+	// Set up global middleware with our custom logger
 	routes.SetupGlobalMiddleware(s.router, logger)
+	fmt.Println("Global middleware setup completed")
 
 	// Initialize services
 	auditService := service.NewAuditService()
 	csrfService := service.NewCSRFService()
 
-	// Initialize Caddy service
-	caddyService := service.NewCaddyService(&service.CaddyConfig{
-		AdminAPI: os.Getenv("CADDY_ADMIN_API"),
-	})
+	var caddyService service.CaddyService
+	if os.Getenv("ENV") == "production" {
+		// Initialize Caddy service
+		caddyService = service.NewCaddyService(&service.CaddyConfig{
+			AdminAPI: os.Getenv("CADDY_ADMIN_API"),
+		})
 
-	// Load initial Caddy configuration
-	if err := caddyService.LoadConfig(); err != nil {
-		return err
+		// Load initial Caddy configuration
+		if err := caddyService.LoadConfig(); err != nil {
+			return err
+		}
+	} else {
+		logger.Info("Skipping Caddy initialization in development mode")
 	}
 
 	// Initialize repositories
@@ -69,7 +83,7 @@ func (s *Server) Init() error {
 	// Initialize token service
 	tokenService := service.NewTokenService(repos.Token)
 
-	// Initialize tunnel service with Caddy service
+	// Initialize tunnel service with Caddy service (can be nil in dev mode)
 	tunnelService := service.NewTunnelService(repos.Tunnel, caddyService)
 
 	// Initialize handlers
@@ -108,7 +122,7 @@ func (s *Server) initializeRepositories() *Repositories {
 
 // Start starts the server
 func (s *Server) Start(cfg *Config) error {
-	logger := logging.GetLogger()
+	logger := logging.GetGlobalLogger()
 	logger.Info("Starting server on port " + cfg.Port)
 	return s.router.Run(":" + cfg.Port)
 }

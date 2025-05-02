@@ -22,7 +22,7 @@ var errorStatusMap = map[commonDto.ErrorCode]int{
 
 // LogError logs an error with optional message
 func LogError(err error, msg string) {
-	logger := logging.GetLogger()
+	logger := logging.GetGlobalLogger()
 	if msg != "" {
 		logger.Error("%s: %v", msg, err)
 	} else {
@@ -32,7 +32,7 @@ func LogError(err error, msg string) {
 
 // HandleAPIError handles API errors in a standardized way
 func HandleAPIError(c *gin.Context, err error, code commonDto.ErrorCode, msg string) {
-	logger := logging.GetLogger()
+	logger := logging.GetGlobalLogger()
 
 	// Get status code from map, default to 500 if not found
 	status := errorStatusMap[code]

@@ -32,7 +32,7 @@ type CaddyConfig struct {
 func NewCaddyService(cfg *CaddyConfig) CaddyService {
 	return &caddyService{
 		adminAPI: cfg.AdminAPI,
-		logger:   logging.GetLogger(),
+		logger:   logging.GetGlobalLogger(),
 	}
 }
 

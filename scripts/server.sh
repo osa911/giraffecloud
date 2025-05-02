@@ -5,6 +5,9 @@ set -a
 source internal/config/env/.env.development
 set +a
 
+# Set development environment and logging
+export ENV="development"
+
 # Print database connection details (for debugging)
 echo "DB_HOST=$DB_HOST"
 echo "DB_PORT=$DB_PORT"

@@ -33,10 +33,9 @@ func RequestLogger(logger *logging.Logger) gin.HandlerFunc {
 
 		// Log errors if any
 		if len(c.Errors) > 0 {
-			logger.Error("request errors",
-				"errors", c.Errors.String(),
-				"path", path,
-			)
+			for _, err := range c.Errors {
+				logger.LogHTTPError(method, path, clientIP, statusCode, "Request error", err)
+			}
 		}
 	}
 }

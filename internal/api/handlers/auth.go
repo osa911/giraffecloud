@@ -122,7 +122,7 @@ func getCookieDomain() string {
 }
 
 func (h *AuthHandler) Login(c *gin.Context) {
-	logger := logging.GetLogger()
+	logger := logging.GetGlobalLogger()
 
 	// Get login data from context (set by ValidateLoginRequest middleware)
 	loginData, exists := c.Get(constants.ContextKeyLogin)
@@ -354,7 +354,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 }
 
 func (h *AuthHandler) Logout(c *gin.Context) {
-	logger := logging.GetLogger()
+	logger := logging.GetGlobalLogger()
 
 	// Get user from context
 	user, _ := c.Get(constants.ContextKeyUser)

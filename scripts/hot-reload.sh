@@ -10,6 +10,9 @@ set -a
 source internal/config/env/.env.development
 set +a
 
+# Set development environment and logging
+export ENV="development"
+
 # Show loaded database variables for debugging
 echo "Database connection parameters:"
 echo "DB_HOST: $DB_HOST"

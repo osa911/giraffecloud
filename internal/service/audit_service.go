@@ -36,7 +36,7 @@ func NewAuditService() *AuditService {
 
 // LogAuthEvent logs an authentication-related event
 func (s *AuditService) LogAuthEvent(ctx context.Context, eventType AuditEventType, user *ent.User, ip string, details map[string]interface{}) {
-	logger := logging.GetLogger()
+	logger := logging.GetGlobalLogger()
 
 	// Prepare event details
 	event := map[string]interface{}{
@@ -65,7 +65,7 @@ func (s *AuditService) LogAuthEvent(ctx context.Context, eventType AuditEventTyp
 
 // LogFailedAuthAttempt logs a failed authentication attempt
 func (s *AuditService) LogFailedAuthAttempt(ctx context.Context, c *gin.Context, reason string, err error, extraDetails ...map[string]interface{}) {
-	logger := logging.GetLogger()
+	logger := logging.GetGlobalLogger()
 	ip := utils.GetRealIP(c)
 
 	details := map[string]interface{}{
@@ -99,7 +99,7 @@ func (s *AuditService) LogFailedAuthAttempt(ctx context.Context, c *gin.Context,
 
 // LogSessionEvent logs a session-related event
 func (s *AuditService) LogSessionEvent(ctx context.Context, eventType AuditEventType, session *ent.Session, details map[string]interface{}) {
-	logger := logging.GetLogger()
+	logger := logging.GetGlobalLogger()
 
 	// Prepare event details
 	event := map[string]interface{}{

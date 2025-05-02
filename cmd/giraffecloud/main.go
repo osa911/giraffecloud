@@ -17,20 +17,21 @@ var logger *logging.Logger
 
 func initLogger() {
 	// Initialize logger configuration
-	logConfig := &logging.Config{
-		Level:      "info",
+	logConfig := &logging.LogConfig{
 		File:       "~/.giraffecloud/client.log",
 		MaxSize:    100,
 		MaxBackups: 3,
 		MaxAge:     7,
 	}
 
-	var err error
-	logger, err = logging.NewLogger(logConfig)
-	if err != nil {
+	// Initialize the global logger
+	if err := logging.InitLogger(logConfig); err != nil {
 		fmt.Printf("Failed to initialize logger: %v\n", err)
 		os.Exit(1)
 	}
+
+	// Get the logger instance
+	logger = logging.GetGlobalLogger()
 }
 
 var rootCmd = &cobra.Command{

@@ -19,7 +19,7 @@ var (
 
 // InitializeFirebase initializes the Firebase Admin SDK
 func InitializeFirebase() error {
-	logger := logging.GetLogger()
+	logger := logging.GetGlobalLogger()
 	logger.Info("==== Initializing Firebase ====")
 
 	// Get the service account key file path
@@ -52,7 +52,7 @@ func InitializeFirebase() error {
 
 // GetAuthClient returns the Firebase Auth client
 func GetAuthClient() *auth.Client {
-	logger := logging.GetLogger()
+	logger := logging.GetGlobalLogger()
 	if authClient == nil {
 		logger.Warn("GetAuthClient called but authClient is nil")
 	}
