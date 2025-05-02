@@ -21,8 +21,20 @@ func NewServer(db *db.Database) (*Server, error) {
 	if db == nil {
 		return nil, fmt.Errorf("database cannot be nil")
 	}
+
+	engine := gin.New()
+
+	// Configure trusted proxies
+	engine.SetTrustedProxies([]string{
+		"127.0.0.1",      // localhost
+		"::1",            // localhost IPv6
+		"172.20.0.0/16",  // Docker network
+		"192.168.0.0/16", // private network
+		"10.0.0.0/8",     // private network
+	})
+
 	return &Server{
-		router: gin.New(),
+		router: engine,
 		db:     db,
 	}, nil
 }
