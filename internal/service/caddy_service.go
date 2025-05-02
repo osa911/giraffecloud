@@ -45,7 +45,7 @@ func NewCaddyService() CaddyService {
 	return &caddyService{
 		logger:   logging.GetGlobalLogger(),
 		client:   client,
-		baseURL:  "http://localhost", // Use localhost as the host for Unix socket requests
+		baseURL:  "unix://", // Use unix:// scheme for Unix socket requests
 	}
 }
 
