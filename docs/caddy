@@ -1,8 +1,6 @@
 {
-    # Only accessible from Docker network (172.17.0.0/16)
-    admin 172.17.0.1:2019 {
-        origins 172.17.0.0/16
-    }
+    # Use Unix socket for admin API - more secure and no IP binding issues
+    admin unix//run/caddy/admin.sock
     auto_https disable_redirects
 }
 
