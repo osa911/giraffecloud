@@ -20,8 +20,8 @@ services:
     volumes:
       - ./logs:/app/logs
       - /run/caddy/admin.sock:/run/caddy/admin.sock
-      - ${HOST_GOROOT:-/usr/local/go}:/usr/local/go:ro
-      - ${HOST_GOPATH:-/root/go}:/go:ro
+      - ${HOST_GOROOT:-/usr/local/go}:/usr/local/go
+      - ${HOST_GOPATH:-/root/go}:/go
     environment:
       - GOROOT=/usr/local/go
       - GOPATH=/go
