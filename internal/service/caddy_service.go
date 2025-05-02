@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"giraffecloud/internal/caddy"
 	"giraffecloud/internal/logging"
 	"io"
 	"net"
@@ -23,6 +24,7 @@ type CaddyService interface {
 type caddyService struct {
 	logger   *logging.Logger
 	client   *http.Client
+	baseURL  string
 	mu       sync.RWMutex
 }
 
@@ -32,20 +34,21 @@ func NewCaddyService() CaddyService {
 	client := &http.Client{
 		Transport: &http.Transport{
 			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-				return net.Dial("unix", "/run/caddy/admin.sock")
+				return net.Dial("unix", caddy.CaddyPaths.Socket)
 			},
 		},
 	}
 
 	return &caddyService{
-		logger: logging.GetGlobalLogger(),
-		client: client,
+		logger:   logging.GetGlobalLogger(),
+		client:   client,
+		baseURL:  caddy.CaddyPaths.SocketURL,
 	}
 }
 
 // ValidateConnection checks if we can connect to Caddy's admin API
 func (s *caddyService) ValidateConnection() error {
-	req, err := http.NewRequest(http.MethodGet, "/config/", nil)
+	req, err := http.NewRequest(http.MethodGet, s.baseURL+"/"+caddy.DefaultAdminEndpoint, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -109,7 +112,7 @@ func (s *caddyService) ConfigureRoute(domain string, targetIP string, targetPort
 
 	// Send config to Caddy
 	req, err := http.NewRequest(http.MethodPut,
-		"/config/apps/http/servers/main/routes/"+domain,
+		s.baseURL+"/"+caddy.DefaultAdminEndpoint+"apps/http/servers/main/routes/"+domain,
 		bytes.NewBuffer(jsonConfig))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
@@ -139,7 +142,7 @@ func (s *caddyService) RemoveRoute(domain string) error {
 
 	// Send DELETE request to Caddy
 	req, err := http.NewRequest(http.MethodDelete,
-		"/config/apps/http/servers/main/routes/"+domain,
+		s.baseURL+"/"+caddy.DefaultAdminEndpoint+"apps/http/servers/main/routes/"+domain,
 		nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
