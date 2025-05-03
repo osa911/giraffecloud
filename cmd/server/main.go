@@ -89,7 +89,7 @@ func main() {
 
 	// Initialize server
 	cfg := &server.Config{
-		Port: os.Getenv("PORT"),
+		Port: os.Getenv("API_PORT"),
 	}
 
 	// Use default values if not set
