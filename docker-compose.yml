@@ -45,7 +45,6 @@ services:
       - postgres
     restart: unless-stopped
     <<: *env-file
-    user: root
     volumes:
       - ./logs:/app/logs
       - go_modules:/go/pkg/mod

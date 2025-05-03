@@ -4,6 +4,10 @@ FROM golang:1.24-alpine
 # Install runtime dependencies
 RUN apk add --no-cache ca-certificates tzdata netcat-openbsd make bash curl
 
+# Create non-root user and group
+RUN addgroup -S appgroup && \
+    adduser -S appuser -G appgroup
+
 # Set working directory
 WORKDIR /app
 
@@ -11,8 +15,9 @@ WORKDIR /app
 ENV GOCACHE=/go/cache \
     GO111MODULE=on
 
-# Create Go directories
-RUN mkdir -p /go/pkg/mod /go/cache
+# Create Go directories and set permissions
+RUN mkdir -p /go/pkg/mod /go/cache && \
+    chown -R appuser:appgroup /go
 
 # Copy application files
 COPY Makefile /app/
@@ -29,11 +34,12 @@ COPY internal/config/firebase/service-account.json /app/internal/config/firebase
 # Make scripts executable
 RUN chmod +x /app/scripts/*.sh
 
-# Create logs directory
-RUN mkdir -p /app/logs
+# Create logs directory and set permissions
+RUN mkdir -p /app/logs && \
+    chown -R appuser:appgroup /app
 
-# Expose the port
-EXPOSE 8080
+# Switch to non-root user
+USER appuser
 
 # Set the entrypoint
 ENTRYPOINT ["/app/scripts/docker-entrypoint.sh"]

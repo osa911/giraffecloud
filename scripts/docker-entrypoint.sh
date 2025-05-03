@@ -12,7 +12,9 @@ if [ ! -f "$ENV_FILE" ]; then
 fi
 
 # Load environment variables
-. "$ENV_FILE"
+set -a
+source "$ENV_FILE"
+set +a
 
 echo "Checking Caddy connectivity..."
 
