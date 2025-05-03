@@ -42,7 +42,7 @@
                       ],
                       "X-Content-Type-Options": ["nosniff"],
                       "Access-Control-Allow-Origin": [
-                        "{http.request.header.Origin}"
+                        "https://giraffecloud.xyz"
                       ],
                       "Access-Control-Allow-Methods": [
                         "GET, POST, PUT, DELETE, OPTIONS"
@@ -90,7 +90,7 @@
                                   "{http.request.remote.host}"
                                 ],
                                 "X-Forwarded-Proto": ["{http.request.scheme}"],
-                                "Origin": ["{default.origin}"],
+                                "Origin": ["https://giraffecloud.xyz"],
                                 "Referer": ["{http.request.header.Referer}"],
                                 "Authorization": [
                                   "{http.request.header.Authorization}"
