@@ -19,7 +19,9 @@
       "servers": {
         "srv0": {
           "listen": [":80", ":443"],
-          "trusted_proxies": ["private_ranges"],
+          "trusted_proxies": {
+            "source": "private_ranges"
+          },
           "routes": [
             {
               "match": [{ "path": ["/health"] }],
