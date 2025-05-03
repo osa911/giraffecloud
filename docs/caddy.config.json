@@ -42,17 +42,19 @@
                       ],
                       "X-Content-Type-Options": ["nosniff"],
                       "Access-Control-Allow-Origin": [
-                        "https://giraffecloud.xyz"
+                        "{http.request.header.Origin}"
                       ],
                       "Access-Control-Allow-Methods": [
                         "GET, POST, PUT, DELETE, OPTIONS"
                       ],
                       "Access-Control-Allow-Headers": [
-                        "Content-Type, Authorization, X-Requested-With, X-CSRF-Token, Origin, X-Vercel-Id"
+                        "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, Accept, Origin, Cache-Control, X-Requested-With"
                       ],
                       "Access-Control-Allow-Credentials": ["true"],
-                      "Access-Control-Max-Age": ["3600"],
-                      "Access-Control-Expose-Headers": ["*"]
+                      "Access-Control-Max-Age": ["86400"],
+                      "Access-Control-Expose-Headers": [
+                        "Content-Length, Access-Control-Allow-Origin, Access-Control-Allow-Headers, Content-Type"
+                      ]
                     },
                     "delete": ["Server"]
                   }
@@ -83,14 +85,14 @@
                           ],
                           "headers": {
                             "request": {
-                              "set": {
+                              "replace": {
                                 "Host": ["{http.request.host}"],
                                 "X-Real-IP": ["{http.request.remote.host}"],
                                 "X-Forwarded-For": [
                                   "{http.request.remote.host}"
                                 ],
                                 "X-Forwarded-Proto": ["{http.request.scheme}"],
-                                "Origin": ["https://giraffecloud.xyz"],
+                                "Origin": ["{http.request.header.Origin}"],
                                 "Referer": ["{http.request.header.Referer}"],
                                 "Authorization": [
                                   "{http.request.header.Authorization}"

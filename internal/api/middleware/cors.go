@@ -31,26 +31,39 @@ func CORS() gin.HandlerFunc {
 		} else {
 			// In production, be more strict about allowed origins
 			if allowedOrigins != "" {
-				originAllowed := false
-				for _, allowed := range strings.Split(allowedOrigins, ",") {
-					allowed = strings.TrimSpace(allowed)
-					if origin == allowed {
-						originAllowed = true
+				// Handle wildcard case
+				if strings.TrimSpace(allowedOrigins) == "*" {
+					if origin != "" {
 						c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
-						break
+					} else {
+						c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+					}
+				} else {
+					// Handle specific origins
+					originAllowed := false
+					for _, allowed := range strings.Split(allowedOrigins, ",") {
+						allowed = strings.TrimSpace(allowed)
+						if origin == allowed {
+							originAllowed = true
+							c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+							break
+						}
+					}
+
+					// If origin not in allowed list
+					if !originAllowed {
+						c.Status(http.StatusForbidden)
+						c.Abort()
+						return
 					}
 				}
-
-				// If origin not in allowed list
-				if !originAllowed {
-					c.Status(http.StatusForbidden)
-					c.Abort()
-					return
-				}
 			} else {
-				// If no allowed origins configured, only accept the client URL
+				// If no allowed origins configured, use the client URL
 				clientURL := os.Getenv("CLIENT_URL")
 				if clientURL != "" {
+					if !strings.HasPrefix(clientURL, "http") {
+						clientURL = "https://" + clientURL
+					}
 					c.Writer.Header().Set("Access-Control-Allow-Origin", clientURL)
 				} else {
 					c.Writer.Header().Set("Access-Control-Allow-Origin", "http://localhost:3000")
@@ -60,7 +73,7 @@ func CORS() gin.HandlerFunc {
 
 		// Set other CORS headers
 		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, " + constants.HeaderCSRF + ", " + constants.HeaderAuthorization + ", accept, origin, Cache-Control, X-Requested-With")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, "+constants.HeaderCSRF+", "+constants.HeaderAuthorization+", accept, origin, Cache-Control, X-Requested-With")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, PATCH, DELETE")
 		c.Writer.Header().Set("Access-Control-Expose-Headers", "Content-Length, Access-Control-Allow-Origin, Access-Control-Allow-Headers, Content-Type")
 		c.Writer.Header().Set("Access-Control-Max-Age", "86400") // 24 hours
