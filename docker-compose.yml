@@ -6,6 +6,34 @@ x-env-file: &env-file
     - ./internal/config/env/.env.production
 
 services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docs/caddy.config.json:/etc/caddy/caddy.json
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      giraffecloud_network:
+        ipv4_address: 172.20.0.4
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://localhost/health",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
   api:
     build:
       context: .
@@ -20,7 +48,6 @@ services:
     user: root
     volumes:
       - ./logs:/app/logs
-      - /run/caddy/admin.sock:/run/caddy/admin.sock:ro
       - go_modules:/go/pkg/mod
       - go_cache:/go/cache
     environment:
@@ -28,7 +55,7 @@ services:
       - GOCACHE=/go/cache
       - GO111MODULE=on
     networks:
-      giraffecloud_net:
+      giraffecloud_network:
         ipv4_address: 172.20.0.2
 
   postgres:
@@ -45,7 +72,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./logs/postgres:/var/log/postgresql
     networks:
-      giraffecloud_net:
+      giraffecloud_network:
         ipv4_address: 172.20.0.3
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
@@ -54,7 +81,7 @@ services:
       retries: 5
 
 networks:
-  giraffecloud_net:
+  giraffecloud_network:
     name: giraffecloud_net
     ipam:
       config:
@@ -68,3 +95,5 @@ volumes:
     driver: local
   go_cache:
     driver: local
+  caddy_data:
+  caddy_config:

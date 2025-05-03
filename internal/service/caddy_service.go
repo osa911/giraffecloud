@@ -2,15 +2,12 @@ package service
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"giraffecloud/internal/caddy"
 	"giraffecloud/internal/logging"
 	"io"
-	"net"
 	"net/http"
-	"strings"
 	"sync"
 )
 
@@ -31,28 +28,16 @@ type caddyService struct {
 
 // NewCaddyService creates a new Caddy service instance
 func NewCaddyService() CaddyService {
-	socketPath := caddy.CaddyPaths.Socket
-
-	// Create a custom transport that uses Unix domain socket
-	transport := &http.Transport{
-		DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-			return net.Dial("unix", socketPath)
-		},
-	}
-
-	// Create an HTTP client with the Unix socket transport
-	client := &http.Client{Transport: transport}
-
 	return &caddyService{
 		logger:   logging.GetGlobalLogger(),
-		client:   client,
-		baseURL:  "http://unix",
+		client:   &http.Client{},
+		baseURL:  "http://172.20.0.4:2019",
 	}
 }
 
 // ValidateConnection checks if we can connect to Caddy's admin API
 func (s *caddyService) ValidateConnection() error {
-	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/%s", s.baseURL, strings.TrimPrefix(caddy.DefaultAdminEndpoint, "/")), nil)
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/%s", s.baseURL, caddy.DefaultAdminEndpoint), nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -91,10 +76,8 @@ func (s *caddyService) ConfigureRoute(domain string, targetIP string, targetPort
 				"headers": map[string]interface{}{
 					"request": map[string]interface{}{
 						"set": map[string]interface{}{
-							"Host":              []string{"{http.request.host}"},
-							"X-Real-IP":         []string{"{http.request.remote}"},
-							"X-Forwarded-For":   []string{"{http.request.remote}"},
-							"X-Forwarded-Proto": []string{"{http.request.scheme}"},
+							"Host":      []string{"{http.request.host}"},
+							"X-Real-IP": []string{"{http.request.remote.host}"},
 						},
 					},
 				},
@@ -116,7 +99,7 @@ func (s *caddyService) ConfigureRoute(domain string, targetIP string, targetPort
 
 	// Send config to Caddy
 	req, err := http.NewRequest(http.MethodPut,
-		s.baseURL+"/"+caddy.DefaultAdminEndpoint+"apps/http/servers/main/routes/"+domain,
+		fmt.Sprintf("%s/%sapps/http/servers/srv0/routes/%s", s.baseURL, caddy.DefaultAdminEndpoint, domain),
 		bytes.NewBuffer(jsonConfig))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
@@ -146,7 +129,7 @@ func (s *caddyService) RemoveRoute(domain string) error {
 
 	// Send DELETE request to Caddy
 	req, err := http.NewRequest(http.MethodDelete,
-		s.baseURL+"/"+caddy.DefaultAdminEndpoint+"apps/http/servers/main/routes/"+domain,
+		fmt.Sprintf("%s/%sapps/http/servers/srv0/routes/%s", s.baseURL, caddy.DefaultAdminEndpoint, domain),
 		nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)

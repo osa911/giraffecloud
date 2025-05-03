@@ -12,20 +12,18 @@ if [ ! -f "$ENV_FILE" ]; then
 fi
 
 # Load environment variables
-set -a
-source "$ENV_FILE"
-set +a
+. "$ENV_FILE"
 
 echo "Checking Caddy connectivity..."
 
-# Try to connect to Caddy using curl over Unix socket with http+unix scheme
+# Try to connect to Caddy using HTTP
 max_retries=5
 retries=0
-until curl -s --unix-socket /run/caddy/admin.sock http://unix/config/ > /dev/null; do
+until curl -s http://172.20.0.4:2019/config/ > /dev/null; do
     retries=$((retries+1))
     if [ $retries -ge $max_retries ]; then
         echo "ERROR: Failed to connect to Caddy after $retries attempts."
-        echo "Please ensure Caddy is running and the Unix socket exists at /run/caddy/admin.sock"
+        echo "Please ensure Caddy is running and accessible at http://172.20.0.4:2019"
         exit 1
     fi
     echo "Waiting for Caddy... ($retries/$max_retries)"
