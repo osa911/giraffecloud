@@ -75,7 +75,6 @@ func (s *Server) Init() error {
 	if os.Getenv("ENV") == "production" {
 		// Initialize Caddy service using standardized configuration
 		logger.Info("Initializing Caddy service...")
-		logger.Info("Using Caddy socket path: %s", caddy.CaddyPaths.Socket)
 		logger.Info("Using Caddy config path: %s", caddy.CaddyPaths.Config)
 
 		caddyService = service.NewCaddyService()
@@ -174,7 +173,6 @@ func (s *Server) Start(cfg *Config) error {
 	logger.Info("- Environment: %s", os.Getenv("ENV"))
 	logger.Info("- Database URL: %s", os.Getenv("DATABASE_URL"))
 	if os.Getenv("ENV") == "production" {
-		logger.Info("- Caddy Socket: %s", caddy.CaddyPaths.Socket)
 		logger.Info("- Caddy Config: %s", caddy.CaddyPaths.Config)
 	}
 

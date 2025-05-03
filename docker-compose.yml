@@ -82,7 +82,7 @@ services:
 
 networks:
   giraffecloud_network:
-    name: giraffecloud_net
+    name: giraffecloud_network
     ipam:
       config:
         - subnet: 172.20.0.0/16
