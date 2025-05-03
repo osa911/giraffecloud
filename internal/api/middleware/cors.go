@@ -16,9 +16,8 @@ func CORS() gin.HandlerFunc {
 		// Get allowed origins from environment variable
 		allowedOrigins := os.Getenv("ALLOWED_ORIGINS")
 
-		// Get the request origin and Vercel ID
+		// Get the request origin
 		origin := c.Request.Header.Get("Origin")
-		vercelID := c.Request.Header.Get("X-Vercel-Id")
 
 		// Check if we're in development mode
 		if os.Getenv("ENV") == "development" || os.Getenv("ENV") == "" {
@@ -34,15 +33,10 @@ func CORS() gin.HandlerFunc {
 			if allowedOrigins != "" {
 				// Handle wildcard case
 				if strings.TrimSpace(allowedOrigins) == "*" {
-					// If it's a Vercel request without Origin, allow it
-					if vercelID != "" && origin == "" {
-						c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
-					} else if origin != "" {
+					if origin != "" {
 						c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
 					} else {
-						c.Status(http.StatusForbidden)
-						c.Abort()
-						return
+						c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
 					}
 				} else {
 					// Handle specific origins
@@ -56,8 +50,8 @@ func CORS() gin.HandlerFunc {
 						}
 					}
 
-					// If origin not in allowed list and not a Vercel request
-					if !originAllowed && (vercelID == "" || origin != "") {
+					// If origin not in allowed list
+					if !originAllowed {
 						c.Status(http.StatusForbidden)
 						c.Abort()
 						return

@@ -96,9 +96,6 @@
                                 "Referer": ["{http.request.header.Referer}"],
                                 "Authorization": [
                                   "{http.request.header.Authorization}"
-                                ],
-                                "X-Vercel-Id": [
-                                  "{http.request.header.X-Vercel-Id}"
                                 ]
                               }
                             }
