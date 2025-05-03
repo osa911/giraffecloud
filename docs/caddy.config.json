@@ -48,10 +48,11 @@
                         "GET, POST, PUT, DELETE, OPTIONS"
                       ],
                       "Access-Control-Allow-Headers": [
-                        "Content-Type, Authorization, X-Requested-With, X-CSRF-Token, Origin"
+                        "Content-Type, Authorization, X-Requested-With, X-CSRF-Token, Origin, X-Vercel-Id"
                       ],
                       "Access-Control-Allow-Credentials": ["true"],
-                      "Access-Control-Max-Age": ["3600"]
+                      "Access-Control-Max-Age": ["3600"],
+                      "Access-Control-Expose-Headers": ["*"]
                     },
                     "delete": ["Server"]
                   }
@@ -89,10 +90,13 @@
                                   "{http.request.remote.host}"
                                 ],
                                 "X-Forwarded-Proto": ["{http.request.scheme}"],
-                                "Origin": ["{http.request.header.Origin}"],
+                                "Origin": ["{default.origin}"],
                                 "Referer": ["{http.request.header.Referer}"],
                                 "Authorization": [
                                   "{http.request.header.Authorization}"
+                                ],
+                                "X-Vercel-Id": [
+                                  "{http.request.header.X-Vercel-Id}"
                                 ]
                               }
                             }
