@@ -75,7 +75,10 @@
                         "Host": ["{http.request.host}"],
                         "X-Real-IP": ["{http.request.remote.host}"],
                         "X-Forwarded-For": ["{http.request.remote.host}"],
-                        "X-Forwarded-Proto": ["{http.request.scheme}"]
+                        "X-Forwarded-Proto": ["{http.request.scheme}"],
+                        "Origin": ["{http.request.header.Origin}"],
+                        "Referer": ["{http.request.header.Referer}"],
+                        "Authorization": ["{http.request.header.Authorization}"]
                       }
                     }
                   }
