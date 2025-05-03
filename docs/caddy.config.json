@@ -16,6 +16,7 @@
   },
   "apps": {
     "http": {
+      "trusted_proxies": ["private_ranges"],
       "servers": {
         "srv0": {
           "listen": [":80", ":443"],
@@ -94,8 +95,7 @@
             "disable": false,
             "skip": [],
             "skip_certificates": [],
-            "disable_redirects": false,
-            "trusted_proxies": ["private_ranges"]
+            "disable_redirects": false
           },
           "logs": {
             "default_logger_name": "default"
