@@ -82,7 +82,8 @@
                                 "Referer": ["{http.request.header.Referer}"],
                                 "Authorization": [
                                   "{http.request.header.Authorization}"
-                                ]
+                                ],
+                                "Cookie": ["{http.request.header.Cookie}"]
                               }
                             }
                           }
