@@ -17,6 +17,8 @@ type CaddyService interface {
 	RemoveRoute(domain string) error
 	ValidateConnection() error
 	LoadConfig() error
+	ConfigureTunnelRoute(domain string, targetIP string, targetPort int) error
+	RemoveTunnelRoute(domain string) error
 }
 
 type caddyService struct {
@@ -157,4 +159,93 @@ func (s *caddyService) LoadConfig() error {
 
 	// Just validate the connection to Caddy
 	return s.ValidateConnection()
+}
+
+// ConfigureTunnelRoute adds or updates a tunnel route in Caddy
+func (s *caddyService) ConfigureTunnelRoute(domain string, targetIP string, targetPort int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Create route configuration for tunnel server
+	config := map[string]interface{}{
+		"@id": domain,
+		"handle": []map[string]interface{}{
+			{
+				"handler": "reverse_proxy",
+				"transport": map[string]interface{}{
+					"protocol": "http",
+					"tls":      map[string]interface{}{},
+				},
+				"upstreams": []map[string]interface{}{
+					{
+						"dial": fmt.Sprintf("%s:%d", targetIP, targetPort),
+					},
+				},
+			},
+		},
+		"match": []map[string]interface{}{
+			{
+				"host": []string{domain},
+			},
+		},
+		"terminal": true,
+	}
+
+	// Convert config to JSON
+	jsonConfig, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	// Send config to Caddy
+	req, err := http.NewRequest(http.MethodPut,
+		fmt.Sprintf("%s/%sapps/http/servers/tunnel/routes/%s", s.baseURL, caddy.DefaultAdminEndpoint, domain),
+		bytes.NewBuffer(jsonConfig))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed to configure tunnel route (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	s.logger.Info("Successfully configured tunnel route for domain: %s -> %s:%d", domain, targetIP, targetPort)
+	return nil
+}
+
+// RemoveTunnelRoute removes a tunnel route from Caddy configuration
+func (s *caddyService) RemoveTunnelRoute(domain string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Send DELETE request to Caddy
+	req, err := http.NewRequest(http.MethodDelete,
+		fmt.Sprintf("%s/%sapps/http/servers/tunnel/routes/%s", s.baseURL, caddy.DefaultAdminEndpoint, domain),
+		nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed to remove tunnel route (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	s.logger.Info("Successfully removed tunnel route for domain: %s", domain)
+	return nil
 }

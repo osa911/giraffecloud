@@ -3,14 +3,16 @@ package server
 import (
 	"giraffecloud/internal/db"
 	"giraffecloud/internal/repository"
+	"giraffecloud/internal/tunnel"
 
 	"github.com/gin-gonic/gin"
 )
 
 // Server represents the HTTP server
 type Server struct {
-	router *gin.Engine
-	db     *db.Database
+	router       *gin.Engine
+	db          *db.Database
+	tunnelServer *tunnel.TunnelServer
 }
 
 // Repositories holds all repository instances

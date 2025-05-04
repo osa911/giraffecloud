@@ -93,7 +93,45 @@
           "logs": {
             "default_logger_name": "default"
           }
+        },
+        "tunnel": {
+          "listen": [":4443"],
+          "routes": [
+            {
+              "match": [{ "host": ["tunnel.giraffecloud.xyz"] }],
+              "handle": [
+                {
+                  "handler": "reverse_proxy",
+                  "transport": {
+                    "protocol": "http",
+                    "tls": {}
+                  },
+                  "upstreams": [
+                    {
+                      "dial": "api:4443"
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "automatic_https": {
+            "disable": false
+          }
         }
+      }
+    },
+    "tls": {
+      "automation": {
+        "policies": [
+          {
+            "subjects": ["giraffecloud.xyz", "*.giraffecloud.xyz"],
+            "issuer": {
+              "module": "acme",
+              "ca": "https://acme-v02.api.letsencrypt.org/directory"
+            }
+          }
+        ]
       }
     }
   }

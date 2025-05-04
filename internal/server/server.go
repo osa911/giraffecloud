@@ -1,8 +1,13 @@
 package server
 
 import (
+	"context"
 	"fmt"
+	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"giraffecloud/internal/api/handlers"
 	"giraffecloud/internal/api/middleware"
@@ -12,9 +17,92 @@ import (
 	"giraffecloud/internal/repository"
 	"giraffecloud/internal/server/routes"
 	"giraffecloud/internal/service"
+	"giraffecloud/internal/tunnel"
 
 	"github.com/gin-gonic/gin"
 )
+
+// serverManager handles the lifecycle of HTTP and tunnel servers
+type serverManager struct {
+	httpServer   *http.Server
+	tunnelServer *tunnel.TunnelServer
+}
+
+// newServerManager creates a new server manager
+func newServerManager(router *gin.Engine, tunnelSrv *tunnel.TunnelServer, port string) *serverManager {
+	// Configure http.Server with environment-specific settings
+	httpServer := &http.Server{
+		Addr:    ":" + port,
+		Handler: router,
+	}
+
+	// Production settings
+	if os.Getenv("ENV") == "production" {
+		httpServer.ReadTimeout = 15 * time.Second
+		httpServer.WriteTimeout = 15 * time.Second
+		httpServer.IdleTimeout = 60 * time.Second
+		httpServer.ReadHeaderTimeout = 5 * time.Second
+		httpServer.MaxHeaderBytes = 1 << 20 // 1MB
+	} else {
+		// Development settings - more lenient timeouts for debugging
+		httpServer.ReadTimeout = 120 * time.Second    // Longer timeout for debugging
+		httpServer.WriteTimeout = 120 * time.Second   // Longer timeout for debugging
+		httpServer.IdleTimeout = 180 * time.Second    // Longer idle timeout
+		httpServer.ReadHeaderTimeout = 30 * time.Second
+		httpServer.MaxHeaderBytes = 1 << 20 // 1MB
+	}
+
+	return &serverManager{
+		httpServer:   httpServer,
+		tunnelServer: tunnelSrv,
+	}
+}
+
+// start starts both HTTP and tunnel servers
+func (sm *serverManager) start() error {
+	logger := logging.GetGlobalLogger()
+
+	// Start HTTP server
+	go func() {
+		logger.Info("Starting HTTP server on port %s", sm.httpServer.Addr)
+		if err := sm.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Error("HTTP server error: %v", err)
+		}
+	}()
+
+	// Wait for interrupt signal
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	return sm.shutdown()
+}
+
+// shutdown gracefully shuts down both servers
+func (sm *serverManager) shutdown() error {
+	logger := logging.GetGlobalLogger()
+
+	logger.Info("Shutting down servers...")
+
+	// Create shutdown context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Shutdown HTTP server
+	if err := sm.httpServer.Shutdown(ctx); err != nil {
+		logger.Error("HTTP server shutdown error: %v", err)
+	}
+
+	// Shutdown tunnel server
+	if sm.tunnelServer != nil {
+		if err := sm.tunnelServer.Stop(); err != nil {
+			logger.Error("Tunnel server shutdown error: %v", err)
+		}
+	}
+
+	logger.Info("Servers shutdown complete")
+	return nil
+}
 
 // NewServer creates a new server instance
 func NewServer(db *db.Database) (*Server, error) {
@@ -105,6 +193,19 @@ func (s *Server) Init() error {
 	tunnelService := service.NewTunnelService(repos.Tunnel, caddyService)
 	logger.Info("Tunnel service initialized")
 
+	// Initialize tunnel server
+	logger.Info("Initializing tunnel server...")
+	s.tunnelServer = tunnel.NewServer(tunnelService)
+	tunnelPort := os.Getenv("TUNNEL_PORT")
+	if tunnelPort == "" {
+		tunnelPort = "4443"
+	}
+	if err := s.tunnelServer.Start(":" + tunnelPort); err != nil {
+		logger.Error("Failed to start tunnel server: %v", err)
+		return fmt.Errorf("failed to start tunnel server: %w", err)
+	}
+	logger.Info("Tunnel server started on port %s", tunnelPort)
+
 	// Initialize handlers
 	logger.Info("Initializing handlers...")
 	handlers := &routes.Handlers{
@@ -165,16 +266,20 @@ func (s *Server) initializeRepositories() *Repositories {
 // Start starts the server
 func (s *Server) Start(cfg *Config) error {
 	logger := logging.GetGlobalLogger()
-	logger.Info("Starting server on port " + cfg.Port)
 
-	// Log important environment variables
+	// Log configuration
 	logger.Info("Server configuration:")
-	logger.Info("- Port: %s", cfg.Port)
+	logger.Info("- HTTP Port: %s", cfg.Port)
 	logger.Info("- Environment: %s", os.Getenv("ENV"))
 	logger.Info("- Database URL: %s", os.Getenv("DATABASE_URL"))
+	logger.Info("- Tunnel Port: %s", os.Getenv("TUNNEL_PORT"))
 	if os.Getenv("ENV") == "production" {
 		logger.Info("- Caddy Config: %s", caddy.CaddyPaths.Config)
 	}
 
-	return s.router.Run(":" + cfg.Port)
+	// Create server manager
+	manager := newServerManager(s.router, s.tunnelServer, cfg.Port)
+
+	// Start servers
+	return manager.start()
 }
