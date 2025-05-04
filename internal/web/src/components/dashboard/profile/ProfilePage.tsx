@@ -11,10 +11,10 @@ import {
   Avatar,
 } from "@mui/material";
 import { updateProfileAction } from "@/lib/actions/user.actions";
-import { UserResponse } from "@/lib/actions/user.types";
+import { User } from "@/lib/actions/user.types";
 
 interface ProfilePageProps {
-  initialUser: UserResponse;
+  initialUser: User;
 }
 
 export default function ProfilePage({ initialUser }: ProfilePageProps) {

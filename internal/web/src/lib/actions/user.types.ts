@@ -1,11 +1,15 @@
 // Response types
-export type UserResponse = {
+export type User = {
   id: number;
   email: string;
   name: string;
   role: string;
   createdAt: string;
   updatedAt: string;
+};
+
+export type UserResponse = {
+  user: User;
 };
 
 export type ListUsersResponse = {

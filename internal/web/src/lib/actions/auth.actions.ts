@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import serverApi from "@/services/apiClient/serverApiClient";
 import { User as FirebaseUser } from "firebase/auth";
-import { UserResponse } from "./user.types";
+import { UserResponse, User } from "./user.types";
 import {
   LoginRequest,
   RegisterRequest,
@@ -19,7 +19,7 @@ export const loginWithTokenAction = async (
   newState: LoginWithTokenFormState
 ): Promise<undefined> => {
   const token = newState.token;
-  let user: UserResponse | null = null;
+  let user: User | null = null;
   try {
     user = await login({ token });
   } catch (error) {
@@ -35,7 +35,7 @@ export async function registerWithEmailAction(
   prevState: undefined,
   newState: RegisterRequest
 ): Promise<undefined> {
-  let user: UserResponse | null = null;
+  let user: User | null = null;
   try {
     user = await register(newState);
   } catch (error) {
@@ -47,14 +47,14 @@ export async function registerWithEmailAction(
   }
 }
 
-export async function login(data: LoginRequest): Promise<UserResponse> {
-  const user = await serverApi().post<UserResponse>("/auth/login", data);
+export async function login(data: LoginRequest): Promise<User> {
+  const { user } = await serverApi().post<UserResponse>("/auth/login", data);
   await setUserDataCookie(user);
   return user;
 }
 
-export async function register(data: RegisterRequest): Promise<UserResponse> {
-  const user = await serverApi().post<UserResponse>("/auth/register", data);
+export async function register(data: RegisterRequest): Promise<User> {
+  const { user } = await serverApi().post<UserResponse>("/auth/register", data);
   await setUserDataCookie(user);
   return user;
 }
@@ -65,17 +65,15 @@ export async function logout(): Promise<void> {
   redirect("/auth/login");
 }
 
-export async function getAuthUser(): Promise<UserResponse>;
-export async function getAuthUser(options: {
-  redirect: true;
-}): Promise<UserResponse>;
+export async function getAuthUser(): Promise<User>;
+export async function getAuthUser(options: { redirect: true }): Promise<User>;
 export async function getAuthUser(options: {
   redirect: false;
-}): Promise<UserResponse | null>;
+}): Promise<User | null>;
 export async function getAuthUser(
   options = { redirect: true }
-): Promise<UserResponse | null> {
-  let user: UserResponse | null = null;
+): Promise<User | null> {
+  let user: User | null = null;
 
   try {
     // Try cookie first
@@ -86,7 +84,7 @@ export async function getAuthUser(
     }
 
     // Fallback to API
-    const data = await serverApi().get<{ valid: boolean; user?: UserResponse }>(
+    const data = await serverApi().get<{ valid: boolean; user?: User }>(
       "/auth/session"
     );
     if (data.valid && data.user) {
@@ -110,7 +108,7 @@ export async function verifyToken(data: VerifyTokenRequest): Promise<void> {
 }
 
 // Helper functions
-async function setUserDataCookie(user: UserResponse | null): Promise<void> {
+async function setUserDataCookie(user: User | null): Promise<void> {
   const cookieStore = await cookies();
   if (!user) {
     cookieStore.delete(USER_DATA_COOKIE_NAME);
@@ -126,7 +124,7 @@ async function setUserDataCookie(user: UserResponse | null): Promise<void> {
   });
 }
 
-export async function getUserDataFromCookie(): Promise<UserResponse | null> {
+export async function getUserDataFromCookie(): Promise<User | null> {
   try {
     const cookieStore = await cookies();
     const userDataCookie = cookieStore.get(USER_DATA_COOKIE_NAME);

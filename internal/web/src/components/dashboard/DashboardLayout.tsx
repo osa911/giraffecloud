@@ -26,7 +26,7 @@ import {
 } from "@mui/icons-material";
 import { useAuth } from "@/contexts/AuthProvider";
 import Link from "@/components/common/Link";
-import { UserResponse } from "@/lib/actions/user.types";
+import { User } from "@/lib/actions/user.types";
 // import Image from "next/image";
 const drawerWidth = 240;
 
@@ -38,7 +38,7 @@ const menuItems = [
 
 interface DashboardLayoutClientProps {
   children: React.ReactNode;
-  user: UserResponse;
+  user: User;
 }
 
 export default function DashboardLayoutClient({
