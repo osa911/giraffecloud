@@ -91,8 +91,8 @@ func getCookieDomain() string {
 	clientURL := os.Getenv("CLIENT_URL")
 
 	var logger = logging.GetGlobalLogger()
-	logger.Info("getCookieDomain_env", env)
-	logger.Info("getCookieDomain_clientURL", clientURL)
+	logger.Info("getCookieDomain_env: %s", env)
+	logger.Info("getCookieDomain_clientURL: %s", clientURL)
 
 	if env == "production" && clientURL != "" {
 		parsableURL := clientURL
@@ -101,37 +101,48 @@ func getCookieDomain() string {
 		}
 
 		parsedURL, err := url.Parse(parsableURL)
-		logger.Info("getCookieDomain_parsedURL", parsedURL)
-		logger.Info("getCookieDomain_err", err)
+		logger.Info("getCookieDomain_parsedURL: %v", parsedURL)
+		logger.Info("getCookieDomain_err: %v", err)
 		if err != nil {
 			return ""
 		}
 
 		host := parsedURL.Hostname()
-		logger.Info("getCookieDomain_host", host)
+		logger.Info("getCookieDomain_host: %s", host)
 
 		if host == "" {
 			return clientURL
 		}
 
-		logger.Info("getCookieDomain_host2", host)
+		logger.Info("getCookieDomain_host2: %s", host)
 		if host == "localhost" || host == "127.0.0.1" || isIPAddress(host) {
 			return ""
 		}
 
 		parts := strings.Split(host, ".")
-		logger.Info("getCookieDomain_parts", parts)
-		if len(parts) >= 2 {
-			domain := parts[len(parts)-2] + "." + parts[len(parts)-1]
-			logger.Info("getCookieDomain_domain", domain)
-			return "." + domain
-		} else if host != "" {
-			logger.Info("getCookieDomain_host3", host)
-			return host
+		logger.Info("getCookieDomain_parts: %v", parts)
+
+		// Don't set cookies for tunnel subdomains
+		if len(parts) >= 3 && parts[0] == "tunnel" {
+			logger.Warn("Attempted to set cookie for tunnel subdomain, ignoring")
+			return ""
 		}
+
+		// For main domain and api subdomain, use root domain with leading dot
+		if len(parts) >= 2 {
+			// Get the root domain (e.g., "giraffecloud.xyz")
+			domain := parts[len(parts)-2] + "." + parts[len(parts)-1]
+			logger.Info("getCookieDomain_domain: %s", domain)
+			// Add leading dot to allow sharing between main domain and api subdomain
+			return "." + domain
+		}
+
+		// Fallback to exact host if domain parsing fails
+		logger.Info("getCookieDomain_fallback: %s", host)
+		return host
 	}
 
-	return "" // Default empty string
+	return "" // Default empty string for development
 }
 
 func (h *AuthHandler) Login(c *gin.Context) {
