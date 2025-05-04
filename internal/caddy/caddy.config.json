@@ -46,51 +46,31 @@
                   }
                 },
                 {
-                  "handler": "subroute",
-                  "routes": [
+                  "handler": "reverse_proxy",
+                  "transport": {
+                    "protocol": "http"
+                  },
+                  "upstreams": [
                     {
-                      "match": [{ "method": ["OPTIONS"] }],
-                      "handle": [
-                        {
-                          "handler": "static_response",
-                          "status_code": 204
-                        }
-                      ]
-                    },
-                    {
-                      "handle": [
-                        {
-                          "handler": "reverse_proxy",
-                          "transport": {
-                            "protocol": "http"
-                          },
-                          "upstreams": [
-                            {
-                              "dial": "api:8080"
-                            }
-                          ],
-                          "headers": {
-                            "request": {
-                              "add": {
-                                "Host": ["{http.request.host}"],
-                                "X-Real-IP": ["{http.request.remote.host}"],
-                                "X-Forwarded-For": [
-                                  "{http.request.remote.host}"
-                                ],
-                                "X-Forwarded-Proto": ["{http.request.scheme}"],
-                                "Origin": ["{http.request.header.Origin}"],
-                                "Referer": ["{http.request.header.Referer}"],
-                                "Authorization": [
-                                  "{http.request.header.Authorization}"
-                                ],
-                                "Cookie": ["{http.request.header.Cookie}"]
-                              }
-                            }
-                          }
-                        }
-                      ]
+                      "dial": "api:8080"
                     }
-                  ]
+                  ],
+                  "headers": {
+                    "request": {
+                      "add": {
+                        "Host": ["{http.request.host}"],
+                        "X-Real-IP": ["{http.request.remote.host}"],
+                        "X-Forwarded-For": ["{http.request.remote.host}"],
+                        "X-Forwarded-Proto": ["{http.request.scheme}"],
+                        "Origin": ["{http.request.header.Origin}"],
+                        "Referer": ["{http.request.header.Referer}"],
+                        "Authorization": [
+                          "{http.request.header.Authorization}"
+                        ],
+                        "Cookie": ["{http.request.header.Cookie}"]
+                      }
+                    }
+                  }
                 }
               ]
             },
