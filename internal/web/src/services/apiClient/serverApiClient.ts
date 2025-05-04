@@ -44,6 +44,9 @@ serverAxios.interceptors.response.use(async (response) => {
           case "path":
             cookieOptions.path = val;
             break;
+          case "domain":
+            cookieOptions.domain = val;
+            break;
           case "max-age":
             cookieOptions.maxAge = parseInt(val as string);
             break;
