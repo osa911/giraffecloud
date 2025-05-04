@@ -14,6 +14,9 @@ internal/web/.env.local
 # Database backups
 internal/db/backups/**/*.dump
 
+# Caddy config
+internal/caddy/caddy
+
 # Binaries
 bin/
 *.exe

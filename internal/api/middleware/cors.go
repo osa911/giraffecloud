@@ -72,25 +72,16 @@ func CORS() gin.HandlerFunc {
 		// Set common headers first
 		setCORSHeaders(c)
 
-		// Handle preflight requests first
-		if c.Request.Method == http.MethodOptions {
-			if origin != "" && isAllowedOrigin(origin) {
-				c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
-			} else if strings.Contains(origin, "tunnel.") {
-				logger.Warn("Blocked preflight from tunnel subdomain: %s", origin)
-			} else {
-				logger.Warn("Blocked preflight from unauthorized domain: %s", origin)
-			}
-			c.AbortWithStatus(http.StatusNoContent) // Always return 204 for OPTIONS
-			return
-		}
-
 		// Check if we're in development mode
 		if os.Getenv("ENV") == "development" || os.Getenv("ENV") == "" {
 			if origin != "" {
 				c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
 			} else {
 				c.Writer.Header().Set("Access-Control-Allow-Origin", "http://localhost:3000")
+			}
+			if c.Request.Method == http.MethodOptions {
+				c.AbortWithStatus(http.StatusNoContent)
+				return
 			}
 			c.Next()
 			return
@@ -106,6 +97,10 @@ func CORS() gin.HandlerFunc {
 		// Check if origin is allowed
 		if isAllowedOrigin(origin) {
 			c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+			if c.Request.Method == http.MethodOptions {
+				c.AbortWithStatus(http.StatusNoContent)
+				return
+			}
 			c.Next()
 			return
 		}
