@@ -86,19 +86,7 @@
                                 "Cookie": ["{http.request.header.Cookie}"]
                               }
                             }
-                          },
-                          "handle_response": [
-                            {
-                              "match": [
-                                { "status_code": [401, 403, 404, 500] }
-                              ],
-                              "handler": "static_response",
-                              "headers": {
-                                "Content-Type": ["application/json"]
-                              },
-                              "body": "{upstream.response.body}"
-                            }
-                          ]
+                          }
                         }
                       ]
                     }
