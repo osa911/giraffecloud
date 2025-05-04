@@ -39,13 +39,13 @@ func NewServer(db *db.Database) (*Server, error) {
 
 	// Configure trusted proxies
 	logger.Info("Configuring trusted proxies...")
-	// engine.SetTrustedProxies([]string{
-	// 	"127.0.0.1",      // localhost
-	// 	"::1",            // localhost IPv6
-	// 	"172.20.0.0/16",  // Docker network
-	// 	"192.168.0.0/16", // private network
-	// 	"10.0.0.0/8",     // private network
-	// })
+	engine.SetTrustedProxies([]string{
+		"127.0.0.1",      // localhost
+		"::1",            // localhost IPv6
+		"172.20.0.0/16",  // Docker network
+		"192.168.0.0/16", // private network
+		"10.0.0.0/8",     // private network
+	})
 	logger.Info("Trusted proxies configured")
 
 	return &Server{
