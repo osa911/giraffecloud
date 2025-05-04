@@ -19,7 +19,7 @@ import {
 } from "firebase/auth";
 import { auth as firebaseAuth } from "@/services/firebaseService";
 import { handleTokenChanged } from "@/lib/actions/auth.actions";
-import { UserResponse } from "@/lib/actions/user.types";
+import { User } from "@/lib/actions/user.types";
 import {
   logout,
   loginWithTokenAction,
@@ -31,7 +31,7 @@ import {
 } from "@/lib/actions/auth.types";
 
 type AuthContextType = {
-  user: UserResponse | null;
+  user: User | null;
   signUp: (email: string, password: string, name: string) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
@@ -50,11 +50,11 @@ export const useAuth = () => {
 
 type AuthProviderProps = {
   children: React.ReactNode;
-  initialUser: UserResponse | null;
+  initialUser: User | null;
 };
 
 export const AuthProvider = ({ children, initialUser }: AuthProviderProps) => {
-  const [user, setUser] = useState<UserResponse | null>(initialUser);
+  const [user, setUser] = useState<User | null>(initialUser);
   const [, startTransition] = useTransition();
   const [, loginWithToken] = useActionState<undefined, LoginWithTokenFormState>(
     loginWithTokenAction,
