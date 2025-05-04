@@ -128,12 +128,18 @@ func getCookieDomain() string {
 			return ""
 		}
 
-		// For main domain and api subdomain, use root domain with leading dot
+		// Always use root domain with leading dot, regardless of www or other subdomains
 		if len(parts) >= 2 {
+			// Find the root domain by checking from the end
+			domainParts := parts
+			// If we have www subdomain, remove it
+			if len(parts) >= 3 && parts[0] == "www" {
+				domainParts = parts[1:]
+			}
 			// Get the root domain (e.g., "giraffecloud.xyz")
-			domain := parts[len(parts)-2] + "." + parts[len(parts)-1]
+			domain := domainParts[len(domainParts)-2] + "." + domainParts[len(domainParts)-1]
 			logger.Info("getCookieDomain_domain: %s", domain)
-			// Add leading dot to allow sharing between main domain and api subdomain
+			// Add leading dot to allow sharing between all subdomains
 			return "." + domain
 		}
 
@@ -180,7 +186,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	// Set the Firebase session cookie
-	c.SetSameSite(http.SameSiteStrictMode)
+	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie(
 		constants.CookieSession,
 		sessionCookie,
@@ -285,7 +291,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	cookieDomain := getCookieDomain()
 
 	// Set the session cookie (client-side)
-	c.SetSameSite(http.SameSiteStrictMode)
+	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie(
 		constants.CookieAuthToken,
 		session.Token,
@@ -305,7 +311,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			csrfToken = decodedToken
 		}
 
-		c.SetSameSite(http.SameSiteStrictMode)
+		c.SetSameSite(http.SameSiteLaxMode)
 		c.SetCookie(
 			constants.CookieCSRF,
 			csrfToken,
@@ -419,7 +425,7 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	}
 
 	// Clear the session cookies
-	c.SetSameSite(http.SameSiteStrictMode)
+	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie(constants.CookieSession, "", -1, constants.CookiePathRoot, getCookieDomain(), true, true)
 	c.SetCookie(constants.CookieAuthToken, "", -1, constants.CookiePathRoot, getCookieDomain(), true, true)
 	c.SetCookie(constants.CookieCSRF, "", -1, constants.CookiePathRoot, getCookieDomain(), true, false)
@@ -471,7 +477,7 @@ func (h *AuthHandler) GetSession(c *gin.Context) {
 			}
 
 			// Refresh the cookie with reset expiration
-			c.SetSameSite(http.SameSiteStrictMode)
+			c.SetSameSite(http.SameSiteLaxMode)
 			c.SetCookie(
 				constants.CookieAuthToken,
 				authToken,
@@ -536,7 +542,7 @@ func (h *AuthHandler) RefreshSession(c *gin.Context) {
 				}
 
 				// Refresh the auth_token cookie
-				c.SetSameSite(http.SameSiteStrictMode)
+				c.SetSameSite(http.SameSiteLaxMode)
 				c.SetCookie(
 					constants.CookieAuthToken,
 					authToken,
@@ -607,7 +613,7 @@ func (h *AuthHandler) VerifyToken(c *gin.Context) {
 	}
 
 	// Set the new session cookie
-	c.SetSameSite(http.SameSiteStrictMode)
+	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie(
 		constants.CookieSession,
 		sessionCookie,

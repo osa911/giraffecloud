@@ -16,6 +16,7 @@ import (
 func setCORSHeaders(c *gin.Context) {
 	c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, "+constants.HeaderCSRF+", "+constants.HeaderAuthorization+", accept, origin, Cache-Control, X-Requested-With")
 	c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, PATCH, DELETE")
+	c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 	c.Writer.Header().Set("Access-Control-Expose-Headers", "Content-Length, Access-Control-Allow-Origin, Access-Control-Allow-Headers, Content-Type")
 	c.Writer.Header().Set("Access-Control-Max-Age", "86400") // 24 hours
 }
@@ -75,7 +76,6 @@ func CORS() gin.HandlerFunc {
 		if c.Request.Method == http.MethodOptions {
 			if origin != "" && isAllowedOrigin(origin) {
 				c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
-				c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 			} else if strings.Contains(origin, "tunnel.") {
 				logger.Warn("Blocked preflight from tunnel subdomain: %s", origin)
 			} else {
@@ -89,10 +89,8 @@ func CORS() gin.HandlerFunc {
 		if os.Getenv("ENV") == "development" || os.Getenv("ENV") == "" {
 			if origin != "" {
 				c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
-				c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 			} else {
 				c.Writer.Header().Set("Access-Control-Allow-Origin", "http://localhost:3000")
-				c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 			}
 			c.Next()
 			return
@@ -108,7 +106,6 @@ func CORS() gin.HandlerFunc {
 		// Check if origin is allowed
 		if isAllowedOrigin(origin) {
 			c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
-			c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 			c.Next()
 			return
 		}
