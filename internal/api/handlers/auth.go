@@ -58,6 +58,8 @@ func generateSecureToken(length int) (string, error) {
 
 // CheckIfIP checks if a string is an IP address
 func isIPAddress(host string) bool {
+	var logger = logging.GetGlobalLogger()
+	logger.Info("isIPAddress_host", host)
 	// Simple check for IPv4 - looks for 4 segments of numbers separated by dots
 	ipv4Parts := strings.Split(host, ".")
 	if len(ipv4Parts) == 4 {
@@ -88,6 +90,10 @@ func getCookieDomain() string {
 	env := os.Getenv("ENV")
 	clientURL := os.Getenv("CLIENT_URL")
 
+	var logger = logging.GetGlobalLogger()
+	logger.Info("getCookieDomain_env", env)
+	logger.Info("getCookieDomain_clientURL", clientURL)
+
 	if env == "production" && clientURL != "" {
 		parsableURL := clientURL
 		if !strings.HasPrefix(parsableURL, "http://") && !strings.HasPrefix(parsableURL, "https://") {
@@ -95,25 +101,32 @@ func getCookieDomain() string {
 		}
 
 		parsedURL, err := url.Parse(parsableURL)
+		logger.Info("getCookieDomain_parsedURL", parsedURL)
+		logger.Info("getCookieDomain_err", err)
 		if err != nil {
 			return ""
 		}
 
 		host := parsedURL.Hostname()
+		logger.Info("getCookieDomain_host", host)
 
 		if host == "" {
 			return clientURL
 		}
 
+		logger.Info("getCookieDomain_host2", host)
 		if host == "localhost" || host == "127.0.0.1" || isIPAddress(host) {
 			return ""
 		}
 
 		parts := strings.Split(host, ".")
+		logger.Info("getCookieDomain_parts", parts)
 		if len(parts) >= 2 {
 			domain := parts[len(parts)-2] + "." + parts[len(parts)-1]
+			logger.Info("getCookieDomain_domain", domain)
 			return "." + domain
 		} else if host != "" {
+			logger.Info("getCookieDomain_host3", host)
 			return host
 		}
 	}
