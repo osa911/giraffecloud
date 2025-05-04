@@ -14,7 +14,7 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./docs/caddy.config.json:/etc/caddy/caddy.json
+      - ./internal/caddy/caddy.config.json:/etc/caddy/caddy.json
       - caddy_data:/data
       - caddy_config:/config
     networks:
