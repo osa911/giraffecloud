@@ -81,6 +81,17 @@ var connectCmd = &cobra.Command{
 			logger.Info("Using custom CA certificate: %s", cfg.Security.CACert)
 		}
 
+		// Load client certificate if provided
+		if cfg.Security.ClientCert != "" && cfg.Security.ClientKey != "" {
+			cert, err := tls.LoadX509KeyPair(cfg.Security.ClientCert, cfg.Security.ClientKey)
+			if err != nil {
+				logger.Error("Failed to load client certificate: %v", err)
+				os.Exit(1)
+			}
+			tlsConfig.Certificates = []tls.Certificate{cert}
+			logger.Info("Using client certificate: %s", cfg.Security.ClientCert)
+		}
+
 		// Create and connect tunnel
 		t := tunnel.NewTunnel()
 		serverAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)

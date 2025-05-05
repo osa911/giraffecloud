@@ -32,6 +32,10 @@ type Config struct {
 		InsecureSkipVerify bool `json:"insecure_skip_verify"`
 		// CACert is the path to a CA certificate file to trust
 		CACert string `json:"ca_cert"`
+		// ClientCert is the path to the client certificate file
+		ClientCert string `json:"client_cert"`
+		// ClientKey is the path to the client private key file
+		ClientKey string `json:"client_key"`
 	} `json:"security"`
 
 	// Logging configuration
@@ -55,9 +59,13 @@ var DefaultConfig = Config{
 	Security: struct {
 		InsecureSkipVerify bool `json:"insecure_skip_verify"`
 		CACert string `json:"ca_cert"`
+		ClientCert string `json:"client_cert"`
+		ClientKey string `json:"client_key"`
 	}{
 		InsecureSkipVerify: false,
 		CACert: "",
+		ClientCert: "",
+		ClientKey: "",
 	},
 	Logging: logging.Config{
 		Level:      "info",
