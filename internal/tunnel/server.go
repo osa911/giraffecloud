@@ -2,6 +2,7 @@ package tunnel
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"giraffecloud/internal/db/ent"
@@ -31,6 +32,7 @@ type TunnelServer struct {
 	wg            sync.WaitGroup
 	mu            sync.RWMutex
 	connections   map[string]*Connection // token -> connection
+	tlsConfig     *tls.Config
 }
 
 // Connection represents an active tunnel connection
@@ -47,6 +49,20 @@ func NewServer(tunnelService service.TunnelService) *TunnelServer {
 		logger:        logging.GetGlobalLogger(),
 		stopChan:      make(chan struct{}),
 		connections:   make(map[string]*Connection),
+		tlsConfig:     &tls.Config{
+			MinVersion: tls.VersionTLS12,
+			GetCertificate: func(info *tls.ClientHelloInfo) (*tls.Certificate, error) {
+				// Get certificate from Caddy's storage
+				certPath := "/data/caddy/certificates/acme-v02.api.letsencrypt.org-directory/tunnel.giraffecloud.xyz/tunnel.giraffecloud.xyz.crt"
+				keyPath := "/data/caddy/certificates/acme-v02.api.letsencrypt.org-directory/tunnel.giraffecloud.xyz/tunnel.giraffecloud.xyz.key"
+
+				cert, err := tls.LoadX509KeyPair(certPath, keyPath)
+				if err != nil {
+					return nil, fmt.Errorf("failed to load certificate: %w", err)
+				}
+				return &cert, nil
+			},
+		},
 	}
 }
 
@@ -61,7 +77,8 @@ func (s *TunnelServer) Start(addr string) error {
 		return fmt.Errorf("failed to create listener: %w", err)
 	}
 
-	s.listener = tcpListener
+	// Wrap with TLS
+	s.listener = tls.NewListener(tcpListener, s.tlsConfig)
 
 	s.wg.Add(1)
 	go s.acceptConnections()

@@ -93,41 +93,6 @@
           "logs": {
             "default_logger_name": "default"
           }
-        },
-        "tunnel": {
-          "listen": [":4443"],
-          "routes": [
-            {
-              "match": [{ "host": ["tunnel.giraffecloud.xyz"] }],
-              "handle": [
-                {
-                  "handler": "reverse_proxy",
-                  "transport": {
-                    "protocol": "http",
-                    "tls": {}
-                  },
-                  "upstreams": [
-                    {
-                      "dial": "api:4443"
-                    }
-                  ]
-                }
-              ]
-            }
-          ],
-          "automatic_https": {
-            "disable": true
-          },
-          "tls_connection_policies": [
-            {
-              "match": {
-                "sni": ["tunnel.giraffecloud.xyz"]
-              },
-              "certificate_selection": {
-                "any_tag": ["tunnel.giraffecloud.xyz"]
-              }
-            }
-          ]
         }
       }
     },
@@ -144,9 +109,6 @@
             ]
           }
         ]
-      },
-      "certificates": {
-        "automate": ["tunnel.giraffecloud.xyz"]
       }
     }
   }
