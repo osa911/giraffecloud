@@ -43,7 +43,7 @@ type Config struct {
 var DefaultConfig = Config{
 	Server: Server{
 		Host: "tunnel.giraffecloud.xyz",
-		Port: 443,
+		Port: 4443,
 	},
 	Local: Server{
 		Host: "localhost",

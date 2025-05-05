@@ -103,8 +103,10 @@
                 {
                   "handler": "reverse_proxy",
                   "transport": {
-                    "protocol": "http",
-                    "tls": {}
+                    "protocol": "tcp",
+                    "tls": {
+                      "client_authentication": "request_client_cert"
+                    }
                   },
                   "upstreams": [
                     {
@@ -117,7 +119,8 @@
           ],
           "automatic_https": {
             "disable": false
-          }
+          },
+          "protocols": ["h2c", "h1", "h2"]
         }
       }
     },
