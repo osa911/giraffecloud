@@ -132,24 +132,28 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 	defer s.wg.Done()
 	defer conn.Close()
 
+	s.logger.Info("New tunnel connection from %s", conn.RemoteAddr().String())
+
 	// Read handshake message
 	msg, err := readHandshakeMessage(conn)
 	if err != nil {
-		s.logger.Error("Failed to read handshake message: %v", err)
+		s.logger.Error("Failed to read handshake message from %s: %v", conn.RemoteAddr().String(), err)
 		return
 	}
+	s.logger.Info("Received handshake message from %s", conn.RemoteAddr().String())
 
 	// Parse handshake request
 	var req handshakeRequest
 	if err := json.Unmarshal(msg.Payload, &req); err != nil {
-		s.logger.Error("Failed to unmarshal handshake request: %v", err)
+		s.logger.Error("Failed to unmarshal handshake request from %s: %v", conn.RemoteAddr().String(), err)
 		return
 	}
+	s.logger.Info("Parsed handshake request from %s", conn.RemoteAddr().String())
 
 	// Validate token and get tunnel config
 	tunnel, err := s.tunnelService.GetByToken(context.Background(), req.Token)
 	if err != nil {
-		s.logger.Error("Failed to get tunnel by token: %v", err)
+		s.logger.Error("Failed to get tunnel by token from %s: %v", conn.RemoteAddr().String(), err)
 		resp := handshakeResponse{
 			Status:  "error",
 			Message: "Invalid token",
@@ -157,17 +161,19 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 		s.sendHandshakeResponse(conn, resp)
 		return
 	}
+	s.logger.Info("Validated token for tunnel ID %d from %s", tunnel.ID, conn.RemoteAddr().String())
 
 	// Set up cleanup handler
 	defer func() {
 		// Ensure we clean up if the connection handler exits for any reason
 		s.mu.Lock()
 		if conn, exists := s.connections[req.Token]; exists {
+			s.logger.Info("Cleaning up connection for tunnel ID %d from %s", tunnel.ID, conn.conn.RemoteAddr().String())
 			close(conn.stopChan)
 			delete(s.connections, req.Token)
 			// Clear client IP and remove Caddy route
 			if err := s.tunnelService.UpdateClientIP(context.Background(), uint32(tunnel.ID), ""); err != nil {
-				s.logger.Error("Failed to clear client IP on disconnect: %v", err)
+				s.logger.Error("Failed to clear client IP on disconnect for tunnel ID %d: %v", tunnel.ID, err)
 			}
 		}
 		s.mu.Unlock()
@@ -176,14 +182,15 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 	// Update client IP and configure Caddy route
 	clientIP, _, err := net.SplitHostPort(conn.RemoteAddr().String())
 	if err != nil {
-		s.logger.Error("Failed to get client IP: %v", err)
+		s.logger.Error("Failed to get client IP from %s: %v", conn.RemoteAddr().String(), err)
 		return
 	}
 
 	if err := s.tunnelService.UpdateClientIP(context.Background(), uint32(tunnel.ID), clientIP); err != nil {
-		s.logger.Error("Failed to update client IP: %v", err)
+		s.logger.Error("Failed to update client IP for tunnel ID %d: %v", tunnel.ID, err)
 		return
 	}
+	s.logger.Info("Updated client IP to %s for tunnel ID %d", clientIP, tunnel.ID)
 
 	// Send success response
 	resp := handshakeResponse{
@@ -191,9 +198,10 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 		Message: "Connected successfully",
 	}
 	if err := s.sendHandshakeResponse(conn, resp); err != nil {
-		s.logger.Error("Failed to send handshake response: %v", err)
+		s.logger.Error("Failed to send handshake response to %s: %v", conn.RemoteAddr().String(), err)
 		return
 	}
+	s.logger.Info("Sent success response to %s for tunnel ID %d", conn.RemoteAddr().String(), tunnel.ID)
 
 	// Create connection object
 	connection := &Connection{
@@ -206,6 +214,7 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 	s.mu.Lock()
 	s.connections[req.Token] = connection
 	s.mu.Unlock()
+	s.logger.Info("Stored connection for tunnel ID %d from %s", tunnel.ID, conn.RemoteAddr().String())
 
 	// Start proxying
 	s.proxyConnection(connection)
@@ -230,12 +239,15 @@ func (s *TunnelServer) sendHandshakeResponse(conn net.Conn, resp handshakeRespon
 func (s *TunnelServer) proxyConnection(conn *Connection) {
 	// Create connection to target service
 	target := fmt.Sprintf("%s:%d", conn.tunnel.ClientIP, conn.tunnel.TargetPort)
+	s.logger.Info("Attempting to connect to target service at %s for tunnel ID %d", target, conn.tunnel.ID)
+
 	targetConn, err := net.Dial("tcp", target)
 	if err != nil {
-		s.logger.Error("Failed to connect to target service: %v", err)
+		s.logger.Error("Failed to connect to target service at %s for tunnel ID %d: %v", target, conn.tunnel.ID, err)
 		return
 	}
 	defer targetConn.Close()
+	s.logger.Info("Connected to target service at %s for tunnel ID %d", target, conn.tunnel.ID)
 
 	// Start bidirectional copy
 	var wg sync.WaitGroup
@@ -245,18 +257,21 @@ func (s *TunnelServer) proxyConnection(conn *Connection) {
 	go func() {
 		defer wg.Done()
 		if _, err := io.Copy(targetConn, conn.conn); err != nil {
-			s.logger.Error("Error copying from client to target: %v", err)
+			s.logger.Error("Error copying from client to target for tunnel ID %d: %v", conn.tunnel.ID, err)
 		}
+		s.logger.Info("Client to target copy finished for tunnel ID %d", conn.tunnel.ID)
 	}()
 
 	// Copy from target to client
 	go func() {
 		defer wg.Done()
 		if _, err := io.Copy(conn.conn, targetConn); err != nil {
-			s.logger.Error("Error copying from target to client: %v", err)
+			s.logger.Error("Error copying from target to client for tunnel ID %d: %v", conn.tunnel.ID, err)
 		}
+		s.logger.Info("Target to client copy finished for tunnel ID %d", conn.tunnel.ID)
 	}()
 
 	// Wait for both copies to finish
 	wg.Wait()
+	s.logger.Info("Proxy connection closed for tunnel ID %d", conn.tunnel.ID)
 }
