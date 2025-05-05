@@ -42,7 +42,7 @@ type Config struct {
 // DefaultConfig provides default tunnel configuration
 var DefaultConfig = Config{
 	Server: Server{
-		Host: "api.giraffecloud.xyz",
+		Host: "tunnel.giraffecloud.xyz",
 		Port: 443,
 	},
 	Local: Server{

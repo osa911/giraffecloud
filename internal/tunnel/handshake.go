@@ -15,6 +15,9 @@ const (
 	handshakeMsgTypeResponse
 )
 
+// Maximum allowed message size (1MB)
+const maxMessageSize = 1024 * 1024
+
 // handshakeMessage represents a handshake protocol message
 type handshakeMessage struct {
 	Type    uint8  `json:"type"`
@@ -44,6 +47,13 @@ func writeHandshakeMessage(conn net.Conn, msg *handshakeMessage) error {
 	}
 	logger.Info("Handshake message marshaled, size: %d bytes", len(data))
 
+	// Validate message size
+	if len(data) > maxMessageSize {
+		err := fmt.Errorf("message too large: %d bytes (max: %d bytes)", len(data), maxMessageSize)
+		logger.Error("Invalid message size: %v", err)
+		return err
+	}
+
 	// Write message length
 	length := uint32(len(data))
 	if err := binary.Write(conn, binary.BigEndian, length); err != nil {
@@ -53,11 +63,17 @@ func writeHandshakeMessage(conn net.Conn, msg *handshakeMessage) error {
 	logger.Info("Wrote message length: %d bytes", length)
 
 	// Write message data
-	if _, err := conn.Write(data); err != nil {
-		logger.Error("Failed to write message data: %v", err)
+	n, err := conn.Write(data)
+	if err != nil {
+		logger.Error("Failed to write message data (wrote %d/%d bytes): %v", n, len(data), err)
 		return fmt.Errorf("failed to write message data: %w", err)
 	}
-	logger.Info("Successfully wrote handshake message")
+	if n != len(data) {
+		err := fmt.Errorf("incomplete write: wrote %d/%d bytes", n, len(data))
+		logger.Error("Failed to write complete message: %v", err)
+		return err
+	}
+	logger.Info("Successfully wrote handshake message (%d bytes)", n)
 
 	return nil
 }
@@ -79,13 +95,21 @@ func readHandshakeMessage(conn net.Conn) (*handshakeMessage, error) {
 	}
 	logger.Info("Read message length: %d bytes", length)
 
+	// Validate message size
+	if length > maxMessageSize {
+		err := fmt.Errorf("message too large: %d bytes (max: %d bytes)", length, maxMessageSize)
+		logger.Error("Invalid message size: %v", err)
+		return nil, err
+	}
+
 	// Read message data
 	data := make([]byte, length)
-	if _, err := io.ReadFull(conn, data); err != nil {
-		logger.Error("Failed to read message data: %v", err)
+	n, err := io.ReadFull(conn, data)
+	if err != nil {
+		logger.Error("Failed to read message data (read %d/%d bytes): %v", n, length, err)
 		return nil, fmt.Errorf("failed to read message data: %w", err)
 	}
-	logger.Info("Read message data successfully")
+	logger.Info("Read message data successfully (%d bytes)", n)
 
 	// Unmarshal message
 	var msg handshakeMessage
@@ -101,7 +125,7 @@ func readHandshakeMessage(conn net.Conn) (*handshakeMessage, error) {
 // Perform performs the initial handshake with the server
 func Perform(conn net.Conn, token string) (*handshakeResponse, error) {
 	logger := logging.GetGlobalLogger()
-	logger.Info("Starting handshake with server")
+	logger.Info("Starting handshake with server at %s", conn.RemoteAddr())
 
 	// Create handshake request
 	req := handshakeRequest{Token: token}
@@ -110,7 +134,7 @@ func Perform(conn net.Conn, token string) (*handshakeResponse, error) {
 		logger.Error("Failed to marshal handshake request: %v", err)
 		return nil, fmt.Errorf("failed to marshal handshake request: %w", err)
 	}
-	logger.Info("Created handshake request")
+	logger.Info("Created handshake request (size: %d bytes)", len(reqData))
 
 	// Send handshake message
 	msg := &handshakeMessage{
