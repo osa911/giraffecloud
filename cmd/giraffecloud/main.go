@@ -53,11 +53,14 @@ var connectCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		// Get server host from flag if provided
-		host, _ := cmd.Flags().GetString("host")
-		if host != "" {
-			cfg.Server.Host = host
+		// Get tunnel host from flag if provided
+		tunnelHost, _ := cmd.Flags().GetString("tunnel-host")
+		if tunnelHost != "" {
+			cfg.TunnelHost = tunnelHost
 		}
+
+		// Use TunnelHost for connection
+		cfg.Server.Host = cfg.TunnelHost
 
 		// Create TLS config
 		tlsConfig := &tls.Config{
@@ -193,18 +196,20 @@ Example:
 			return err
 		}
 
-		// Load existing config or use defaults
 		cfg, err := tunnel.LoadConfig()
 		if err != nil {
 			logger.Error("Failed to load config: %v", err)
 			return err
 		}
 
-		// Get server host from flag if provided
-		host, _ := cmd.Flags().GetString("host")
-		if host != "" {
-			cfg.Server.Host = host
+		// Get API host from flag if provided
+		apiHost, _ := cmd.Flags().GetString("api-host")
+		if apiHost != "" {
+			cfg.APIHost = apiHost
 		}
+
+		// Use APIHost for certificate fetching
+		serverHost := cfg.APIHost
 
 		// Create certificates directory
 		homeDir, err := os.UserHomeDir()
@@ -220,7 +225,7 @@ Example:
 
 		// Fetch certificates from server
 		logger.Info("Fetching certificates from server...")
-		if err := tunnel.FetchCertificates(cfg.Server.Host, token, certsDir); err != nil {
+		if err := tunnel.FetchCertificates(serverHost, token, certsDir); err != nil {
 			logger.Error("Failed to fetch certificates: %v", err)
 			return err
 		}
@@ -238,7 +243,7 @@ Example:
 			return err
 		}
 
-		logger.Info("Successfully logged in to GiraffeCloud (server: %s)", cfg.Server.Host)
+		logger.Info("Successfully logged in to GiraffeCloud (server: %s)", serverHost)
 		logger.Info("Certificates stored in: %s", certsDir)
 		logger.Info("Run 'giraffecloud connect' to establish a tunnel connection")
 		return nil
@@ -259,10 +264,10 @@ func init() {
 	serviceCmd.AddCommand(uninstallCmd)
 
 	// Add host flag to connect command
-	connectCmd.Flags().String("host", "", "Server host to connect to (default: tunnel.giraffecloud.xyz)")
+	connectCmd.Flags().String("tunnel-host", "", "Tunnel host to connect to (default: tunnel.giraffecloud.xyz)")
 
 	// Add host flag to login command
-	loginCmd.Flags().String("host", "", "Server host to connect to (default: api.giraffecloud.xyz)")
+	loginCmd.Flags().String("api-host", "", "API host for login/certificates (default: api.giraffecloud.xyz)")
 	loginCmd.Flags().String("token", "", "API token for authentication")
 	loginCmd.MarkFlagRequired("token")
 

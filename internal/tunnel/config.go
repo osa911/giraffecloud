@@ -16,6 +16,8 @@ type Server struct {
 
 // Config holds tunnel-specific configuration
 type Config struct {
+	APIHost    string `json:"api_host"`    // Host for API operations (login, certs)
+	TunnelHost string `json:"tunnel_host"` // Host for tunnel connection
 	// Server configuration
 	Server Server `json:"server"` // Remote server configuration
 
@@ -47,6 +49,8 @@ type Config struct {
 
 // DefaultConfig provides default tunnel configuration
 var DefaultConfig = Config{
+	APIHost:    "api.giraffecloud.xyz",
+	TunnelHost: "tunnel.giraffecloud.xyz",
 	Server: Server{
 		Host: "tunnel.giraffecloud.xyz",
 		Port: 4443,
@@ -160,6 +164,15 @@ func (c *Config) Validate() error {
 	if c.Token == "" {
 		logger.Error("Token is required")
 		return fmt.Errorf("token is required")
+	}
+
+	if c.APIHost == "" {
+		logger.Error("API host is required")
+		return fmt.Errorf("api_host is required")
+	}
+	if c.TunnelHost == "" {
+		logger.Error("Tunnel host is required")
+		return fmt.Errorf("tunnel_host is required")
 	}
 
 	if c.Server.Host == "" {
