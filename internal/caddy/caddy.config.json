@@ -126,10 +126,12 @@
         "policies": [
           {
             "subjects": ["giraffecloud.xyz", "*.giraffecloud.xyz"],
-            "issuer": {
-              "module": "acme",
-              "ca": "https://acme-v02.api.letsencrypt.org/directory"
-            }
+            "issuers": [
+              {
+                "module": "acme",
+                "ca": "https://acme-v02.api.letsencrypt.org/directory"
+              }
+            ]
           }
         ]
       }
