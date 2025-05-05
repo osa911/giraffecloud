@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"giraffecloud/internal/api/constants"
 	"giraffecloud/internal/api/dto/common"
 	"giraffecloud/internal/service"
 	"giraffecloud/internal/utils"
@@ -33,7 +34,7 @@ func (h *TunnelHandler) CreateTunnel(c *gin.Context) {
 		return
 	}
 
-	userID := c.MustGet("user_id").(uint32)
+	userID := c.MustGet(constants.ContextKeyUserID).(uint32)
 	tunnel, err := h.tunnelService.CreateTunnel(c.Request.Context(), userID, req.Domain, req.TargetPort)
 	if err != nil {
 		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to create tunnel")
@@ -45,7 +46,7 @@ func (h *TunnelHandler) CreateTunnel(c *gin.Context) {
 
 // ListTunnels lists all tunnels for the authenticated user
 func (h *TunnelHandler) ListTunnels(c *gin.Context) {
-	userID := c.MustGet("user_id").(uint32)
+	userID := c.MustGet(constants.ContextKeyUserID).(uint32)
 	tunnels, err := h.tunnelService.ListTunnels(c.Request.Context(), userID)
 	if err != nil {
 		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to list tunnels")
@@ -57,7 +58,7 @@ func (h *TunnelHandler) ListTunnels(c *gin.Context) {
 
 // GetTunnel gets a specific tunnel by ID
 func (h *TunnelHandler) GetTunnel(c *gin.Context) {
-	userID := c.MustGet("user_id").(uint32)
+	userID := c.MustGet(constants.ContextKeyUserID).(uint32)
 	tunnelID, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
 		utils.HandleAPIError(c, err, common.ErrCodeValidation, "Invalid tunnel ID")
@@ -75,7 +76,7 @@ func (h *TunnelHandler) GetTunnel(c *gin.Context) {
 
 // DeleteTunnel deletes a tunnel
 func (h *TunnelHandler) DeleteTunnel(c *gin.Context) {
-	userID := c.MustGet("user_id").(uint32)
+	userID := c.MustGet(constants.ContextKeyUserID).(uint32)
 	tunnelID, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
 		utils.HandleAPIError(c, err, common.ErrCodeValidation, "Invalid tunnel ID")
@@ -103,7 +104,7 @@ func (h *TunnelHandler) UpdateTunnel(c *gin.Context) {
 		return
 	}
 
-	userID := c.MustGet("user_id").(uint32)
+	userID := c.MustGet(constants.ContextKeyUserID).(uint32)
 	tunnelID, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
 		utils.HandleAPIError(c, err, common.ErrCodeValidation, "Invalid tunnel ID")

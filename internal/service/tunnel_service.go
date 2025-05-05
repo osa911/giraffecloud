@@ -22,14 +22,14 @@ type TunnelService interface {
 }
 
 type tunnelService struct {
-	repo        repository.TunnelRepository
+	repo         repository.TunnelRepository
 	caddyService CaddyService
 }
 
 // NewTunnelService creates a new tunnel service instance
 func NewTunnelService(repo repository.TunnelRepository, caddyService CaddyService) TunnelService {
 	return &tunnelService{
-		repo:        repo,
+		repo:         repo,
 		caddyService: caddyService,
 	}
 }
@@ -58,19 +58,10 @@ func (s *tunnelService) CreateTunnel(ctx context.Context, userID uint32, domain 
 		UserID:     userID,
 	}
 
-	// Create tunnel in database
+	// Create tunnel in database only
 	tunnel, err = s.repo.Create(ctx, tunnel)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create tunnel: %w", err)
-	}
-
-	// If tunnel has a client IP, configure Caddy route
-	if tunnel.ClientIP != "" && s.caddyService != nil {
-		if err := s.caddyService.ConfigureRoute(tunnel.Domain, tunnel.ClientIP, tunnel.TargetPort); err != nil {
-			// Log error but don't fail the tunnel creation
-			// The route will be configured when the client connects
-			fmt.Printf("Warning: Failed to configure Caddy route: %v\n", err)
-		}
 	}
 
 	return tunnel, nil
@@ -119,16 +110,18 @@ func (s *tunnelService) UpdateTunnel(ctx context.Context, userID uint32, tunnelI
 		return nil, fmt.Errorf("failed to update tunnel: %w", err)
 	}
 
-	// Handle Caddy configuration updates
-	if tunnel.IsActive && tunnel.ClientIP != "" && s.caddyService != nil {
-		// Configure new route
-		if err := s.caddyService.ConfigureRoute(tunnel.Domain, tunnel.ClientIP, tunnel.TargetPort); err != nil {
-			fmt.Printf("Warning: Failed to configure Caddy route: %v\n", err)
-		}
-	} else if !tunnel.IsActive && currentTunnel.IsActive && s.caddyService != nil {
-		// Remove route if tunnel was deactivated
-		if err := s.caddyService.RemoveRoute(tunnel.Domain); err != nil {
-			fmt.Printf("Warning: Failed to remove Caddy route: %v\n", err)
+	// Handle Caddy configuration updates if client is connected
+	if tunnel.ClientIP != "" && s.caddyService != nil {
+		if tunnel.IsActive {
+			// Configure/update route if tunnel is active
+			if err := s.caddyService.ConfigureRoute(tunnel.Domain, tunnel.ClientIP, tunnel.TargetPort); err != nil {
+				fmt.Printf("Warning: Failed to configure Caddy route: %v\n", err)
+			}
+		} else if currentTunnel.IsActive {
+			// Remove route if tunnel was deactivated
+			if err := s.caddyService.RemoveRoute(tunnel.Domain); err != nil {
+				fmt.Printf("Warning: Failed to remove Caddy route: %v\n", err)
+			}
 		}
 	}
 
@@ -140,7 +133,7 @@ func (s *tunnelService) GetByToken(ctx context.Context, token string) (*ent.Tunn
 	return s.repo.GetByToken(ctx, token)
 }
 
-// UpdateClientIP updates a tunnel's client IP
+// UpdateClientIP updates a tunnel's client IP and configures Caddy route
 func (s *tunnelService) UpdateClientIP(ctx context.Context, id uint32, clientIP string) error {
 	// Get current tunnel state
 	tunnel, err := s.repo.GetByID(ctx, id)
@@ -153,10 +146,18 @@ func (s *tunnelService) UpdateClientIP(ctx context.Context, id uint32, clientIP 
 		return fmt.Errorf("failed to update client IP: %w", err)
 	}
 
-	// Configure Caddy route if tunnel is active
-	if tunnel.IsActive && s.caddyService != nil {
-		if err := s.caddyService.ConfigureRoute(tunnel.Domain, clientIP, tunnel.TargetPort); err != nil {
-			return fmt.Errorf("failed to configure Caddy route: %w", err)
+	// Configure or remove Caddy route based on client IP
+	if s.caddyService != nil {
+		if clientIP != "" && tunnel.IsActive {
+			// Configure route when client connects
+			if err := s.caddyService.ConfigureRoute(tunnel.Domain, clientIP, tunnel.TargetPort); err != nil {
+				return fmt.Errorf("failed to configure Caddy route: %w", err)
+			}
+		} else {
+			// Remove route when client disconnects
+			if err := s.caddyService.RemoveRoute(tunnel.Domain); err != nil {
+				return fmt.Errorf("failed to remove Caddy route: %w", err)
+			}
 		}
 	}
 

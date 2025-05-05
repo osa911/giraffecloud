@@ -158,7 +158,22 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 		return
 	}
 
-	// Update client IP
+	// Set up cleanup handler
+	defer func() {
+		// Ensure we clean up if the connection handler exits for any reason
+		s.mu.Lock()
+		if conn, exists := s.connections[req.Token]; exists {
+			close(conn.stopChan)
+			delete(s.connections, req.Token)
+			// Clear client IP and remove Caddy route
+			if err := s.tunnelService.UpdateClientIP(context.Background(), uint32(tunnel.ID), ""); err != nil {
+				s.logger.Error("Failed to clear client IP on disconnect: %v", err)
+			}
+		}
+		s.mu.Unlock()
+	}()
+
+	// Update client IP and configure Caddy route
 	clientIP, _, err := net.SplitHostPort(conn.RemoteAddr().String())
 	if err != nil {
 		s.logger.Error("Failed to get client IP: %v", err)
@@ -189,16 +204,11 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 
 	// Store connection
 	s.mu.Lock()
-	s.connections[tunnel.Token] = connection
+	s.connections[req.Token] = connection
 	s.mu.Unlock()
 
 	// Start proxying
 	s.proxyConnection(connection)
-
-	// Clean up
-	s.mu.Lock()
-	delete(s.connections, tunnel.Token)
-	s.mu.Unlock()
 }
 
 // sendHandshakeResponse sends a handshake response

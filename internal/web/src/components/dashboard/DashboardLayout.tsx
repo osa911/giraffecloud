@@ -10,6 +10,7 @@ import {
   IconButton,
   List,
   ListItem,
+  ListItemButton,
   ListItemIcon,
   ListItemText,
   Toolbar,
@@ -23,6 +24,7 @@ import {
   Dashboard as DashboardIcon,
   Person as ProfileIcon,
   Settings as SettingsIcon,
+  SwapHoriz as TunnelIcon,
 } from "@mui/icons-material";
 import { useAuth } from "@/contexts/AuthProvider";
 import Link from "@/components/common/Link";
@@ -32,6 +34,7 @@ const drawerWidth = 240;
 
 const menuItems = [
   { text: "Dashboard", icon: <DashboardIcon />, path: "/dashboard" },
+  { text: "Tunnels", icon: <TunnelIcon />, path: "/dashboard/tunnels" },
   { text: "Profile", icon: <ProfileIcon />, path: "/dashboard/profile" },
   { text: "Settings", icon: <SettingsIcon />, path: "/dashboard/settings" },
 ];
@@ -49,6 +52,7 @@ export default function DashboardLayoutClient({
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const { logout } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
@@ -75,10 +79,26 @@ export default function DashboardLayoutClient({
       </Toolbar>
       <List>
         {menuItems.map((item) => (
-          <Link key={item.text} href={item.path}>
-            <ListItem>
-              <ListItemIcon>{item.icon}</ListItemIcon>
-              <ListItemText primary={item.text} />
+          <Link
+            key={item.text}
+            href={item.path}
+            style={{ textDecoration: "none", color: "inherit" }}
+          >
+            <ListItem disablePadding>
+              <ListItemButton
+                selected={pathname === item.path}
+                sx={{
+                  "&.Mui-selected": {
+                    backgroundColor: "action.selected",
+                  },
+                  "&:hover": {
+                    backgroundColor: "action.hover",
+                  },
+                }}
+              >
+                <ListItemIcon>{item.icon}</ListItemIcon>
+                <ListItemText primary={item.text} />
+              </ListItemButton>
             </ListItem>
           </Link>
         ))}
