@@ -49,7 +49,7 @@ var DefaultConfig = Config{
 		Host: "localhost",
 		Port: 8080,
 	},
-	Protocol: "http",
+	Protocol: "https",
 	Security: struct {
 		InsecureSkipVerify bool `json:"insecure_skip_verify"`
 	}{
