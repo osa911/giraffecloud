@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"syscall"
 	"time"
@@ -196,6 +197,34 @@ func (s *Server) Init() error {
 	// Initialize tunnel server
 	logger.Info("Initializing tunnel server...")
 	s.tunnelServer = tunnel.NewServer(tunnelService)
+
+	// Configure TLS for tunnel server using Caddy's certificates
+	if os.Getenv("ENV") == "production" {
+		logger.Info("Configuring TLS for tunnel server using Caddy certificates...")
+		certFile := "/data/caddy/certificates/acme-v02.api.letsencrypt.org-directory/tunnel.giraffecloud.xyz/tunnel.giraffecloud.xyz.crt"
+		keyFile := "/data/caddy/certificates/acme-v02.api.letsencrypt.org-directory/tunnel.giraffecloud.xyz/tunnel.giraffecloud.xyz.key"
+
+		if err := s.tunnelServer.ConfigureTLS(certFile, keyFile); err != nil {
+			logger.Error("Failed to configure TLS for tunnel server: %v", err)
+			return fmt.Errorf("failed to configure TLS for tunnel server: %w", err)
+		}
+		logger.Info("TLS configured successfully for tunnel server")
+	} else {
+		// In development, generate a self-signed certificate
+		logger.Info("Generating self-signed certificate for development...")
+		certFile := "certs/tunnel-dev.crt"
+		keyFile := "certs/tunnel-dev.key"
+		if err := s.generateDevCertificate(certFile, keyFile); err != nil {
+			logger.Error("Failed to generate development certificate: %v", err)
+			return fmt.Errorf("failed to generate development certificate: %w", err)
+		}
+		if err := s.tunnelServer.ConfigureTLS(certFile, keyFile); err != nil {
+			logger.Error("Failed to configure TLS for tunnel server: %v", err)
+			return fmt.Errorf("failed to configure TLS for tunnel server: %w", err)
+		}
+		logger.Info("Development TLS configured successfully for tunnel server")
+	}
+
 	tunnelPort := os.Getenv("TUNNEL_PORT")
 	if tunnelPort == "" {
 		tunnelPort = "4443"
@@ -282,4 +311,34 @@ func (s *Server) Start(cfg *Config) error {
 
 	// Start servers
 	return manager.start()
+}
+
+// generateDevCertificate generates a self-signed certificate for development
+func (s *Server) generateDevCertificate(certFile, keyFile string) error {
+	logger := logging.GetGlobalLogger()
+
+	// Create certs directory if it doesn't exist
+	if err := os.MkdirAll("certs", 0755); err != nil {
+		return fmt.Errorf("failed to create certs directory: %w", err)
+	}
+
+	// Check if certificates already exist
+	if _, err := os.Stat(certFile); err == nil {
+		if _, err := os.Stat(keyFile); err == nil {
+			logger.Info("Development certificates already exist")
+			return nil
+		}
+	}
+
+	// Generate certificate using openssl
+	cmd := exec.Command("openssl", "req", "-x509", "-newkey", "rsa:4096", "-keyout", keyFile,
+		"-out", certFile, "-days", "365", "-nodes", "-subj",
+		"/C=US/ST=Development/L=Development/O=GiraffeCloud Dev/CN=tunnel.giraffecloud.xyz")
+
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to generate certificate: %w\nOutput: %s", err, output)
+	}
+
+	logger.Info("Generated development certificates successfully")
+	return nil
 }

@@ -2,6 +2,7 @@ package tunnel
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"giraffecloud/internal/db/ent"
@@ -31,6 +32,7 @@ type TunnelServer struct {
 	wg            sync.WaitGroup
 	mu            sync.RWMutex
 	connections   map[string]*Connection // token -> connection
+	tlsConfig     *tls.Config
 }
 
 // Connection represents an active tunnel connection
@@ -47,6 +49,9 @@ func NewServer(tunnelService service.TunnelService) *TunnelServer {
 		logger:        logging.GetGlobalLogger(),
 		stopChan:      make(chan struct{}),
 		connections:   make(map[string]*Connection),
+		tlsConfig:     &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		},
 	}
 }
 
@@ -55,12 +60,14 @@ func (s *TunnelServer) Start(addr string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Create TCP listener (TLS is handled by Caddy)
-	listener, err := net.Listen("tcp", addr)
+	// Create TCP listener
+	tcpListener, err := net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("failed to create listener: %w", err)
 	}
-	s.listener = listener
+
+	// Wrap with TLS
+	s.listener = tls.NewListener(tcpListener, s.tlsConfig)
 
 	s.wg.Add(1)
 	go s.acceptConnections()
@@ -287,4 +294,15 @@ func (s *TunnelServer) proxyConnection(conn *Connection) {
 	// Wait for both copies to finish
 	wg.Wait()
 	s.logger.Info("Proxy connection closed for tunnel ID %d", conn.tunnel.ID)
+}
+
+// ConfigureTLS configures the TLS settings for the tunnel server
+func (s *TunnelServer) ConfigureTLS(certFile, keyFile string) error {
+	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		return fmt.Errorf("failed to load TLS certificate: %w", err)
+	}
+
+	s.tlsConfig.Certificates = []tls.Certificate{cert}
+	return nil
 }
