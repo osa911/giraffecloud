@@ -52,11 +52,7 @@ func NewServer(tunnelService service.TunnelService) *TunnelServer {
 		tlsConfig:     &tls.Config{
 			MinVersion: tls.VersionTLS12,
 			GetCertificate: func(info *tls.ClientHelloInfo) (*tls.Certificate, error) {
-				// Get certificate from Caddy's storage
-				certPath := "/data/caddy/certificates/acme-v02.api.letsencrypt.org-directory/tunnel.giraffecloud.xyz/tunnel.giraffecloud.xyz.crt"
-				keyPath := "/data/caddy/certificates/acme-v02.api.letsencrypt.org-directory/tunnel.giraffecloud.xyz/tunnel.giraffecloud.xyz.key"
-
-				cert, err := tls.LoadX509KeyPair(certPath, keyPath)
+				cert, err := tls.LoadX509KeyPair("/app/certs/tunnel.crt", "/app/certs/tunnel.key")
 				if err != nil {
 					return nil, fmt.Errorf("failed to load certificate: %w", err)
 				}

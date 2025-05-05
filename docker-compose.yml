@@ -51,6 +51,7 @@ services:
       - ./logs:/app/logs
       - go_modules:/go/pkg/mod
       - go_cache:/go/cache
+      - ./certs:/app/certs
     environment:
       - GOPATH=/go
       - GOCACHE=/go/cache
@@ -97,4 +98,6 @@ volumes:
   go_cache:
     driver: local
   caddy_data:
+    driver: local
   caddy_config:
+    driver: local

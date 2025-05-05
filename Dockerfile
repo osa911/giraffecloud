@@ -2,7 +2,7 @@
 FROM golang:1.24-alpine
 
 # Install runtime dependencies
-RUN apk add --no-cache ca-certificates tzdata netcat-openbsd make bash curl
+RUN apk add --no-cache ca-certificates tzdata netcat-openbsd make bash curl openssl
 
 # Create non-root user and group
 RUN addgroup -S appgroup && \
@@ -34,12 +34,12 @@ COPY internal/config/firebase/service-account.json /app/internal/config/firebase
 # Make scripts executable
 RUN chmod +x /app/scripts/*.sh
 
-# Create logs directory and set permissions
+# Create necessary directories
 RUN mkdir -p /app/logs && \
     chown -R appuser:appgroup /app
 
 # Switch to non-root user
 USER appuser
 
-# Set the entrypoint
-ENTRYPOINT ["/app/scripts/docker-entrypoint.sh"]
+# Generate certificates on container start if they don't exist
+ENTRYPOINT ["/bin/sh", "-c", "[ -f /app/certs/tunnel.crt ] || /app/scripts/generate-tunnel-certs.sh && /app/scripts/docker-entrypoint.sh"]
