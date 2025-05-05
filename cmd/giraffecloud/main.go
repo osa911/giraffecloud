@@ -9,6 +9,7 @@ import (
 	"giraffecloud/internal/version"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -178,6 +179,7 @@ var loginCmd = &cobra.Command{
 	Short: "Login to GiraffeCloud using an API token",
 	Long: `Login to GiraffeCloud using an API token.
 The token will be stored securely in your config file (~/.giraffecloud/config).
+This command will also fetch your client certificates from the server.
 
 After successful login, use 'giraffecloud connect' to establish a tunnel connection.
 
@@ -198,14 +200,37 @@ Example:
 			return err
 		}
 
-		// Update token while preserving other settings
-		cfg.Token = token
-
 		// Get server host from flag if provided
 		host, _ := cmd.Flags().GetString("host")
 		if host != "" {
 			cfg.Server.Host = host
 		}
+
+		// Create certificates directory
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			logger.Error("Failed to get home directory: %v", err)
+			return err
+		}
+		certsDir := filepath.Join(homeDir, ".giraffecloud", "certs")
+		if err := os.MkdirAll(certsDir, 0700); err != nil {
+			logger.Error("Failed to create certificates directory: %v", err)
+			return err
+		}
+
+		// Fetch certificates from server
+		logger.Info("Fetching certificates from server...")
+		if err := tunnel.FetchCertificates(cfg.Server.Host, token, certsDir); err != nil {
+			logger.Error("Failed to fetch certificates: %v", err)
+			return err
+		}
+		logger.Info("Successfully downloaded certificates")
+
+		// Update config with certificate paths
+		cfg.Token = token
+		cfg.Security.CACert = filepath.Join(certsDir, "ca.crt")
+		cfg.Security.ClientCert = filepath.Join(certsDir, "client.crt")
+		cfg.Security.ClientKey = filepath.Join(certsDir, "client.key")
 
 		// Save the updated config
 		if err := tunnel.SaveConfig(cfg); err != nil {
@@ -214,6 +239,7 @@ Example:
 		}
 
 		logger.Info("Successfully logged in to GiraffeCloud (server: %s)", cfg.Server.Host)
+		logger.Info("Certificates stored in: %s", certsDir)
 		logger.Info("Run 'giraffecloud connect' to establish a tunnel connection")
 		return nil
 	},

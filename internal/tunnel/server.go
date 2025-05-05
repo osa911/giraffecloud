@@ -10,8 +10,8 @@ import (
 	"giraffecloud/internal/logging"
 	"giraffecloud/internal/service"
 	"io"
+	"io/ioutil"
 	"net"
-	"os"
 	"sync"
 	"time"
 )
@@ -44,6 +44,18 @@ type Connection struct {
 	stopChan chan struct{}
 }
 
+func loadClientCAs(caPath string) *x509.CertPool {
+	caCert, err := ioutil.ReadFile(caPath)
+	if err != nil {
+		panic(fmt.Sprintf("failed to read CA cert: %v", err))
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(caCert) {
+		panic("failed to append CA cert to pool")
+	}
+	return pool
+}
+
 // NewServer creates a new tunnel server instance
 func NewServer(tunnelService service.TunnelService) *TunnelServer {
 	return &TunnelServer{
@@ -51,7 +63,7 @@ func NewServer(tunnelService service.TunnelService) *TunnelServer {
 		logger:        logging.GetGlobalLogger(),
 		stopChan:      make(chan struct{}),
 		connections:   make(map[string]*Connection),
-		tlsConfig:     &tls.Config{
+		tlsConfig: &tls.Config{
 			MinVersion: tls.VersionTLS12,
 			GetCertificate: func(info *tls.ClientHelloInfo) (*tls.Certificate, error) {
 				cert, err := tls.LoadX509KeyPair("/app/certs/tunnel.crt", "/app/certs/tunnel.key")
@@ -61,13 +73,7 @@ func NewServer(tunnelService service.TunnelService) *TunnelServer {
 				return &cert, nil
 			},
 			ClientAuth: tls.RequireAndVerifyClientCert,
-			ClientCAs: func() *x509.CertPool {
-				pool := x509.NewCertPool()
-				if caCert, err := os.ReadFile("/app/certs/ca.crt"); err == nil {
-					pool.AppendCertsFromPEM(caCert)
-				}
-				return pool
-			}(),
+			ClientCAs:  loadClientCAs("/app/certs/ca.crt"),
 		},
 	}
 }

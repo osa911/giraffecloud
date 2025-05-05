@@ -1,0 +1,124 @@
+package handlers
+
+import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/json"
+	"encoding/pem"
+	"fmt"
+	"giraffecloud/internal/api/constants"
+	"giraffecloud/internal/api/dto/common"
+	"giraffecloud/internal/logging"
+	"giraffecloud/internal/utils"
+	"math/big"
+	"os"
+	"time"
+
+	"github.com/gin-gonic/gin"
+)
+
+// CertificateResponse is the response body for client certificate issuance
+// (matches what the CLI expects)
+type CertificateResponse struct {
+	CACert     string `json:"ca_cert"`
+	ClientCert string `json:"client_cert"`
+	ClientKey  string `json:"client_key"`
+}
+
+// IssueClientCertificate issues a new client certificate for the authenticated user
+type TunnelCertificateHandler struct{}
+
+func NewTunnelCertificateHandler() *TunnelCertificateHandler {
+	return &TunnelCertificateHandler{}
+}
+
+func (h *TunnelCertificateHandler) IssueClientCertificate(c *gin.Context) {
+	logger := logging.GetGlobalLogger()
+	userID := c.MustGet(constants.ContextKeyUserID).(uint32)
+
+	// Load CA cert and key
+	caCertPath := "/app/certs/ca.crt"
+	caKeyPath := "/app/certs/ca.key"
+	caCertPEM, err := os.ReadFile(caCertPath)
+	if err != nil {
+		logger.Error("Failed to read CA cert: %v", err)
+		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to read CA certificate")
+		return
+	}
+	caKeyPEM, err := os.ReadFile(caKeyPath)
+	if err != nil {
+		logger.Error("Failed to read CA key: %v", err)
+		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to read CA key")
+		return
+	}
+
+	// Parse CA cert and key
+	caBlock, _ := pem.Decode(caCertPEM)
+	if caBlock == nil {
+		utils.HandleAPIError(c, nil, common.ErrCodeInternalServer, "Invalid CA certificate PEM")
+		return
+	}
+	ca, err := x509.ParseCertificate(caBlock.Bytes)
+	if err != nil {
+		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to parse CA certificate")
+		return
+	}
+	keyBlock, _ := pem.Decode(caKeyPEM)
+	if keyBlock == nil {
+		utils.HandleAPIError(c, nil, common.ErrCodeInternalServer, "Invalid CA key PEM")
+		return
+	}
+	caKey, err := x509.ParsePKCS8PrivateKey(keyBlock.Bytes)
+	if err != nil {
+		caKey, err = x509.ParsePKCS1PrivateKey(keyBlock.Bytes)
+		if err != nil {
+			utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to parse CA private key")
+			return
+		}
+	}
+
+	// Generate client private key
+	clientKey, err := rsa.GenerateKey(rand.Reader, 4096)
+	if err != nil {
+		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to generate client key")
+		return
+	}
+
+	// Create client certificate template
+	now := time.Now()
+	serial, _ := rand.Int(rand.Reader, big.NewInt(1<<62))
+	clientTemplate := &x509.Certificate{
+		SerialNumber: serial,
+		Subject: pkix.Name{
+			Organization: []string{"GiraffeCloud"},
+			CommonName:   fmt.Sprintf("giraffecloud-client-%d", userID),
+		},
+		NotBefore:             now.Add(-5 * time.Minute),
+		NotAfter:              now.Add(365 * 24 * time.Hour),
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+		BasicConstraintsValid: true,
+	}
+
+	// Sign client certificate
+	clientCertDER, err := x509.CreateCertificate(rand.Reader, clientTemplate, ca, &clientKey.PublicKey, caKey)
+	if err != nil {
+		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to sign client certificate")
+		return
+	}
+
+	// Encode client cert and key as PEM
+	clientCertPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: clientCertDER})
+	clientKeyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(clientKey)})
+
+	// Respond with all certs as PEM strings
+	resp := CertificateResponse{
+		CACert:     string(caCertPEM),
+		ClientCert: string(clientCertPEM),
+		ClientKey:  string(clientKeyPEM),
+	}
+	c.Header("Content-Type", "application/json")
+	json.NewEncoder(c.Writer).Encode(resp)
+}

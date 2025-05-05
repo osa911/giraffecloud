@@ -14,6 +14,7 @@ type Handlers struct {
 	Session *handlers.SessionHandler
 	Token   *handlers.TokenHandler
 	Tunnel  *handlers.TunnelHandler
+	TunnelCertificate *handlers.TunnelCertificateHandler
 }
 
 // Middleware contains all the middleware
