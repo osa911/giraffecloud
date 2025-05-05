@@ -30,6 +30,8 @@ type Config struct {
 		// InsecureSkipVerify should only be used for development/testing
 		// When true, the client will not verify the server's certificate
 		InsecureSkipVerify bool `json:"insecure_skip_verify"`
+		// CACert is the path to a CA certificate file to trust
+		CACert string `json:"ca_cert"`
 	} `json:"security"`
 
 	// Logging configuration
@@ -52,8 +54,10 @@ var DefaultConfig = Config{
 	Protocol: "https",
 	Security: struct {
 		InsecureSkipVerify bool `json:"insecure_skip_verify"`
+		CACert string `json:"ca_cert"`
 	}{
 		InsecureSkipVerify: false,
+		CACert: "",
 	},
 	Logging: logging.Config{
 		Level:      "info",

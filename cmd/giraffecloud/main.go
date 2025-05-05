@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"giraffecloud/internal/logging"
 	"giraffecloud/internal/tunnel"
@@ -60,6 +61,24 @@ var connectCmd = &cobra.Command{
 		// Create TLS config
 		tlsConfig := &tls.Config{
 			InsecureSkipVerify: cfg.Security.InsecureSkipVerify,
+		}
+
+		// Load CA certificate if provided
+		if cfg.Security.CACert != "" {
+			caCert, err := os.ReadFile(cfg.Security.CACert)
+			if err != nil {
+				logger.Error("Failed to read CA certificate: %v", err)
+				os.Exit(1)
+			}
+
+			caCertPool := x509.NewCertPool()
+			if !caCertPool.AppendCertsFromPEM(caCert) {
+				logger.Error("Failed to parse CA certificate")
+				os.Exit(1)
+			}
+
+			tlsConfig.RootCAs = caCertPool
+			logger.Info("Using custom CA certificate: %s", cfg.Security.CACert)
 		}
 
 		// Create and connect tunnel
