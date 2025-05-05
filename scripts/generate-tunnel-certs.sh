@@ -37,7 +37,7 @@ EOF
 # Generate CA private key and certificate
 openssl req -x509 -newkey rsa:4096 -days 365 -nodes \
   -keyout /app/certs/ca.key -out /app/certs/ca.crt \
-  -subj "/C=US/ST=State/L=City/O=GiraffeCloud/CN=Tunnel CA" \
+  -subj "/C=US/ST=State/L=City/O=GiraffeCloud/CN=GiraffeCloud Tunnel CA" \
   -addext "basicConstraints=critical,CA:true" \
   -addext "keyUsage=critical,digitalSignature,keyEncipherment,keyCertSign"
 

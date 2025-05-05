@@ -3,6 +3,7 @@ package tunnel
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"giraffecloud/internal/db/ent"
@@ -10,6 +11,7 @@ import (
 	"giraffecloud/internal/service"
 	"io"
 	"net"
+	"os"
 	"sync"
 	"time"
 )
@@ -58,6 +60,14 @@ func NewServer(tunnelService service.TunnelService) *TunnelServer {
 				}
 				return &cert, nil
 			},
+			ClientAuth: tls.RequireAndVerifyClientCert,
+			ClientCAs: func() *x509.CertPool {
+				pool := x509.NewCertPool()
+				if caCert, err := os.ReadFile("/app/certs/ca.crt"); err == nil {
+					pool.AppendCertsFromPEM(caCert)
+				}
+				return pool
+			}(),
 		},
 	}
 }
