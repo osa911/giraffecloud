@@ -198,33 +198,6 @@ func (s *Server) Init() error {
 	logger.Info("Initializing tunnel server...")
 	s.tunnelServer = tunnel.NewServer(tunnelService)
 
-	// Configure TLS for tunnel server using Caddy's certificates
-	if os.Getenv("ENV") == "production" {
-		logger.Info("Configuring TLS for tunnel server using Caddy certificates...")
-		certFile := "/data/caddy/certificates/acme-v02.api.letsencrypt.org-directory/tunnel.giraffecloud.xyz/tunnel.giraffecloud.xyz.crt"
-		keyFile := "/data/caddy/certificates/acme-v02.api.letsencrypt.org-directory/tunnel.giraffecloud.xyz/tunnel.giraffecloud.xyz.key"
-
-		if err := s.tunnelServer.ConfigureTLS(certFile, keyFile); err != nil {
-			logger.Error("Failed to configure TLS for tunnel server: %v", err)
-			return fmt.Errorf("failed to configure TLS for tunnel server: %w", err)
-		}
-		logger.Info("TLS configured successfully for tunnel server")
-	} else {
-		// In development, generate a self-signed certificate
-		logger.Info("Generating self-signed certificate for development...")
-		certFile := "certs/tunnel-dev.crt"
-		keyFile := "certs/tunnel-dev.key"
-		if err := s.generateDevCertificate(certFile, keyFile); err != nil {
-			logger.Error("Failed to generate development certificate: %v", err)
-			return fmt.Errorf("failed to generate development certificate: %w", err)
-		}
-		if err := s.tunnelServer.ConfigureTLS(certFile, keyFile); err != nil {
-			logger.Error("Failed to configure TLS for tunnel server: %v", err)
-			return fmt.Errorf("failed to configure TLS for tunnel server: %w", err)
-		}
-		logger.Info("Development TLS configured successfully for tunnel server")
-	}
-
 	tunnelPort := os.Getenv("TUNNEL_PORT")
 	if tunnelPort == "" {
 		tunnelPort = "4443"
