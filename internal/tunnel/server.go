@@ -193,10 +193,21 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 	}
 	s.logger.Info("Parsed handshake request from %s", conn.RemoteAddr().String())
 
-	// Validate token and get tunnel config
+	// --- Enhanced Logging for Token Lookup ---
+	tokenMasked := "<empty>"
+	if len(req.Token) > 6 {
+		tokenMasked = "***" + req.Token[len(req.Token)-6:]
+	} else if req.Token != "" {
+		tokenMasked = "***" + req.Token
+	}
+	s.logger.Info("Looking up tunnel by token: %s from %s", tokenMasked, conn.RemoteAddr().String())
+
 	tunnel, err := s.tunnelService.GetByToken(context.Background(), req.Token)
 	if err != nil {
-		s.logger.Error("Failed to get tunnel by token from %s: %v", conn.RemoteAddr().String(), err)
+		s.logger.Error("Failed to get tunnel by token: %s from %s: %v", tokenMasked, conn.RemoteAddr().String(), err)
+		if req.Token == "" {
+			s.logger.Warn("Handshake failed: empty token from %s", conn.RemoteAddr().String())
+		}
 		resp := handshakeResponse{
 			Status:  "error",
 			Message: "Invalid token",
@@ -204,7 +215,8 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 		s.sendHandshakeResponse(conn, resp)
 		return
 	}
-	s.logger.Info("Validated token for tunnel ID %d from %s", tunnel.ID, conn.RemoteAddr().String())
+	s.logger.Info("Tunnel found: ID=%d, Domain=%s, UserID=%d, IsActive=%v for token: %s from %s",
+		tunnel.ID, tunnel.Domain, tunnel.UserID, tunnel.IsActive, tokenMasked, conn.RemoteAddr().String())
 
 	// Set up cleanup handler
 	defer func() {
