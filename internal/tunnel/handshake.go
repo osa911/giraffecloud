@@ -40,6 +40,7 @@ func writeHandshakeMessage(conn net.Conn, msg *handshakeMessage) error {
 	logger := logging.GetGlobalLogger()
 	logger.Info("Preparing to write handshake message type: %d", msg.Type)
 
+	// Marshal message to JSON
 	data, err := json.Marshal(msg)
 	if err != nil {
 		logger.Error("Failed to marshal handshake message: %v", err)
@@ -54,22 +55,19 @@ func writeHandshakeMessage(conn net.Conn, msg *handshakeMessage) error {
 		return err
 	}
 
-	// Write message length
-	length := uint32(len(data))
-	if err := binary.Write(conn, binary.BigEndian, length); err != nil {
-		logger.Error("Failed to write message length: %v", err)
-		return fmt.Errorf("failed to write message length: %w", err)
-	}
-	logger.Info("Wrote message length: %d bytes", length)
+	// Prepare length bytes
+	lengthBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(lengthBytes, uint32(len(data)))
 
-	// Write message data
-	n, err := conn.Write(data)
+	// Write length and data in a single buffer
+	buffer := append(lengthBytes, data...)
+	n, err := conn.Write(buffer)
 	if err != nil {
-		logger.Error("Failed to write message data (wrote %d/%d bytes): %v", n, len(data), err)
-		return fmt.Errorf("failed to write message data: %w", err)
+		logger.Error("Failed to write message (wrote %d/%d bytes): %v", n, len(buffer), err)
+		return fmt.Errorf("failed to write message: %w", err)
 	}
-	if n != len(data) {
-		err := fmt.Errorf("incomplete write: wrote %d/%d bytes", n, len(data))
+	if n != len(buffer) {
+		err := fmt.Errorf("incomplete write: wrote %d/%d bytes", n, len(buffer))
 		logger.Error("Failed to write complete message: %v", err)
 		return err
 	}
@@ -83,9 +81,9 @@ func readHandshakeMessage(conn net.Conn) (*handshakeMessage, error) {
 	logger := logging.GetGlobalLogger()
 	logger.Info("Starting to read handshake message")
 
-	// Read message length
-	var length uint32
-	if err := binary.Read(conn, binary.BigEndian, &length); err != nil {
+	// Read message length (4 bytes)
+	lengthBytes := make([]byte, 4)
+	if _, err := io.ReadFull(conn, lengthBytes); err != nil {
 		if err == io.EOF {
 			logger.Info("Connection closed while reading message length (EOF)")
 			return nil, err
@@ -93,6 +91,9 @@ func readHandshakeMessage(conn net.Conn) (*handshakeMessage, error) {
 		logger.Error("Failed to read message length: %v", err)
 		return nil, fmt.Errorf("failed to read message length: %w", err)
 	}
+
+	// Convert bytes to uint32
+	length := binary.BigEndian.Uint32(lengthBytes)
 	logger.Info("Read message length: %d bytes", length)
 
 	// Validate message size
@@ -102,7 +103,7 @@ func readHandshakeMessage(conn net.Conn) (*handshakeMessage, error) {
 		return nil, err
 	}
 
-	// Read message data
+	// Read message data with a separate buffer
 	data := make([]byte, length)
 	n, err := io.ReadFull(conn, data)
 	if err != nil {

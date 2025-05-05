@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"time"
 )
 
 /**
@@ -134,6 +135,12 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 
 	s.logger.Info("New tunnel connection from %s", conn.RemoteAddr().String())
 
+	// Set read deadline for handshake
+	if err := conn.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		s.logger.Error("Failed to set read deadline for %s: %v", conn.RemoteAddr().String(), err)
+		return
+	}
+
 	// Read handshake message
 	msg, err := readHandshakeMessage(conn)
 	if err != nil {
@@ -141,6 +148,12 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 		return
 	}
 	s.logger.Info("Received handshake message from %s", conn.RemoteAddr().String())
+
+	// Clear read deadline after handshake
+	if err := conn.SetReadDeadline(time.Time{}); err != nil {
+		s.logger.Error("Failed to clear read deadline for %s: %v", conn.RemoteAddr().String(), err)
+		return
+	}
 
 	// Parse handshake request
 	var req handshakeRequest
