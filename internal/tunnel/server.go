@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"giraffecloud/internal/db/ent"
 	"giraffecloud/internal/logging"
+	"giraffecloud/internal/repository"
 	"giraffecloud/internal/service"
 	"io"
 	"io/ioutil"
@@ -35,6 +36,7 @@ type TunnelServer struct {
 	mu            sync.RWMutex
 	connections   map[string]*Connection // token -> connection
 	tlsConfig     *tls.Config
+	tokenRepo     repository.TokenRepository
 }
 
 // Connection represents an active tunnel connection
@@ -57,7 +59,7 @@ func loadClientCAs(caPath string) *x509.CertPool {
 }
 
 // NewServer creates a new tunnel server instance
-func NewServer(tunnelService service.TunnelService) *TunnelServer {
+func NewServer(tunnelService service.TunnelService, tokenRepo repository.TokenRepository) *TunnelServer {
 	return &TunnelServer{
 		tunnelService: tunnelService,
 		logger:        logging.GetGlobalLogger(),
@@ -75,6 +77,7 @@ func NewServer(tunnelService service.TunnelService) *TunnelServer {
 			ClientAuth: tls.RequireAndVerifyClientCert,
 			ClientCAs:  loadClientCAs("/app/certs/ca.crt"),
 		},
+		tokenRepo: tokenRepo,
 	}
 }
 
@@ -200,11 +203,12 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 	} else if req.Token != "" {
 		tokenMasked = "***" + req.Token
 	}
-	s.logger.Info("Looking up tunnel by token: %s from %s", tokenMasked, conn.RemoteAddr().String())
+	s.logger.Info("Looking up user by token: %s from %s", tokenMasked, conn.RemoteAddr().String())
 
-	tunnel, err := s.tunnelService.GetByToken(context.Background(), req.Token)
+	// 1. Get user by token
+	tokenRecord, err := s.tokenRepo.GetByHash(context.Background(), req.Token)
 	if err != nil {
-		s.logger.Error("Failed to get tunnel by token: %s from %s: %v", tokenMasked, conn.RemoteAddr().String(), err)
+		s.logger.Error("Failed to get user by token: %s from %s: %v", tokenMasked, conn.RemoteAddr().String(), err)
 		if req.Token == "" {
 			s.logger.Warn("Handshake failed: empty token from %s", conn.RemoteAddr().String())
 		}
@@ -215,8 +219,21 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 		s.sendHandshakeResponse(conn, resp)
 		return
 	}
-	s.logger.Info("Tunnel found: ID=%d, Domain=%s, UserID=%d, IsActive=%v for token: %s from %s",
-		tunnel.ID, tunnel.Domain, tunnel.UserID, tunnel.IsActive, tokenMasked, conn.RemoteAddr().String())
+	s.logger.Info("User found: ID=%d for token: %s from %s", tokenRecord.UserID, tokenMasked, conn.RemoteAddr().String())
+
+	// 2. Get all tunnels for this user
+	tunnels, err := s.tunnelService.ListTunnels(context.Background(), tokenRecord.UserID)
+	if err != nil || len(tunnels) == 0 {
+		s.logger.Error("No tunnels found for userID=%d (token: %s) from %s", tokenRecord.UserID, tokenMasked, conn.RemoteAddr().String())
+		resp := handshakeResponse{
+			Status:  "error",
+			Message: "No tunnels found for user",
+		}
+		s.sendHandshakeResponse(conn, resp)
+		return
+	}
+	tunnel := tunnels[0]
+	s.logger.Info("Using first tunnel: ID=%d, Domain=%s, TargetPort=%d for userID=%d from %s", tunnel.ID, tunnel.Domain, tunnel.TargetPort, tokenRecord.UserID, conn.RemoteAddr().String())
 
 	// Set up cleanup handler
 	defer func() {

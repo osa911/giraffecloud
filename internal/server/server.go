@@ -196,7 +196,7 @@ func (s *Server) Init() error {
 
 	// Initialize tunnel server
 	logger.Info("Initializing tunnel server...")
-	s.tunnelServer = tunnel.NewServer(tunnelService)
+	s.tunnelServer = tunnel.NewServer(tunnelService, repos.Token)
 
 	tunnelPort := os.Getenv("TUNNEL_PORT")
 	if tunnelPort == "" {
