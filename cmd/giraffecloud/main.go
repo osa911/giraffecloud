@@ -148,7 +148,12 @@ var loginCmd = &cobra.Command{
 	Short: "Login to GiraffeCloud using an API token",
 	Long: `Login to GiraffeCloud using an API token.
 The token will be stored securely in your config file (~/.giraffecloud/config).
-Example: giraffecloud login --token your-api-token`,
+
+After successful login, use 'giraffecloud connect' to establish a tunnel connection.
+
+Example:
+  1. giraffecloud login --token your-api-token
+  2. giraffecloud connect`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		token, err := cmd.Flags().GetString("token")
 		if err != nil {
@@ -179,6 +184,7 @@ Example: giraffecloud login --token your-api-token`,
 		}
 
 		logger.Info("Successfully logged in to GiraffeCloud (server: %s)", cfg.Server.Host)
+		logger.Info("Run 'giraffecloud connect' to establish a tunnel connection")
 		return nil
 	},
 }
@@ -197,10 +203,10 @@ func init() {
 	serviceCmd.AddCommand(uninstallCmd)
 
 	// Add host flag to connect command
-	connectCmd.Flags().String("host", "", "Server host to connect to (default: api.giraffecloud.com)")
+	connectCmd.Flags().String("host", "", "Server host to connect to (default: tunnel.giraffecloud.xyz)")
 
 	// Add host flag to login command
-	loginCmd.Flags().String("host", "", "Server host to connect to (default: api.giraffecloud.com)")
+	loginCmd.Flags().String("host", "", "Server host to connect to (default: api.giraffecloud.xyz)")
 	loginCmd.Flags().String("token", "", "API token for authentication")
 	loginCmd.MarkFlagRequired("token")
 
