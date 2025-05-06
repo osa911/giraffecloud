@@ -171,8 +171,9 @@ func (t *Tunnel) handleStream(stream net.Conn, cfg *Config) {
 	logger := logging.GetGlobalLogger()
 	defer stream.Close()
 
-	// Read JSON header from stream
 	reader := bufio.NewReader(stream)
+
+	// Read JSON header
 	headerLine, err := reader.ReadBytes('\n')
 	if err != nil {
 		logger.Error("Failed to read stream header: %v", err)
@@ -196,25 +197,29 @@ func (t *Tunnel) handleStream(stream net.Conn, cfg *Config) {
 	defer localConn.Close()
 	logger.Info("Proxying stream for domain %s between server and local service at %s", header.Domain, localAddr)
 
-	// Copy any buffered data from reader to localConn
+	// Copy any buffered data
 	if buffered := reader.Buffered(); buffered > 0 {
+		logger.Info("Forwarding %d bytes of buffered data to local service", buffered)
 		buf := make([]byte, buffered)
-		reader.Read(buf)
-		localConn.Write(buf)
+		_, err := reader.Read(buf)
+		if err == nil {
+			localConn.Write(buf)
+		}
 	}
 
-	// Now use the raw stream for io.Copy in both directions
 	var wg sync.WaitGroup
 	wg.Add(2)
+
 	go func() {
 		defer wg.Done()
 		logger.Info("Starting io.Copy from stream to localConn (server->local)")
-		n, err := io.Copy(localConn, stream)
+		n, err := io.Copy(localConn, reader)
 		logger.Info("Copied %d bytes from stream to localConn (server->local), err=%v", n, err)
 		if tcp, ok := localConn.(*net.TCPConn); ok {
 			tcp.CloseWrite()
 		}
 	}()
+
 	go func() {
 		defer wg.Done()
 		logger.Info("Starting io.Copy from localConn to stream (local->server)")
@@ -224,6 +229,7 @@ func (t *Tunnel) handleStream(stream net.Conn, cfg *Config) {
 			tcp.CloseWrite()
 		}
 	}()
+
 	wg.Wait()
 	logger.Info("Stream proxy finished for %s", localAddr)
 }

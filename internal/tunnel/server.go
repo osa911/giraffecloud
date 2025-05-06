@@ -398,17 +398,21 @@ func (s *TunnelServer) proxyConnection(tunnelConn *Connection, httpConn net.Conn
 	go func() {
 		defer wg.Done()
 		s.logger.Info("Copying Caddy -> Client")
-		if _, err := io.Copy(stream, httpConn); err != nil {
+		n, err := io.Copy(stream, httpConn)
+		if err != nil {
 			s.logger.Warn("Error copying Caddy to stream: %v", err)
 		}
+		s.logger.Info("Copied %d bytes from Caddy to stream", n)
 	}()
 
 	go func() {
 		defer wg.Done()
 		s.logger.Info("Copying Client -> Caddy")
-		if _, err := io.Copy(httpConn, stream); err != nil {
+		n, err := io.Copy(httpConn, stream)
+		if err != nil {
 			s.logger.Warn("Error copying stream to Caddy: %v", err)
 		}
+		s.logger.Info("Copied %d bytes from stream to Caddy", n)
 	}()
 
 	wg.Wait()
