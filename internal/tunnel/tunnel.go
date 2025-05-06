@@ -198,7 +198,8 @@ func (t *Tunnel) handleStream(stream net.Conn, cfg *Config) {
 
 	// Copy any buffered data from reader to localConn
 	if buffered := reader.Buffered(); buffered > 0 {
-		buf, _ := reader.Peek(buffered)
+		buf := make([]byte, buffered)
+		reader.Read(buf)
 		localConn.Write(buf)
 	}
 
