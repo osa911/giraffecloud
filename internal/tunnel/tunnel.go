@@ -8,6 +8,7 @@ import (
 	"io"
 	"math"
 	"net"
+	"strings"
 	"sync"
 	"time"
 )
@@ -153,7 +154,11 @@ func (t *Tunnel) keepAlive() {
 			// Just read and discard data to keep the connection alive
 			if _, err := t.conn.Read(buffer); err != nil {
 				if err != io.EOF {
-					logger.Error("Connection error in keep-alive routine: %v", err)
+					if strings.Contains(err.Error(), "use of closed network connection") {
+						logger.Info("Connection closed (expected on shutdown): %v", err)
+					} else {
+						logger.Error("Connection error in keep-alive routine: %v", err)
+					}
 				} else {
 					logger.Info("Connection closed by server (EOF)")
 				}
