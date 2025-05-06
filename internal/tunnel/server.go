@@ -307,8 +307,9 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 	s.mu.Unlock()
 	s.logger.Info("Stored connection for tunnel ID %d from %s", tunnel.ID, conn.RemoteAddr().String())
 
-	// Do not call s.proxyConnection here; proxying is triggered by HTTP handler
-	// s.proxyConnection(connection)
+	// Block until the connection is closed
+	<-connection.stopChan
+	// Now cleanup will run
 }
 
 // sendHandshakeResponse sends a handshake response

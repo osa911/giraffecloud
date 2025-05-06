@@ -288,7 +288,14 @@ Example:
 
 		// Fetch certificates from server
 		logger.Info("Fetching certificates from server...")
-		if err := tunnel.FetchCertificates(serverHost, token, certsDir); err != nil {
+		s := spinner.New(spinner.CharSets[14], 120*time.Millisecond)
+		s.Suffix = " Fetching certificates from server..."
+		s.Writer = os.Stdout
+		s.Start()
+		err = tunnel.FetchCertificates(serverHost, token, certsDir)
+		s.Stop()
+		fmt.Println() // Ensure spinner and logs don't overlap
+		if err != nil {
 			logger.Error("Failed to fetch certificates: %v", err)
 			return err
 		}
