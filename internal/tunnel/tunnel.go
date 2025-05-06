@@ -208,6 +208,7 @@ func (t *Tunnel) handleStream(stream net.Conn, cfg *Config) {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
+		logger.Info("Starting io.Copy from stream to localConn (server->local)")
 		n, err := io.Copy(localConn, stream)
 		logger.Info("Copied %d bytes from stream to localConn (server->local), err=%v", n, err)
 		if tcp, ok := localConn.(*net.TCPConn); ok {
@@ -216,6 +217,7 @@ func (t *Tunnel) handleStream(stream net.Conn, cfg *Config) {
 	}()
 	go func() {
 		defer wg.Done()
+		logger.Info("Starting io.Copy from localConn to stream (local->server)")
 		n, err := io.Copy(stream, localConn)
 		logger.Info("Copied %d bytes from localConn to stream (local->server), err=%v", n, err)
 		if tcp, ok := stream.(*net.TCPConn); ok {
