@@ -1,6 +1,7 @@
 package tunnel
 
 import (
+	"bufio"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -15,8 +16,6 @@ import (
 	"net"
 	"sync"
 	"time"
-
-	"bufio"
 
 	"github.com/hashicorp/yamux"
 )
@@ -330,7 +329,7 @@ func (s *TunnelServer) sendHandshakeResponse(conn net.Conn, resp handshakeRespon
 }
 
 // ProxyHTTPConnection proxies an incoming HTTP connection (from Caddy) to the correct tunnel client via yamux
-func (s *TunnelServer) ProxyHTTPConnection(domain string, httpConn net.Conn) {
+func (s *TunnelServer) ProxyHTTPConnection(domain string, httpConn net.Conn, buf *bufio.ReadWriter) {
 	s.mu.RLock()
 	var tunnelConn *Connection
 	for _, c := range s.connections {
@@ -345,11 +344,11 @@ func (s *TunnelServer) ProxyHTTPConnection(domain string, httpConn net.Conn) {
 		httpConn.Close()
 		return
 	}
-	s.proxyConnection(tunnelConn, httpConn)
+	s.proxyConnection(tunnelConn, httpConn, buf)
 }
 
 // proxyConnection handles proxying data between the tunnel and local service
-func (s *TunnelServer) proxyConnection(tunnelConn *Connection, httpConn net.Conn) {
+func (s *TunnelServer) proxyConnection(tunnelConn *Connection, httpConn net.Conn, buf *bufio.ReadWriter) {
 	session := tunnelConn.yamuxSession
 	if session == nil {
 		s.logger.Error("No yamux session for tunnel ID %d", tunnelConn.tunnel.ID)
@@ -382,13 +381,14 @@ func (s *TunnelServer) proxyConnection(tunnelConn *Connection, httpConn net.Conn
 	}
 	s.logger.Info("Wrote %d bytes header to yamux stream: %s", nHeader, string(headerBytes))
 
-	// Use bufio.Reader to check for buffered data in httpConn
-	reader := bufio.NewReader(httpConn)
-	if buffered := reader.Buffered(); buffered > 0 {
-		buf := make([]byte, buffered)
-		reader.Read(buf)
-		n, err := stream.Write(buf)
-		s.logger.Info("Forwarded %d bytes of buffered data from hijacked httpConn to yamux stream, err=%v", n, err)
+	// Forward any buffered data from buf.Reader to the yamux stream
+	if buf != nil && buf.Reader != nil {
+		if buffered := buf.Reader.Buffered(); buffered > 0 {
+			bufBytes, _ := buf.Reader.Peek(buffered)
+			n, err := stream.Write(bufBytes)
+			s.logger.Info("Forwarded %d bytes of buffered data from hijacked buf.Reader to yamux stream, err=%v", n, err)
+			buf.Reader.Discard(buffered)
+		}
 	}
 
 	// Set deadlines for debugging
@@ -401,7 +401,7 @@ func (s *TunnelServer) proxyConnection(tunnelConn *Connection, httpConn net.Conn
 	go func() {
 		defer wg.Done()
 		s.logger.Info("Starting io.Copy from httpConn to stream (Caddy->yamux)")
-		n, err := io.Copy(stream, reader)
+		n, err := io.Copy(stream, httpConn)
 		s.logger.Info("Copied %d bytes from httpConn to stream (Caddy->yamux), err=%v", n, err)
 	}()
 	go func() {
