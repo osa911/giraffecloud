@@ -253,7 +253,9 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 	}()
 
 	// Update client IP and configure Caddy route
+	s.logger.Info("RemoteAddr for client: %s", conn.RemoteAddr().String())
 	clientIP, _, err := net.SplitHostPort(conn.RemoteAddr().String())
+	s.logger.Info("Client IP: %s", clientIP)
 	if err != nil {
 		s.logger.Error("Failed to get client IP from %s: %v", conn.RemoteAddr().String(), err)
 		return
