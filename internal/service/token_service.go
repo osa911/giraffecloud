@@ -12,6 +12,7 @@ import (
 
 	"giraffecloud/internal/api/dto/v1/token"
 	"giraffecloud/internal/api/mapper"
+	"giraffecloud/internal/logging"
 	"giraffecloud/internal/repository"
 
 	"github.com/google/uuid"
@@ -108,28 +109,36 @@ func (s *TokenService) RevokeToken(ctx context.Context, id uuid.UUID) error {
 }
 
 func (s *TokenService) ValidateToken(ctx context.Context, tokenStr string) (*mapper.Token, error) {
+	logger := logging.GetGlobalLogger()
 	// Validate token entropy first
+	logger.Info("ValidateToken: Validating token entropy: %s", tokenStr)
 	if err := validateTokenEntropy(tokenStr); err != nil {
+		logger.Error("ValidateToken: Invalid token format: %w", err)
 		return nil, fmt.Errorf("invalid token format: %w", err)
 	}
 
 	hash := sha256.Sum256([]byte(tokenStr))
+	logger.Info("ValidateToken: hash: %s", hash)
 	tokenHash := hex.EncodeToString(hash[:])
-
+	logger.Info("ValidateToken: Hashed token: %s", tokenHash)
 	tokenRecord, err := s.tokenRepo.GetByHash(ctx, tokenHash)
 	if err != nil {
+		logger.Error("ValidateToken: Failed to get token by hash: %w", err)
 		return nil, fmt.Errorf("invalid token")
 	}
 
 	if tokenRecord.RevokedAt != nil {
+		logger.Error("ValidateToken: Token has been revoked")
 		return nil, fmt.Errorf("token has been revoked")
 	}
 
 	if time.Now().After(tokenRecord.ExpiresAt) {
+		logger.Error("ValidateToken: Token has expired")
 		return nil, fmt.Errorf("token has expired")
 	}
 
 	if err := s.tokenRepo.UpdateLastUsed(ctx, tokenRecord.ID); err != nil {
+		logger.Error("ValidateToken: Failed to update last used time: %w", err)
 		return nil, fmt.Errorf("failed to update last used time: %w", err)
 	}
 
