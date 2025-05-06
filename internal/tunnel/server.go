@@ -352,66 +352,70 @@ func (s *TunnelServer) proxyConnection(tunnelConn *Connection, httpConn net.Conn
 	session := tunnelConn.yamuxSession
 	if session == nil {
 		s.logger.Error("No yamux session for tunnel ID %d", tunnelConn.tunnel.ID)
-		httpConn.Close()
+		_ = httpConn.Close()
 		return
 	}
 	stream, err := session.Open()
 	if err != nil {
 		s.logger.Error("Failed to open yamux stream for tunnel ID %d: %v", tunnelConn.tunnel.ID, err)
-		httpConn.Close()
+		_ = httpConn.Close()
 		return
 	}
-	defer stream.Close()
 	s.logger.Info("Opened yamux stream to client for tunnel ID %d", tunnelConn.tunnel.ID)
 
 	// Write JSON header to stream
 	header := map[string]interface{}{
-		"domain":    tunnelConn.tunnel.Domain,
+		"domain":     tunnelConn.tunnel.Domain,
 		"local_port": tunnelConn.tunnel.TargetPort,
-		"protocol":  "tcp",
+		"protocol":   "tcp",
 	}
 	headerBytes, _ := json.Marshal(header)
 	headerBytes = append(headerBytes, '\n')
-	nHeader, err := stream.Write(headerBytes)
-	if err != nil {
+	if _, err := stream.Write(headerBytes); err != nil {
 		s.logger.Error("Failed to write header to yamux stream: %v", err)
-		stream.Close()
-		httpConn.Close()
+		_ = stream.Close()
+		_ = httpConn.Close()
 		return
 	}
-	s.logger.Info("Wrote %d bytes header to yamux stream: %s", nHeader, string(headerBytes))
+	s.logger.Info("Sent header to yamux stream: %s", string(headerBytes))
 
-	// Forward any buffered data from buf.Reader to the yamux stream
+	// Send any buffered hijacked data
 	if buf != nil && buf.Reader != nil {
 		if buffered := buf.Reader.Buffered(); buffered > 0 {
-			bufBytes, _ := buf.Reader.Peek(buffered)
-			n, err := stream.Write(bufBytes)
-			s.logger.Info("Forwarded %d bytes of buffered data from hijacked buf.Reader to yamux stream, err=%v", n, err)
-			buf.Reader.Discard(buffered)
+			if peek, err := buf.Reader.Peek(buffered); err == nil {
+				if _, err := stream.Write(peek); err != nil {
+					s.logger.Error("Failed to write buffered data to stream: %v", err)
+				} else {
+					buf.Reader.Discard(buffered)
+				}
+			}
 		}
 	}
-
-	// Set deadlines for debugging
-	httpConn.SetDeadline(time.Now().Add(10 * time.Second))
-	stream.SetDeadline(time.Now().Add(10 * time.Second))
 
 	var wg sync.WaitGroup
 	wg.Add(2)
 
 	go func() {
 		defer wg.Done()
-		s.logger.Info("Starting io.Copy from httpConn to stream (Caddy->yamux)")
-		n, err := io.Copy(stream, httpConn)
-		s.logger.Info("Copied %d bytes from httpConn to stream (Caddy->yamux), err=%v", n, err)
+		s.logger.Info("Copying Caddy -> Client")
+		if _, err := io.Copy(stream, httpConn); err != nil {
+			s.logger.Warn("Error copying Caddy to stream: %v", err)
+		}
 	}()
+
 	go func() {
 		defer wg.Done()
-		s.logger.Info("Starting io.Copy from stream to httpConn (yamux->Caddy)")
-		n, err := io.Copy(httpConn, stream)
-		s.logger.Info("Copied %d bytes from stream to httpConn (yamux->Caddy), err=%v", n, err)
+		s.logger.Info("Copying Client -> Caddy")
+		if _, err := io.Copy(httpConn, stream); err != nil {
+			s.logger.Warn("Error copying stream to Caddy: %v", err)
+		}
 	}()
+
 	wg.Wait()
-	s.logger.Info("Proxy connection closed for tunnel ID %d", tunnelConn.tunnel.ID)
+	s.logger.Info("Finished proxy for tunnel ID %d", tunnelConn.tunnel.ID)
+
+	_ = stream.Close()
+	_ = httpConn.Close()
 }
 
 // IsTunnelDomain returns true if the given domain is an active tunnel
