@@ -66,7 +66,6 @@ func (s *caddyService) ConfigureRoute(domain string, targetIP string, targetPort
 
 	// Create route configuration
 	config := map[string]interface{}{
-		"@id": domain,
 		"handle": []map[string]interface{}{
 			{
 				"handler": "reverse_proxy",
@@ -170,7 +169,6 @@ func (s *caddyService) ConfigureTunnelRoute(domain string, targetIP string, targ
 
 	// Create route configuration for tunnel server
 	config := map[string]interface{}{
-		"@id": domain,
 		"handle": []map[string]interface{}{
 			{
 				"handler": "reverse_proxy",
