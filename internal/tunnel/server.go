@@ -378,11 +378,15 @@ func (s *TunnelServer) proxyConnection(tunnelConn *Connection, httpConn net.Conn
 
 	go func() {
 		defer wg.Done()
-		io.Copy(stream, httpConn)
+		s.logger.Info("Starting io.Copy from httpConn to stream (Caddy->yamux)")
+		n, err := io.Copy(stream, httpConn)
+		s.logger.Info("Copied %d bytes from httpConn to stream (Caddy->yamux), err=%v", n, err)
 	}()
 	go func() {
 		defer wg.Done()
-		io.Copy(httpConn, stream)
+		s.logger.Info("Starting io.Copy from stream to httpConn (yamux->Caddy)")
+		n, err := io.Copy(httpConn, stream)
+		s.logger.Info("Copied %d bytes from stream to httpConn (yamux->Caddy), err=%v", n, err)
 	}()
 	wg.Wait()
 	s.logger.Info("Proxy connection closed for tunnel ID %d", tunnelConn.tunnel.ID)
