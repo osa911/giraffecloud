@@ -279,6 +279,28 @@ func (s *Server) Start(cfg *Config) error {
 		logger.Info("- Caddy Config: %s", caddy.CaddyPaths.Config)
 	}
 
+	// Custom handler for tunnel domains only
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		domain := r.Host
+		if s.tunnelServer.IsTunnelDomain(domain) {
+			hj, ok := w.(http.Hijacker)
+			if !ok {
+				http.Error(w, "webserver doesn't support hijacking", http.StatusInternalServerError)
+				return
+			}
+			conn, _, err := hj.Hijack()
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			logger.Info("Hijacked HTTP connection for tunnel domain %s", domain)
+			s.tunnelServer.ProxyHTTPConnection(domain, conn)
+			return
+		}
+		// Not a tunnel domain: fall back to Gin router
+		s.router.ServeHTTP(w, r)
+	})
+
 	// Create server manager
 	manager := newServerManager(s.router, s.tunnelServer, cfg.Port)
 

@@ -307,8 +307,8 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 	s.mu.Unlock()
 	s.logger.Info("Stored connection for tunnel ID %d from %s", tunnel.ID, conn.RemoteAddr().String())
 
-	// Start proxying
-	s.proxyConnection(connection)
+	// Do not call s.proxyConnection here; proxying is triggered by HTTP handler
+	// s.proxyConnection(connection)
 }
 
 // sendHandshakeResponse sends a handshake response
@@ -326,52 +326,75 @@ func (s *TunnelServer) sendHandshakeResponse(conn net.Conn, resp handshakeRespon
 	return writeHandshakeMessage(conn, msg)
 }
 
+// ProxyHTTPConnection proxies an incoming HTTP connection (from Caddy) to the correct tunnel client via yamux
+func (s *TunnelServer) ProxyHTTPConnection(domain string, httpConn net.Conn) {
+	s.mu.RLock()
+	var tunnelConn *Connection
+	for _, c := range s.connections {
+		if c.tunnel.Domain == domain {
+			tunnelConn = c
+			break
+		}
+	}
+	s.mu.RUnlock()
+	if tunnelConn == nil {
+		s.logger.Error("No tunnel connection for domain %s", domain)
+		httpConn.Close()
+		return
+	}
+	s.proxyConnection(tunnelConn, httpConn)
+}
+
 // proxyConnection handles proxying data between the tunnel and local service
-func (s *TunnelServer) proxyConnection(conn *Connection) {
-	// Get the yamux session for this tunnel
-	session := conn.yamuxSession
+func (s *TunnelServer) proxyConnection(tunnelConn *Connection, httpConn net.Conn) {
+	session := tunnelConn.yamuxSession
 	if session == nil {
-		s.logger.Error("No yamux session for tunnel ID %d", conn.tunnel.ID)
+		s.logger.Error("No yamux session for tunnel ID %d", tunnelConn.tunnel.ID)
+		httpConn.Close()
 		return
 	}
 	stream, err := session.Open()
 	if err != nil {
-		s.logger.Error("Failed to open yamux stream for tunnel ID %d: %v", conn.tunnel.ID, err)
+		s.logger.Error("Failed to open yamux stream for tunnel ID %d: %v", tunnelConn.tunnel.ID, err)
+		httpConn.Close()
 		return
 	}
 	defer stream.Close()
-	s.logger.Info("Opened yamux stream to client for tunnel ID %d", conn.tunnel.ID)
+	s.logger.Info("Opened yamux stream to client for tunnel ID %d", tunnelConn.tunnel.ID)
 
 	// Write JSON header to stream
 	header := map[string]interface{}{
-		"domain":    conn.tunnel.Domain,
-		"local_port": conn.tunnel.TargetPort,
-		"protocol":  "tcp", // or "http" if you want to support more
+		"domain":    tunnelConn.tunnel.Domain,
+		"local_port": tunnelConn.tunnel.TargetPort,
+		"protocol":  "tcp",
 	}
 	headerBytes, _ := json.Marshal(header)
-	headerBytes = append(headerBytes, '\n') // newline-delimited for easy reading
+	headerBytes = append(headerBytes, '\n')
 	stream.Write(headerBytes)
 
-	// Bidirectional copy between incoming connection and stream
 	var wg sync.WaitGroup
 	wg.Add(2)
 
 	go func() {
 		defer wg.Done()
-		if _, err := io.Copy(stream, conn.conn); err != nil {
-			s.logger.Error("Error copying from client to stream for tunnel ID %d: %v", conn.tunnel.ID, err)
-		}
-		s.logger.Info("Client to stream copy finished for tunnel ID %d", conn.tunnel.ID)
+		io.Copy(stream, httpConn)
 	}()
-
 	go func() {
 		defer wg.Done()
-		if _, err := io.Copy(conn.conn, stream); err != nil {
-			s.logger.Error("Error copying from stream to client for tunnel ID %d: %v", conn.tunnel.ID, err)
-		}
-		s.logger.Info("Stream to client copy finished for tunnel ID %d", conn.tunnel.ID)
+		io.Copy(httpConn, stream)
 	}()
-
 	wg.Wait()
-	s.logger.Info("Proxy connection closed for tunnel ID %d", conn.tunnel.ID)
+	s.logger.Info("Proxy connection closed for tunnel ID %d", tunnelConn.tunnel.ID)
+}
+
+// IsTunnelDomain returns true if the given domain is an active tunnel
+func (s *TunnelServer) IsTunnelDomain(domain string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, c := range s.connections {
+		if c.tunnel.Domain == domain {
+			return true
+		}
+	}
+	return false
 }
