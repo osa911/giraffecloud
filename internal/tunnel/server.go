@@ -371,7 +371,18 @@ func (s *TunnelServer) proxyConnection(tunnelConn *Connection, httpConn net.Conn
 	}
 	headerBytes, _ := json.Marshal(header)
 	headerBytes = append(headerBytes, '\n')
-	stream.Write(headerBytes)
+	nHeader, err := stream.Write(headerBytes)
+	if err != nil {
+		s.logger.Error("Failed to write header to yamux stream: %v", err)
+		stream.Close()
+		httpConn.Close()
+		return
+	}
+	s.logger.Info("Wrote %d bytes header to yamux stream: %s", nHeader, string(headerBytes))
+
+	// Set deadlines for debugging
+	httpConn.SetDeadline(time.Now().Add(10 * time.Second))
+	stream.SetDeadline(time.Now().Add(10 * time.Second))
 
 	var wg sync.WaitGroup
 	wg.Add(2)
