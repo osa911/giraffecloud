@@ -282,7 +282,10 @@ func (s *Server) Start(cfg *Config) error {
 	// Custom handler for tunnel domains only
 	httpHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		domain := r.Host
-		if s.tunnelServer.IsTunnelDomain(domain) {
+		logger.Info("[HIJACK DEBUG] Received HTTP request for domain: %s", domain)
+		isTunnel := s.tunnelServer.IsTunnelDomain(domain)
+		logger.Info("[HIJACK DEBUG] HTTP request for domain: %s, isTunnel: %v", domain, isTunnel)
+		if isTunnel {
 			hj, ok := w.(http.Hijacker)
 			if !ok {
 				http.Error(w, "webserver doesn't support hijacking", http.StatusInternalServerError)
