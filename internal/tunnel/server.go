@@ -342,13 +342,20 @@ func (s *TunnelServer) proxyConnection(conn *Connection) {
 	defer stream.Close()
 	s.logger.Info("Opened yamux stream to client for tunnel ID %d", conn.tunnel.ID)
 
+	// Write JSON header to stream
+	header := map[string]interface{}{
+		"domain":    conn.tunnel.Domain,
+		"local_port": conn.tunnel.TargetPort,
+		"protocol":  "tcp", // or "http" if you want to support more
+	}
+	headerBytes, _ := json.Marshal(header)
+	headerBytes = append(headerBytes, '\n') // newline-delimited for easy reading
+	stream.Write(headerBytes)
+
 	// Bidirectional copy between incoming connection and stream
-	// Assume incomingConn is the net.Conn from Caddy/HTTP
-	// Replace targetConn with stream
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	// Copy from client to target
 	go func() {
 		defer wg.Done()
 		if _, err := io.Copy(stream, conn.conn); err != nil {
@@ -357,7 +364,6 @@ func (s *TunnelServer) proxyConnection(conn *Connection) {
 		s.logger.Info("Client to stream copy finished for tunnel ID %d", conn.tunnel.ID)
 	}()
 
-	// Copy from target to client
 	go func() {
 		defer wg.Done()
 		if _, err := io.Copy(conn.conn, stream); err != nil {
@@ -366,7 +372,6 @@ func (s *TunnelServer) proxyConnection(conn *Connection) {
 		s.logger.Info("Stream to client copy finished for tunnel ID %d", conn.tunnel.ID)
 	}()
 
-	// Wait for both copies to finish
 	wg.Wait()
 	s.logger.Info("Proxy connection closed for tunnel ID %d", conn.tunnel.ID)
 }

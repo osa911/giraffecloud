@@ -1,8 +1,10 @@
 package tunnel
 
 import (
+	"bufio"
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"giraffecloud/internal/logging"
 	"io"
@@ -168,16 +170,33 @@ func (t *Tunnel) acceptStreams() {
 func (t *Tunnel) handleStream(stream net.Conn, cfg *Config) {
 	logger := logging.GetGlobalLogger()
 	defer stream.Close()
-	localAddr := fmt.Sprintf("%s:%d", cfg.Local.Host, cfg.Local.Port)
+
+	// Read JSON header from stream
+	reader := bufio.NewReader(stream)
+	headerLine, err := reader.ReadBytes('\n')
+	if err != nil {
+		logger.Error("Failed to read stream header: %v", err)
+		return
+	}
+	var header struct {
+		Domain    string `json:"domain"`
+		LocalPort int    `json:"local_port"`
+		Protocol  string `json:"protocol"`
+	}
+	if err := json.Unmarshal(headerLine, &header); err != nil {
+		logger.Error("Failed to parse stream header: %v", err)
+		return
+	}
+	localAddr := fmt.Sprintf("localhost:%d", header.LocalPort)
 	localConn, err := net.Dial("tcp", localAddr)
 	if err != nil {
 		logger.Error("Failed to connect to local service at %s: %v", localAddr, err)
 		return
 	}
 	defer localConn.Close()
-	logger.Info("Proxying stream between server and local service at %s", localAddr)
+	logger.Info("Proxying stream for domain %s between server and local service at %s", header.Domain, localAddr)
 	// Bidirectional copy
-	go io.Copy(localConn, stream)
+	go io.Copy(localConn, reader)
 	io.Copy(stream, localConn)
 	logger.Info("Stream proxy finished for %s", localAddr)
 }
