@@ -267,6 +267,13 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 	}
 	s.logger.Info("Updated client IP to %s for tunnel ID %d", clientIP, tunnel.ID)
 
+	// Fetch the updated tunnel from the DB for production robustness
+	updatedTunnel, err := s.tunnelService.GetTunnel(context.Background(), tokenRecord.UserID, uint32(tunnel.ID))
+	if err != nil {
+		s.logger.Error("Failed to fetch updated tunnel for tunnel ID %d: %v", tunnel.ID, err)
+		return
+	}
+
 	// Send success response
 	resp := handshakeResponse{
 		Status:  "success",
@@ -278,10 +285,10 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 	}
 	s.logger.Info("Sent success response to %s for tunnel ID %d", conn.RemoteAddr().String(), tunnel.ID)
 
-	// Create connection object
+	// Create connection object with updated tunnel
 	connection := &Connection{
 		conn:     conn,
-		tunnel:   tunnel,
+		tunnel:   updatedTunnel,
 		stopChan: make(chan struct{}),
 	}
 
