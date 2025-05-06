@@ -113,6 +113,13 @@ func (t *Tunnel) Disconnect() error {
 
 	logger.Info("Initiating tunnel disconnect...")
 
+	// Close connection first to unblock keepAlive
+	if err := t.conn.Close(); err != nil {
+		logger.Error("Failed to close tunnel connection: %v", err)
+		return fmt.Errorf("failed to close tunnel connection: %w", err)
+	}
+	logger.Info("Connection closed successfully (before signaling stop)")
+
 	// Signal stop
 	close(t.stopChan)
 	logger.Info("Stop signal sent to keep-alive routine")
@@ -120,13 +127,6 @@ func (t *Tunnel) Disconnect() error {
 	// Wait for keepAlive to finish
 	t.wg.Wait()
 	logger.Info("Keep-alive routine stopped")
-
-	// Close connection
-	if err := t.conn.Close(); err != nil {
-		logger.Error("Failed to close tunnel connection: %v", err)
-		return fmt.Errorf("failed to close tunnel connection: %w", err)
-	}
-	logger.Info("Connection closed successfully")
 
 	t.conn = nil
 	t.stopChan = make(chan struct{})
