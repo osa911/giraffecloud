@@ -103,13 +103,13 @@ func (s *caddyService) ConfigureRoute(domain string, targetIP string, targetPort
 
 	// Before making the HTTP request in ConfigureRoute:
 	s.logger.Info("[DEBUG] ConfigureRoute: domain=%q, targetIP=%q, targetPort=%d", domain, targetIP, targetPort)
-	url := fmt.Sprintf("%s/config/id/%s", s.baseURL, domain)
-	s.logger.Info("[DEBUG] ConfigureRoute: full URL: %s", url)
-	req, err := http.NewRequest(http.MethodPut, url, bytes.NewBuffer(jsonConfig))
+	s.logger.Info("[DEBUG] ConfigureRoute: PATCHing routes array at /config/apps/http/servers/srv0/routes")
+	url := fmt.Sprintf("%s/config/apps/http/servers/srv0/routes", s.baseURL)
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(jsonConfig))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
-
+	req.Header.Set("X-HTTP-Method-Override", "PATCH")
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := s.client.Do(req)
