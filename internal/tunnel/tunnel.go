@@ -202,12 +202,12 @@ func (t *Tunnel) handleStream(stream net.Conn, cfg *Config) {
 		localConn.Write(buf)
 	}
 
-	// Full-duplex copy
+	// Now use the raw stream for io.Copy in both directions
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		io.Copy(localConn, reader)
+		io.Copy(localConn, stream)
 		if tcp, ok := localConn.(*net.TCPConn); ok {
 			tcp.CloseWrite()
 		}
