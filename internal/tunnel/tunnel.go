@@ -195,9 +195,31 @@ func (t *Tunnel) handleStream(stream net.Conn, cfg *Config) {
 	}
 	defer localConn.Close()
 	logger.Info("Proxying stream for domain %s between server and local service at %s", header.Domain, localAddr)
-	// Bidirectional copy
-	go io.Copy(localConn, reader)
-	io.Copy(stream, localConn)
+
+	// Copy any buffered data from reader to localConn
+	if buffered := reader.Buffered(); buffered > 0 {
+		buf, _ := reader.Peek(buffered)
+		localConn.Write(buf)
+	}
+
+	// Full-duplex copy
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		io.Copy(localConn, reader)
+		if tcp, ok := localConn.(*net.TCPConn); ok {
+			tcp.CloseWrite()
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		io.Copy(stream, localConn)
+		if tcp, ok := stream.(*net.TCPConn); ok {
+			tcp.CloseWrite()
+		}
+	}()
+	wg.Wait()
 	logger.Info("Stream proxy finished for %s", localAddr)
 }
 
