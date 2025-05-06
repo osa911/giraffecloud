@@ -16,6 +16,8 @@ import (
 	"sync"
 	"time"
 
+	"bufio"
+
 	"github.com/hashicorp/yamux"
 )
 
@@ -380,6 +382,15 @@ func (s *TunnelServer) proxyConnection(tunnelConn *Connection, httpConn net.Conn
 	}
 	s.logger.Info("Wrote %d bytes header to yamux stream: %s", nHeader, string(headerBytes))
 
+	// Use bufio.Reader to check for buffered data in httpConn
+	reader := bufio.NewReader(httpConn)
+	if buffered := reader.Buffered(); buffered > 0 {
+		buf := make([]byte, buffered)
+		reader.Read(buf)
+		n, err := stream.Write(buf)
+		s.logger.Info("Forwarded %d bytes of buffered data from hijacked httpConn to yamux stream, err=%v", n, err)
+	}
+
 	// Set deadlines for debugging
 	httpConn.SetDeadline(time.Now().Add(10 * time.Second))
 	stream.SetDeadline(time.Now().Add(10 * time.Second))
@@ -390,7 +401,7 @@ func (s *TunnelServer) proxyConnection(tunnelConn *Connection, httpConn net.Conn
 	go func() {
 		defer wg.Done()
 		s.logger.Info("Starting io.Copy from httpConn to stream (Caddy->yamux)")
-		n, err := io.Copy(stream, httpConn)
+		n, err := io.Copy(stream, reader)
 		s.logger.Info("Copied %d bytes from httpConn to stream (Caddy->yamux), err=%v", n, err)
 	}()
 	go func() {
