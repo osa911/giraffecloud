@@ -101,7 +101,7 @@ func (s *caddyService) ConfigureRoute(domain string, targetIP string, targetPort
 
 	// Before making the HTTP request in ConfigureRoute:
 	s.logger.Info("[DEBUG] ConfigureRoute: domain=%q, targetIP=%q, targetPort=%d", domain, targetIP, targetPort)
-	url := fmt.Sprintf("%s/%sapps/http/servers/srv0/routes/@id/%s", s.baseURL, caddy.DefaultAdminEndpoint, domain)
+	url := fmt.Sprintf("%s/config/id/%s", s.baseURL, domain)
 	s.logger.Info("[DEBUG] ConfigureRoute: full URL: %s", url)
 	req, err := http.NewRequest(http.MethodPut, url, bytes.NewBuffer(jsonConfig))
 	if err != nil {
@@ -132,7 +132,7 @@ func (s *caddyService) RemoveRoute(domain string) error {
 
 	// Before making the HTTP request in RemoveRoute:
 	s.logger.Info("[DEBUG] RemoveRoute: domain=%q", domain)
-	url := fmt.Sprintf("%s/%sapps/http/servers/srv0/routes/@id/%s", s.baseURL, caddy.DefaultAdminEndpoint, domain)
+	url := fmt.Sprintf("%s/config/id/%s", s.baseURL, domain)
 	s.logger.Info("[DEBUG] RemoveRoute: full URL: %s", url)
 	req, err := http.NewRequest(http.MethodDelete, url, nil)
 	if err != nil {
