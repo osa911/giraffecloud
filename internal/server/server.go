@@ -280,7 +280,7 @@ func (s *Server) Start(cfg *Config) error {
 	}
 
 	// Custom handler for tunnel domains only
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	httpHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		domain := r.Host
 		if s.tunnelServer.IsTunnelDomain(domain) {
 			hj, ok := w.(http.Hijacker)
@@ -301,7 +301,16 @@ func (s *Server) Start(cfg *Config) error {
 		s.router.ServeHTTP(w, r)
 	})
 
-	// Create server manager
+	// Start HTTP server on :8081 for Caddy to forward tunnel domain requests
+	go func() {
+		logger.Info("Starting HTTP hijack server on :8081 for tunnel domains")
+		if err := http.ListenAndServe(":8081", httpHandler); err != nil && err != http.ErrServerClosed {
+			logger.Error("HTTP hijack server error: %v", err)
+		}
+		logger.Info("HTTP hijack server stopped")
+	}()
+
+	// Create server manager for the main Gin HTTP API (if needed)
 	manager := newServerManager(s.router, s.tunnelServer, cfg.Port)
 
 	// Start servers
