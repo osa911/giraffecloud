@@ -79,3 +79,6 @@ coverage.txt
 # Temporary files
 tmp/
 temp/
+
+# Docker cache
+.docker/
