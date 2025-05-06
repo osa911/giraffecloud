@@ -50,8 +50,8 @@ func dialTLSWithRetry(ctx context.Context, network, address string, config *tls.
 	return nil, fmt.Errorf("all %d attempts failed to connect to %s: %w", maxAttempts, address, lastErr)
 }
 
-// Connect establishes a tunnel connection to the server
-func (t *Tunnel) Connect(serverAddr string, token string, tlsConfig *tls.Config) error {
+// ConnectWithContext establishes a tunnel connection to the server using the provided context
+func (t *Tunnel) ConnectWithContext(ctx context.Context, serverAddr string, token string, tlsConfig *tls.Config) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -63,8 +63,6 @@ func (t *Tunnel) Connect(serverAddr string, token string, tlsConfig *tls.Config)
 
 	// Connect to server with TLS and retry logic
 	logger.Info("Establishing TLS connection...")
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
 
 	conn, err := dialTLSWithRetry(ctx, "tcp", serverAddr, tlsConfig, 5, 2*time.Second, logger)
 	if err != nil {
@@ -92,6 +90,13 @@ func (t *Tunnel) Connect(serverAddr string, token string, tlsConfig *tls.Config)
 
 	logger.Info("Tunnel connection established successfully")
 	return nil
+}
+
+// Connect establishes a tunnel connection to the server (with 30s timeout)
+func (t *Tunnel) Connect(serverAddr string, token string, tlsConfig *tls.Config) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	return t.ConnectWithContext(ctx, serverAddr, token, tlsConfig)
 }
 
 // Disconnect closes the tunnel connection

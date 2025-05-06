@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
@@ -101,9 +102,15 @@ var connectCmd = &cobra.Command{
 
 		serverAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 
-		// Set up signal handling
+		// Set up context and signal handling
+		ctx, cancel := context.WithCancel(context.Background())
 		sigChan := make(chan os.Signal, 1)
 		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+		go func() {
+			sig := <-sigChan
+			logger.Info("Received signal %v, initiating shutdown...", sig)
+			cancel()
+		}()
 
 		retryDelay := 5 * time.Second
 		maxDelay := 60 * time.Second
@@ -112,8 +119,8 @@ var connectCmd = &cobra.Command{
 		logger.Info("Starting tunnel connection loop. Press Ctrl+C to stop.")
 		for {
 			select {
-			case sig := <-sigChan:
-				logger.Info("Received signal %v, initiating shutdown...", sig)
+			case <-ctx.Done():
+				logger.Info("Shutdown requested, exiting connect loop.")
 				return
 			default:
 				t := tunnel.NewTunnel()
@@ -123,10 +130,14 @@ var connectCmd = &cobra.Command{
 				s := spinner.New(spinner.CharSets[14], 120*time.Millisecond)
 				s.Suffix = " Connecting to GiraffeCloud..."
 				s.Start()
-				err := t.Connect(serverAddr, cfg.Token, tlsConfig)
+				err := t.ConnectWithContext(ctx, serverAddr, cfg.Token, tlsConfig)
 				s.Stop()
 
 				if err != nil {
+					if ctx.Err() != nil {
+						logger.Info("Context canceled, exiting connect loop.")
+						return
+					}
 					logger.Error("Failed to connect to GiraffeCloud: %v", err)
 					attempt++
 					delay := retryDelay * time.Duration(1<<uint(attempt))
@@ -141,6 +152,11 @@ var connectCmd = &cobra.Command{
 					bar.Set(pb.Bytes, false)
 					bar.Start()
 					for i := 0; i < int(delay.Seconds()); i++ {
+						if ctx.Err() != nil {
+							bar.Finish()
+							logger.Info("Context canceled during reconnect delay, exiting connect loop.")
+							return
+						}
 						time.Sleep(1 * time.Second)
 						bar.Increment()
 					}
@@ -150,12 +166,23 @@ var connectCmd = &cobra.Command{
 				logger.Info("Tunnel is running. Press Ctrl+C to stop.")
 				// Wait for disconnect (keepAlive will exit on disconnect)
 				for t.IsConnected() {
+					if ctx.Err() != nil {
+						logger.Info("Context canceled, disconnecting tunnel.")
+						t.Disconnect()
+						return
+					}
 					time.Sleep(1 * time.Second)
 				}
 				logger.Warn("Tunnel connection lost. Will attempt to reconnect.")
 				attempt = 0 // Reset attempt counter after a successful connection
 				// Short delay before reconnecting
-				time.Sleep(2 * time.Second)
+				for i := 0; i < 2; i++ {
+					if ctx.Err() != nil {
+						logger.Info("Context canceled during reconnect wait, exiting connect loop.")
+						return
+					}
+					time.Sleep(1 * time.Second)
+				}
 			}
 		}
 	},
