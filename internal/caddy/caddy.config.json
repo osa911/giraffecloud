@@ -73,15 +73,6 @@
                   }
                 }
               ]
-            },
-            {
-              "handle": [
-                {
-                  "handler": "static_response",
-                  "status_code": 404,
-                  "body": "Not Found"
-                }
-              ]
             }
           ],
           "automatic_https": {
