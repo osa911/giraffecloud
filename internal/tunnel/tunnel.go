@@ -83,6 +83,9 @@ func (t *Tunnel) ConnectWithContext(ctx context.Context, serverAddr string, toke
 	logger.Info("Handshake completed successfully: %s", resp.Message)
 
 	t.conn = conn
+
+	logger.Info("Proxying traffic between this client and server at %s (tunnel established)", serverAddr)
+
 	t.wg.Add(1)
 
 	// Start reading from connection to keep it alive

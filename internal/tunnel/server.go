@@ -331,6 +331,8 @@ func (s *TunnelServer) proxyConnection(conn *Connection) {
 	defer targetConn.Close()
 	s.logger.Info("Connected to target service at %s for tunnel ID %d", target, conn.tunnel.ID)
 
+	s.logger.Info("Proxying traffic between client %s and target %s for tunnel ID %d", conn.conn.RemoteAddr().String(), target, conn.tunnel.ID)
+
 	// Start bidirectional copy
 	var wg sync.WaitGroup
 	wg.Add(2)
