@@ -101,7 +101,7 @@ func (s *caddyService) ConfigureRoute(domain string, targetIP string, targetPort
 
 	// Send config to Caddy
 	req, err := http.NewRequest(http.MethodPut,
-		fmt.Sprintf("%s/%sapps/http/servers/srv0/routes/%s", s.baseURL, caddy.DefaultAdminEndpoint, domain),
+		fmt.Sprintf("%s/%sapps/http/servers/srv0/routes/@id/%s", s.baseURL, caddy.DefaultAdminEndpoint, domain),
 		bytes.NewBuffer(jsonConfig))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
@@ -131,7 +131,7 @@ func (s *caddyService) RemoveRoute(domain string) error {
 
 	// Send DELETE request to Caddy
 	req, err := http.NewRequest(http.MethodDelete,
-		fmt.Sprintf("%s/%sapps/http/servers/srv0/routes/%s", s.baseURL, caddy.DefaultAdminEndpoint, domain),
+		fmt.Sprintf("%s/%sapps/http/servers/srv0/routes/@id/%s", s.baseURL, caddy.DefaultAdminEndpoint, domain),
 		nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
