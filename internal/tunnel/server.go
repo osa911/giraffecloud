@@ -15,6 +15,8 @@ import (
 	"net"
 	"sync"
 	"time"
+
+	"github.com/hashicorp/yamux"
 )
 
 /**
@@ -41,9 +43,10 @@ type TunnelServer struct {
 
 // Connection represents an active tunnel connection
 type Connection struct {
-	conn     net.Conn
-	tunnel   *ent.Tunnel
-	stopChan chan struct{}
+	conn         net.Conn
+	tunnel       *ent.Tunnel
+	stopChan     chan struct{}
+	yamuxSession *yamux.Session
 }
 
 func loadClientCAs(caPath string) *x509.CertPool {
@@ -285,11 +288,17 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 	}
 	s.logger.Info("Sent success response to %s for tunnel ID %d", conn.RemoteAddr().String(), tunnel.ID)
 
-	// Create connection object with updated tunnel
+	// Create yamux session
+	session, err := yamux.Server(conn, nil)
+	if err != nil {
+		s.logger.Error("Failed to create yamux session: %v", err)
+		return
+	}
 	connection := &Connection{
-		conn:     conn,
-		tunnel:   updatedTunnel,
-		stopChan: make(chan struct{}),
+		conn:         conn,
+		tunnel:       updatedTunnel,
+		stopChan:     make(chan struct{}),
+		yamuxSession: session,
 	}
 
 	// Store connection
@@ -319,40 +328,42 @@ func (s *TunnelServer) sendHandshakeResponse(conn net.Conn, resp handshakeRespon
 
 // proxyConnection handles proxying data between the tunnel and local service
 func (s *TunnelServer) proxyConnection(conn *Connection) {
-	// Create connection to target service
-	target := fmt.Sprintf("%s:%d", conn.tunnel.ClientIP, conn.tunnel.TargetPort)
-	s.logger.Info("Attempting to connect to target service at %s for tunnel ID %d", target, conn.tunnel.ID)
-
-	targetConn, err := net.Dial("tcp", target)
-	if err != nil {
-		s.logger.Error("Failed to connect to target service at %s for tunnel ID %d: %v", target, conn.tunnel.ID, err)
+	// Get the yamux session for this tunnel
+	session := conn.yamuxSession
+	if session == nil {
+		s.logger.Error("No yamux session for tunnel ID %d", conn.tunnel.ID)
 		return
 	}
-	defer targetConn.Close()
-	s.logger.Info("Connected to target service at %s for tunnel ID %d", target, conn.tunnel.ID)
+	stream, err := session.Open()
+	if err != nil {
+		s.logger.Error("Failed to open yamux stream for tunnel ID %d: %v", conn.tunnel.ID, err)
+		return
+	}
+	defer stream.Close()
+	s.logger.Info("Opened yamux stream to client for tunnel ID %d", conn.tunnel.ID)
 
-	s.logger.Info("Proxying traffic between client %s and target %s for tunnel ID %d", conn.conn.RemoteAddr().String(), target, conn.tunnel.ID)
-
-	// Start bidirectional copy
+	// Bidirectional copy between incoming connection and stream
+	// Assume incomingConn is the net.Conn from Caddy/HTTP
+	// Replace targetConn with stream
 	var wg sync.WaitGroup
 	wg.Add(2)
 
 	// Copy from client to target
 	go func() {
 		defer wg.Done()
-		if _, err := io.Copy(targetConn, conn.conn); err != nil {
-			s.logger.Error("Error copying from client to target for tunnel ID %d: %v", conn.tunnel.ID, err)
+		if _, err := io.Copy(stream, conn.conn); err != nil {
+			s.logger.Error("Error copying from client to stream for tunnel ID %d: %v", conn.tunnel.ID, err)
 		}
-		s.logger.Info("Client to target copy finished for tunnel ID %d", conn.tunnel.ID)
+		s.logger.Info("Client to stream copy finished for tunnel ID %d", conn.tunnel.ID)
 	}()
 
 	// Copy from target to client
 	go func() {
 		defer wg.Done()
-		if _, err := io.Copy(conn.conn, targetConn); err != nil {
-			s.logger.Error("Error copying from target to client for tunnel ID %d: %v", conn.tunnel.ID, err)
+		if _, err := io.Copy(conn.conn, stream); err != nil {
+			s.logger.Error("Error copying from stream to client for tunnel ID %d: %v", conn.tunnel.ID, err)
 		}
-		s.logger.Info("Target to client copy finished for tunnel ID %d", conn.tunnel.ID)
+		s.logger.Info("Stream to client copy finished for tunnel ID %d", conn.tunnel.ID)
 	}()
 
 	// Wait for both copies to finish

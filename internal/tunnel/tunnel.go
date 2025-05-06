@@ -8,9 +8,10 @@ import (
 	"io"
 	"math"
 	"net"
-	"strings"
 	"sync"
 	"time"
+
+	"github.com/hashicorp/yamux"
 )
 
 // Tunnel represents a secure tunnel connection
@@ -20,6 +21,7 @@ type Tunnel struct {
 	wg       sync.WaitGroup
 	mu       sync.Mutex
 	token    string
+	yamuxSession *yamux.Session
 }
 
 // NewTunnel creates a new tunnel instance
@@ -86,13 +88,18 @@ func (t *Tunnel) ConnectWithContext(ctx context.Context, serverAddr string, toke
 
 	logger.Info("Proxying traffic between this client and server at %s (tunnel established)", serverAddr)
 
-	t.wg.Add(1)
+	// Create yamux session
+	session, err := yamux.Client(t.conn, nil)
+	if err != nil {
+		logger.Error("Failed to create yamux session: %v", err)
+		return fmt.Errorf("failed to create yamux session: %w", err)
+	}
+	t.yamuxSession = session
 
-	// Start reading from connection to keep it alive
-	logger.Info("Starting connection keep-alive routine")
-	go t.keepAlive()
+	// Start accepting streams from the server
+	go t.acceptStreams()
 
-	logger.Info("Tunnel connection established successfully")
+	logger.Info("Tunnel connection established successfully (yamux multiplexing enabled)")
 	return nil
 }
 
@@ -117,7 +124,7 @@ func (t *Tunnel) Disconnect() error {
 
 	logger.Info("Initiating tunnel disconnect...")
 
-	// Close connection first to unblock keepAlive
+	// Close connection first to unblock acceptStreams
 	if err := t.conn.Close(); err != nil {
 		logger.Error("Failed to close tunnel connection: %v", err)
 		return fmt.Errorf("failed to close tunnel connection: %w", err)
@@ -126,11 +133,11 @@ func (t *Tunnel) Disconnect() error {
 
 	// Signal stop
 	close(t.stopChan)
-	logger.Info("Stop signal sent to keep-alive routine")
+	logger.Info("Stop signal sent to acceptStreams routine")
 
-	// Wait for keepAlive to finish
+	// Wait for acceptStreams to finish
 	t.wg.Wait()
-	logger.Info("Keep-alive routine stopped")
+	logger.Info("AcceptStreams routine stopped")
 
 	t.conn = nil
 	t.stopChan = make(chan struct{})
@@ -139,36 +146,40 @@ func (t *Tunnel) Disconnect() error {
 	return nil
 }
 
-// keepAlive reads from the connection to keep it alive and detect disconnections
-func (t *Tunnel) keepAlive() {
-	defer t.wg.Done()
-
+// acceptStreams listens for new streams from the server and proxies them to the local service
+func (t *Tunnel) acceptStreams() {
 	logger := logging.GetGlobalLogger()
-	logger.Info("Keep-alive routine started")
-
-	buffer := make([]byte, 1024)
-
-	for {
-		select {
-		case <-t.stopChan:
-			logger.Info("Keep-alive routine received stop signal")
-			return
-		default:
-			// Just read and discard data to keep the connection alive
-			if _, err := t.conn.Read(buffer); err != nil {
-				if err != io.EOF {
-					if strings.Contains(err.Error(), "use of closed network connection") {
-						logger.Info("Connection closed (expected on shutdown): %v", err)
-					} else {
-						logger.Error("Connection error in keep-alive routine: %v", err)
-					}
-				} else {
-					logger.Info("Connection closed by server (EOF)")
-				}
-				return
-			}
-		}
+	cfg, err := LoadConfig()
+	if err != nil {
+		logger.Error("Failed to load config in acceptStreams: %v", err)
+		return
 	}
+	for {
+		stream, err := t.yamuxSession.Accept()
+		if err != nil {
+			logger.Error("Failed to accept yamux stream: %v", err)
+			return
+		}
+		go t.handleStream(stream, cfg)
+	}
+}
+
+// handleStream proxies a single yamux stream to the local service
+func (t *Tunnel) handleStream(stream net.Conn, cfg *Config) {
+	logger := logging.GetGlobalLogger()
+	defer stream.Close()
+	localAddr := fmt.Sprintf("%s:%d", cfg.Local.Host, cfg.Local.Port)
+	localConn, err := net.Dial("tcp", localAddr)
+	if err != nil {
+		logger.Error("Failed to connect to local service at %s: %v", localAddr, err)
+		return
+	}
+	defer localConn.Close()
+	logger.Info("Proxying stream between server and local service at %s", localAddr)
+	// Bidirectional copy
+	go io.Copy(localConn, stream)
+	io.Copy(stream, localConn)
+	logger.Info("Stream proxy finished for %s", localAddr)
 }
 
 // IsConnected returns true if the tunnel connection is active
