@@ -117,13 +117,10 @@ func (s *TokenService) ValidateToken(ctx context.Context, tokenStr string) (*map
 		return nil, fmt.Errorf("invalid token format: %w", err)
 	}
 
-	hash := sha256.Sum256([]byte(tokenStr))
-	logger.Info("ValidateToken: hash: %s", hash)
-	tokenHash := hex.EncodeToString(hash[:])
-	logger.Info("ValidateToken: Hashed token: %s", tokenHash)
-	tokenRecord, err := s.tokenRepo.GetByHash(ctx, tokenHash)
+	logger.Info("ValidateToken: Using GetByToken for token lookup")
+	tokenRecord, err := s.tokenRepo.GetByToken(ctx, tokenStr)
 	if err != nil {
-		logger.Error("ValidateToken: Failed to get token by hash: %w", err)
+		logger.Error("ValidateToken: Failed to get token by value: %w", err)
 		return nil, fmt.Errorf("invalid token")
 	}
 

@@ -82,8 +82,8 @@ type TokenRepository interface {
 	Create(ctx context.Context, token *mapper.Token) error
 	// List returns all tokens for a user
 	List(ctx context.Context, userID uint32) ([]*mapper.Token, error)
-	// GetByHash returns a token by its hash
-	GetByHash(ctx context.Context, tokenHash string) (*mapper.Token, error)
+	// GetByToken returns a token by its raw value (hashes internally)
+	GetByToken(ctx context.Context, token string) (*mapper.Token, error)
 	// Revoke marks a token as revoked
 	Revoke(ctx context.Context, id uuid.UUID) error
 	// UpdateLastUsed updates token's last used timestamp

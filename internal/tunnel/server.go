@@ -203,10 +203,11 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 	} else if req.Token != "" {
 		tokenMasked = "***" + req.Token
 	}
+	s.logger.Info("Token: %s", req.Token)
 	s.logger.Info("Looking up user by token: %s from %s", tokenMasked, conn.RemoteAddr().String())
 
 	// 1. Get user by token
-	tokenRecord, err := s.tokenRepo.GetByHash(context.Background(), req.Token)
+	tokenRecord, err := s.tokenRepo.GetByToken(context.Background(), req.Token)
 	if err != nil {
 		s.logger.Error("Failed to get user by token: %s from %s: %v", tokenMasked, conn.RemoteAddr().String(), err)
 		if req.Token == "" {

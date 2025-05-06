@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"time"
 
 	"giraffecloud/internal/api/mapper"
@@ -82,10 +84,12 @@ func (r *TokenRepositoryImpl) GetByID(ctx context.Context, id uuid.UUID) (*mappe
 	}, nil
 }
 
-func (r *TokenRepositoryImpl) GetByHash(ctx context.Context, hash string) (*mapper.Token, error) {
+func (r *TokenRepositoryImpl) GetByToken(ctx context.Context, tokenStr string) (*mapper.Token, error) {
+	hash := sha256.Sum256([]byte(tokenStr))
+	tokenHash := hex.EncodeToString(hash[:])
 	t, err := r.client.Token.Query().
 		Where(
-			token.TokenHash(hash),
+			token.TokenHash(tokenHash),
 			token.RevokedAtIsNil(),
 		).
 		Only(ctx)
