@@ -132,21 +132,58 @@ func (s *caddyService) RemoveRoute(domain string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Before making the HTTP request in RemoveRoute:
 	s.logger.Info("[DEBUG] RemoveRoute: domain=%q", domain)
-	url := fmt.Sprintf("%s/config/id/%s", s.baseURL, domain)
-	s.logger.Info("[DEBUG] RemoveRoute: full URL: %s", url)
-	req, err := http.NewRequest(http.MethodDelete, url, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
 
-	resp, err := s.client.Do(req)
+	// 1. Get current routes array
+	getURL := fmt.Sprintf("%s/config/apps/http/servers/srv0/routes", s.baseURL)
+	resp, err := s.client.Get(getURL)
 	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
+		return fmt.Errorf("failed to GET routes: %w", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed to GET routes (status %d): %s", resp.StatusCode, string(body))
+	}
+	var routes []map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&routes); err != nil {
+		return fmt.Errorf("failed to decode routes: %w", err)
+	}
 
+	// 2. Find the index of the route with @id == domain
+	index := -1
+	for i, route := range routes {
+		if id, ok := route["@id"].(string); ok && id == domain {
+			index = i
+			break
+		}
+	}
+	if index == -1 {
+		s.logger.Info("[DEBUG] RemoveRoute: route with @id=%q not found, nothing to remove", domain)
+		return nil
+	}
+
+	// 3. PATCH to remove the route at that index
+	patchBody := []map[string]interface{}{{
+		"op":   "remove",
+		"path": fmt.Sprintf("/%d", index),
+	}}
+	jsonPatch, err := json.Marshal(patchBody)
+	if err != nil {
+		return fmt.Errorf("failed to marshal patch body: %w", err)
+	}
+	s.logger.Info("[DEBUG] RemoveRoute: PATCH body: %s", string(jsonPatch))
+	patchURL := fmt.Sprintf("%s/config/apps/http/servers/srv0/routes", s.baseURL)
+	req, err := http.NewRequest("PATCH", patchURL, bytes.NewBuffer(jsonPatch))
+	if err != nil {
+		return fmt.Errorf("failed to create PATCH request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err = s.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send PATCH request: %w", err)
+	}
+	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("failed to remove route (status %d): %s", resp.StatusCode, string(body))

@@ -1,12 +1,15 @@
 package tunnel
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"giraffecloud/internal/logging"
 	"io"
+	"math"
 	"net"
 	"sync"
+	"time"
 )
 
 // Tunnel represents a secure tunnel connection
@@ -25,6 +28,28 @@ func NewTunnel() *Tunnel {
 	}
 }
 
+// dialTLSWithRetry tries to connect to the server with TLS, with retries and exponential backoff
+func dialTLSWithRetry(ctx context.Context, network, address string, config *tls.Config, maxAttempts int, baseDelay time.Duration, logger *logging.Logger) (net.Conn, error) {
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		conn, err := tls.Dial(network, address, config)
+		if err == nil {
+			return conn, nil
+		}
+		lastErr = err
+		if logger != nil {
+			logger.Warn("[RETRY] Attempt %d/%d: failed to connect to %s: %v", attempt, maxAttempts, address, err)
+		}
+		delay := baseDelay * time.Duration(math.Pow(2, float64(attempt-1)))
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(delay):
+		}
+	}
+	return nil, fmt.Errorf("all %d attempts failed to connect to %s: %w", maxAttempts, address, lastErr)
+}
+
 // Connect establishes a tunnel connection to the server
 func (t *Tunnel) Connect(serverAddr string, token string, tlsConfig *tls.Config) error {
 	t.mu.Lock()
@@ -36,11 +61,14 @@ func (t *Tunnel) Connect(serverAddr string, token string, tlsConfig *tls.Config)
 	// Store token for reconnection/handshake
 	t.token = token
 
-	// Connect to server with TLS
+	// Connect to server with TLS and retry logic
 	logger.Info("Establishing TLS connection...")
-	conn, err := tls.Dial("tcp", serverAddr, tlsConfig)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	conn, err := dialTLSWithRetry(ctx, "tcp", serverAddr, tlsConfig, 5, 2*time.Second, logger)
 	if err != nil {
-		logger.Error("Failed to establish TLS connection: %v", err)
+		logger.Error("Failed to establish TLS connection after retries: %v", err)
 		return fmt.Errorf("failed to connect to server: %w", err)
 	}
 	logger.Info("TLS connection established successfully")
@@ -128,4 +156,11 @@ func (t *Tunnel) keepAlive() {
 			}
 		}
 	}
+}
+
+// IsConnected returns true if the tunnel connection is active
+func (t *Tunnel) IsConnected() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.conn != nil
 }

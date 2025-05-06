@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -96,32 +97,48 @@ var connectCmd = &cobra.Command{
 			logger.Info("Using client certificate: %s", cfg.Security.ClientCert)
 		}
 
-		// Create and connect tunnel
-		t := tunnel.NewTunnel()
 		serverAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
-		if err := t.Connect(serverAddr, cfg.Token, tlsConfig); err != nil {
-			logger.Error("Failed to connect to GiraffeCloud: %v", err)
-			os.Exit(1)
-		}
-
-		logger.Info("Connected to GiraffeCloud at %s", serverAddr)
-		logger.Info("Tunnel is running. Press Ctrl+C to stop.")
 
 		// Set up signal handling
 		sigChan := make(chan os.Signal, 1)
 		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-		// Wait for signal
-		sig := <-sigChan
-		logger.Info("Received signal %v, initiating shutdown...", sig)
+		retryDelay := 5 * time.Second
+		maxDelay := 60 * time.Second
+		attempt := 0
 
-		// Graceful shutdown
-		if err := t.Disconnect(); err != nil {
-			logger.Error("Failed to disconnect tunnel: %v", err)
-			os.Exit(1)
+		logger.Info("Starting tunnel connection loop. Press Ctrl+C to stop.")
+		for {
+			select {
+			case sig := <-sigChan:
+				logger.Info("Received signal %v, initiating shutdown...", sig)
+				return
+			default:
+				t := tunnel.NewTunnel()
+				logger.Info("Connecting to GiraffeCloud at %s (attempt %d)", serverAddr, attempt+1)
+				err := t.Connect(serverAddr, cfg.Token, tlsConfig)
+				if err != nil {
+					logger.Error("Failed to connect to GiraffeCloud: %v", err)
+					attempt++
+					delay := retryDelay * time.Duration(1<<uint(attempt))
+					if delay > maxDelay {
+						delay = maxDelay
+					}
+					logger.Info("Retrying in %s... (press Ctrl+C to exit)", delay)
+					time.Sleep(delay)
+					continue
+				}
+				logger.Info("Tunnel is running. Press Ctrl+C to stop.")
+				// Wait for disconnect (keepAlive will exit on disconnect)
+				for t.IsConnected() {
+					time.Sleep(1 * time.Second)
+				}
+				logger.Warn("Tunnel connection lost. Will attempt to reconnect.")
+				attempt = 0 // Reset attempt counter after a successful connection
+				// Short delay before reconnecting
+				time.Sleep(2 * time.Second)
+			}
 		}
-
-		logger.Info("Successfully disconnected from GiraffeCloud")
 	},
 }
 
