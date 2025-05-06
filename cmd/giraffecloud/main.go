@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/briandowns/spinner"
+	"github.com/cheggaaa/pb/v3"
 	"github.com/spf13/cobra"
 )
 
@@ -116,7 +118,14 @@ var connectCmd = &cobra.Command{
 			default:
 				t := tunnel.NewTunnel()
 				logger.Info("Connecting to GiraffeCloud at %s (attempt %d)", serverAddr, attempt+1)
+
+				// Spinner while connecting
+				s := spinner.New(spinner.CharSets[14], 120*time.Millisecond)
+				s.Suffix = " Connecting to GiraffeCloud..."
+				s.Start()
 				err := t.Connect(serverAddr, cfg.Token, tlsConfig)
+				s.Stop()
+
 				if err != nil {
 					logger.Error("Failed to connect to GiraffeCloud: %v", err)
 					attempt++
@@ -125,7 +134,17 @@ var connectCmd = &cobra.Command{
 						delay = maxDelay
 					}
 					logger.Info("Retrying in %s... (press Ctrl+C to exit)", delay)
-					time.Sleep(delay)
+					// Progress bar for reconnect delay
+					bar := pb.New64(int64(delay.Seconds()))
+					bar.SetTemplate(pb.Simple)
+					bar.Set(pb.SIBytesPrefix, "")
+					bar.Set(pb.Bytes, false)
+					bar.Start()
+					for i := 0; i < int(delay.Seconds()); i++ {
+						time.Sleep(1 * time.Second)
+						bar.Increment()
+					}
+					bar.Finish()
 					continue
 				}
 				logger.Info("Tunnel is running. Press Ctrl+C to stop.")
