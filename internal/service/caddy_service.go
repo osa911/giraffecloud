@@ -98,6 +98,9 @@ func (s *caddyService) ConfigureRoute(domain string, targetIP string, targetPort
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
+	// After marshaling config to JSON in ConfigureRoute:
+	s.logger.Info("[DEBUG] ConfigureRoute: JSON body: %s", string(jsonConfig))
+
 	// Before making the HTTP request in ConfigureRoute:
 	s.logger.Info("[DEBUG] ConfigureRoute: domain=%q, targetIP=%q, targetPort=%d", domain, targetIP, targetPort)
 	url := fmt.Sprintf("%s/config/id/%s", s.baseURL, domain)
@@ -196,6 +199,9 @@ func (s *caddyService) ConfigureTunnelRoute(domain string, targetIP string, targ
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
+
+	// After marshaling config to JSON in ConfigureTunnelRoute:
+	s.logger.Info("[DEBUG] ConfigureTunnelRoute: JSON body: %s", string(jsonConfig))
 
 	// Send config to Caddy
 	req, err := http.NewRequest(http.MethodPut,
