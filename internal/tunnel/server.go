@@ -386,12 +386,30 @@ func (s *TunnelServer) proxyConnection(tunnelConn *Connection, httpConn net.Conn
 
 	go func() {
 		defer wg.Done()
-		s.logger.Info("Copying Caddy -> Client")
-		n, err := io.Copy(stream, httpConn)
-		if err != nil {
-			s.logger.Warn("Error copying Caddy to stream: %v", err)
+		s.logger.Info("Copying Caddy -> Client (with logging)")
+		buf := make([]byte, 4096)
+		total := 0
+		for {
+			nr, er := httpConn.Read(buf)
+			if nr > 0 {
+				total += nr
+				s.logger.Info("Forwarding %d bytes from Caddy to stream", nr)
+				if nw, ew := stream.Write(buf[:nr]); ew != nil {
+					s.logger.Error("Write error to stream: %v", ew)
+					break
+				} else if nw != nr {
+					s.logger.Error("Short write to stream: wrote %d of %d bytes", nw, nr)
+					break
+				}
+			}
+			if er != nil {
+				if er != io.EOF {
+					s.logger.Error("Read error from httpConn: %v", er)
+				}
+				break
+			}
 		}
-		s.logger.Info("Copied %d bytes from Caddy to stream", n)
+		s.logger.Info("Copied total %d bytes from Caddy to stream", total)
 		if tcp, ok := stream.(*net.TCPConn); ok {
 			_ = tcp.CloseWrite()
 		}
@@ -399,12 +417,30 @@ func (s *TunnelServer) proxyConnection(tunnelConn *Connection, httpConn net.Conn
 
 	go func() {
 		defer wg.Done()
-		s.logger.Info("Copying Client -> Caddy")
-		n, err := io.Copy(httpConn, stream)
-		if err != nil {
-			s.logger.Warn("Error copying stream to Caddy: %v", err)
+		s.logger.Info("Copying Client -> Caddy (with logging)")
+		buf := make([]byte, 4096)
+		total := 0
+		for {
+			nr, er := stream.Read(buf)
+			if nr > 0 {
+				total += nr
+				s.logger.Info("Forwarding %d bytes from stream to Caddy", nr)
+				if nw, ew := httpConn.Write(buf[:nr]); ew != nil {
+					s.logger.Error("Write error to httpConn: %v", ew)
+					break
+				} else if nw != nr {
+					s.logger.Error("Short write to httpConn: wrote %d of %d bytes", nw, nr)
+					break
+				}
+			}
+			if er != nil {
+				if er != io.EOF {
+					s.logger.Error("Read error from stream: %v", er)
+				}
+				break
+			}
 		}
-		s.logger.Info("Copied %d bytes from stream to Caddy", n)
+		s.logger.Info("Copied total %d bytes from stream to Caddy", total)
 		if tcp, ok := httpConn.(*net.TCPConn); ok {
 			_ = tcp.CloseWrite()
 		}
