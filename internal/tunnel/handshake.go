@@ -31,8 +31,11 @@ type handshakeRequest struct {
 
 // handshakeResponse represents the server's response to a handshake
 type handshakeResponse struct {
-	Status  string `json:"status"`
-	Message string `json:"message"`
+	Status    string `json:"status"`
+	Message   string `json:"message"`
+	Domain    string `json:"domain"`
+	LocalPort int    `json:"local_port"`
+	Protocol  string `json:"protocol"`
 }
 
 // writeHandshakeMessage writes a handshake message to the connection

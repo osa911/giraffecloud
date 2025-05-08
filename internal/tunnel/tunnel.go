@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"crypto/tls"
-	"encoding/json"
 	"fmt"
 	"giraffecloud/internal/logging"
 	"io"
@@ -18,12 +17,14 @@ import (
 
 // Tunnel represents a secure tunnel connection
 type Tunnel struct {
-	conn     net.Conn
-	stopChan chan struct{}
-	wg       sync.WaitGroup
-	mu       sync.Mutex
-	token    string
+	conn        net.Conn
+	stopChan    chan struct{}
+	wg          sync.WaitGroup
+	mu          sync.Mutex
+	token       string
 	yamuxSession *yamux.Session
+	Domain      string
+	LocalPort   int
 }
 
 // NewTunnel creates a new tunnel instance
@@ -85,8 +86,13 @@ func (t *Tunnel) ConnectWithContext(ctx context.Context, serverAddr string, toke
 		return fmt.Errorf("handshake failed: %w", err)
 	}
 	logger.Info("Handshake completed successfully: %s", resp.Message)
+	logger.Info("Domain: %s, LocalPort: %d", resp.Domain, resp.LocalPort)
 
 	t.conn = conn
+
+	// Set Domain and LocalPort from handshake response
+	t.Domain = resp.Domain
+	t.LocalPort = resp.LocalPort
 
 	logger.Info("Proxying traffic between this client and server at %s (tunnel established)", serverAddr)
 
@@ -172,30 +178,17 @@ func (t *Tunnel) handleStream(stream net.Conn, cfg *Config) {
 	defer stream.Close()
 
 	reader := bufio.NewReader(stream)
-
-	// Read JSON header
-	headerLine, err := reader.ReadBytes('\n')
-	if err != nil {
-		logger.Error("Failed to read stream header: %v", err)
-		return
-	}
-	var header struct {
-		Domain    string `json:"domain"`
-		LocalPort int    `json:"local_port"`
-		Protocol  string `json:"protocol"`
-	}
-	if err := json.Unmarshal(headerLine, &header); err != nil {
-		logger.Error("Failed to parse stream header: %v", err)
-		return
-	}
-	localAddr := fmt.Sprintf("localhost:%d", header.LocalPort)
+	// Use the LocalPort from the handshake response instead of static config
+	localAddr := fmt.Sprintf("localhost:%d", t.LocalPort)
+	logger.Info("LocalAddr: %s", localAddr)
 	localConn, err := net.Dial("tcp", localAddr)
 	if err != nil {
 		logger.Error("Failed to connect to local service at %s: %v", localAddr, err)
 		return
 	}
+	logger.Info("Connected to local service at %s", localAddr)
 	defer localConn.Close()
-	logger.Info("Proxying stream for domain %s between server and local service at %s", header.Domain, localAddr)
+	logger.Info("Proxying stream between server and local service at %s", localAddr)
 
 	// Copy any buffered data, peek and log for debugging partial/incomplete HTTP requests
 	if buffered := reader.Buffered(); buffered > 0 {

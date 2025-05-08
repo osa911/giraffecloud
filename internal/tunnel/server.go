@@ -280,8 +280,11 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 
 	// Send success response
 	resp := handshakeResponse{
-		Status:  "success",
-		Message: "Connected successfully",
+    Status:    "success",
+		Message:   "Connected successfully",
+		Domain:    tunnel.Domain,
+		LocalPort: tunnel.TargetPort,
+		Protocol:  "tcp",
 	}
 	if err := s.sendHandshakeResponse(conn, resp); err != nil {
 		s.logger.Error("Failed to send handshake response to %s: %v", conn.RemoteAddr().String(), err)
