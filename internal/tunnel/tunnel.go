@@ -197,13 +197,24 @@ func (t *Tunnel) handleStream(stream net.Conn, cfg *Config) {
 	defer localConn.Close()
 	logger.Info("Proxying stream for domain %s between server and local service at %s", header.Domain, localAddr)
 
-	// Copy any buffered data
+	// Copy any buffered data, peek and log for debugging partial/incomplete HTTP requests
 	if buffered := reader.Buffered(); buffered > 0 {
 		logger.Info("Forwarding %d bytes of buffered data to local service", buffered)
-		buf := make([]byte, buffered)
-		_, err := reader.Read(buf)
+		peek, err := reader.Peek(buffered)
 		if err == nil {
-			localConn.Write(buf)
+			loggedBytes := 512
+			if len(peek) < 512 {
+				loggedBytes = len(peek)
+			}
+			logger.Info("Buffered peek data (first %d bytes): %q", loggedBytes, peek[:loggedBytes])
+			_, writeErr := localConn.Write(peek)
+			if writeErr != nil {
+				logger.Error("Failed to write peeked data to localConn: %v", writeErr)
+			} else {
+				_, _ = reader.Discard(buffered)
+			}
+		} else {
+			logger.Error("Failed to peek buffered data: %v", err)
 		}
 	}
 

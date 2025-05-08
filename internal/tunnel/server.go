@@ -363,21 +363,7 @@ func (s *TunnelServer) proxyConnection(tunnelConn *Connection, httpConn net.Conn
 	}
 	s.logger.Info("Opened yamux stream to client for tunnel ID %d", tunnelConn.tunnel.ID)
 
-	// Write JSON header to stream
-	header := map[string]interface{}{
-		"domain":     tunnelConn.tunnel.Domain,
-		"local_port": tunnelConn.tunnel.TargetPort,
-		"protocol":   "tcp",
-	}
-	headerBytes, _ := json.Marshal(header)
-	headerBytes = append(headerBytes, '\n')
-	if _, err := stream.Write(headerBytes); err != nil {
-		s.logger.Error("Failed to write header to yamux stream: %v", err)
-		_ = stream.Close()
-		_ = httpConn.Close()
-		return
-	}
-	s.logger.Info("Sent header to yamux stream: %s", string(headerBytes))
+	// Removed JSON header write to avoid corrupting the beginning of the HTTP stream
 
 	// Send any buffered hijacked data
 	if buf != nil && buf.Reader != nil {
