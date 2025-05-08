@@ -392,6 +392,9 @@ func (s *TunnelServer) proxyConnection(tunnelConn *Connection, httpConn net.Conn
 			s.logger.Warn("Error copying Caddy to stream: %v", err)
 		}
 		s.logger.Info("Copied %d bytes from Caddy to stream", n)
+		if tcp, ok := stream.(*net.TCPConn); ok {
+			_ = tcp.CloseWrite()
+		}
 	}()
 
 	go func() {
@@ -402,6 +405,9 @@ func (s *TunnelServer) proxyConnection(tunnelConn *Connection, httpConn net.Conn
 			s.logger.Warn("Error copying stream to Caddy: %v", err)
 		}
 		s.logger.Info("Copied %d bytes from stream to Caddy", n)
+		if tcp, ok := httpConn.(*net.TCPConn); ok {
+			_ = tcp.CloseWrite()
+		}
 	}()
 
 	wg.Wait()

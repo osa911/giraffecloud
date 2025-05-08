@@ -220,7 +220,7 @@ func (t *Tunnel) handleStream(stream net.Conn, cfg *Config) {
 		n, err := io.Copy(localConn, reader)
 		logger.Info("Copied %d bytes from stream to localConn (server->local), err=%v", n, err)
 		if tcp, ok := localConn.(*net.TCPConn); ok {
-			tcp.CloseWrite()
+			_ = tcp.CloseWrite()
 		}
 	}()
 
@@ -230,7 +230,7 @@ func (t *Tunnel) handleStream(stream net.Conn, cfg *Config) {
 		n, err := io.Copy(stream, localConn)
 		logger.Info("Copied %d bytes from localConn to stream (local->server), err=%v", n, err)
 		if tcp, ok := stream.(*net.TCPConn); ok {
-			tcp.CloseWrite()
+			_ = tcp.CloseWrite()
 		}
 	}()
 
