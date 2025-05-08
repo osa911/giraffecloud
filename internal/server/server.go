@@ -291,13 +291,13 @@ func (s *Server) Start(cfg *Config) error {
 				http.Error(w, "webserver doesn't support hijacking", http.StatusInternalServerError)
 				return
 			}
-			conn, buf, err := hj.Hijack()
+			conn, _, err := hj.Hijack()
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
 			logger.Info("Hijacked HTTP connection for tunnel domain %s", domain)
-			s.tunnelServer.ProxyHTTPConnection(domain, conn, buf)
+			s.tunnelServer.ProxyHTTPConnection(domain, conn, nil)
 			return
 		}
 		// Not a tunnel domain: fall back to Gin router

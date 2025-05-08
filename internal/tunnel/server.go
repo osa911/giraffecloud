@@ -299,6 +299,7 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 		return
 	}
 
+
 	connection := &Connection{
 		conn:         conn,
 		tunnel:       updatedTunnel,
@@ -367,94 +368,33 @@ func (s *TunnelServer) proxyConnection(tunnelConn *Connection, httpConn net.Conn
 	}
 	s.logger.Info("Opened yamux stream to client for tunnel ID %d", tunnelConn.tunnel.ID)
 
-	// Stream implements net.Conn
-	stream.Write([]byte("ping"))
-
-	// Removed JSON header write to avoid corrupting the beginning of the HTTP stream
-
-	// Send any buffered hijacked data
-	if buf != nil && buf.Reader != nil {
-		if buffered := buf.Reader.Buffered(); buffered > 0 {
-			if peek, err := buf.Reader.Peek(buffered); err == nil {
-				if _, err := stream.Write(peek); err != nil {
-					s.logger.Error("Failed to write buffered data to stream: %v", err)
-				} else {
-					buf.Reader.Discard(buffered)
-				}
-			}
-		}
-	}
-
 	var wg sync.WaitGroup
 	wg.Add(2)
 
 	go func() {
 		defer wg.Done()
-		s.logger.Info("Copying Caddy -> Client (with logging)")
-		buf := make([]byte, 4096)
-		total := 0
-		for {
-			nr, er := httpConn.Read(buf)
-			if nr > 0 {
-				total += nr
-				s.logger.Info("Forwarding %d bytes from Caddy to stream", nr)
-				if nw, ew := stream.Write(buf[:nr]); ew != nil {
-					s.logger.Error("Write error to stream: %v", ew)
-					break
-				} else if nw != nr {
-					s.logger.Error("Short write to stream: wrote %d of %d bytes", nw, nr)
-					break
-				}
-			}
-			if er != nil {
-				if er != io.EOF {
-					s.logger.Error("Read error from httpConn: %v", er)
-				}
-				break
-			}
-		}
-		s.logger.Info("Copied total %d bytes from Caddy to stream", total)
-		if tcp, ok := stream.(*net.TCPConn); ok {
-			_ = tcp.CloseWrite()
+		s.logger.Info("Proxying Caddy -> Client")
+		_, err := io.Copy(stream, httpConn)
+		if err != nil {
+			s.logger.Error("Error copying from httpConn to stream: %v", err)
 		}
 	}()
 
 	go func() {
 		defer wg.Done()
-		s.logger.Info("Copying Client -> Caddy (with logging)")
-		buf := make([]byte, 4096)
-		total := 0
-		for {
-			nr, er := stream.Read(buf)
-			if nr > 0 {
-				total += nr
-				s.logger.Info("Forwarding %d bytes from stream to Caddy", nr)
-				if nw, ew := httpConn.Write(buf[:nr]); ew != nil {
-					s.logger.Error("Write error to httpConn: %v", ew)
-					break
-				} else if nw != nr {
-					s.logger.Error("Short write to httpConn: wrote %d of %d bytes", nw, nr)
-					break
-				}
-			}
-			if er != nil {
-				if er != io.EOF {
-					s.logger.Error("Read error from stream: %v", er)
-				}
-				break
-			}
-		}
-		s.logger.Info("Copied total %d bytes from stream to Caddy", total)
-		if tcp, ok := httpConn.(*net.TCPConn); ok {
-			_ = tcp.CloseWrite()
+		s.logger.Info("Proxying Client -> Caddy")
+		_, err := io.Copy(httpConn, stream)
+		if err != nil {
+			s.logger.Error("Error copying from stream to httpConn: %v", err)
 		}
 	}()
 
 	wg.Wait()
-	s.logger.Info("Finished proxy for tunnel ID %d", tunnelConn.tunnel.ID)
 
 	_ = stream.Close()
 	_ = httpConn.Close()
+
+	s.logger.Info("Finished proxy for tunnel ID %d", tunnelConn.tunnel.ID)
 }
 
 // IsTunnelDomain returns true if the given domain is an active tunnel
