@@ -217,8 +217,29 @@ func (t *Tunnel) handleStream(stream net.Conn, cfg *Config) {
 	go func() {
 		defer wg.Done()
 		logger.Info("Starting io.Copy from stream to localConn (server->local)")
-		n, err := io.Copy(localConn, reader)
-		logger.Info("Copied %d bytes from stream to localConn (server->local), err=%v", n, err)
+		buf := make([]byte, 4096)
+		total := 0
+		for {
+			nr, er := reader.Read(buf)
+			if nr > 0 {
+				total += nr
+				logger.Info("Forwarding %d bytes from stream to localConn", nr)
+				if nw, ew := localConn.Write(buf[:nr]); ew != nil {
+					logger.Error("Write error: %v", ew)
+					break
+				} else if nw != nr {
+					logger.Error("Short write: wrote %d of %d bytes", nw, nr)
+					break
+				}
+			}
+			if er != nil {
+				if er != io.EOF {
+					logger.Error("Read error: %v", er)
+				}
+				break
+			}
+		}
+		logger.Info("Copied total %d bytes from stream to localConn (server->local)", total)
 		if tcp, ok := localConn.(*net.TCPConn); ok {
 			_ = tcp.CloseWrite()
 		}
