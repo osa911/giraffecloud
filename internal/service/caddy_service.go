@@ -69,6 +69,7 @@ func (s *caddyService) ConfigureRoute(domain string, targetIP string, targetPort
 		"handle": []map[string]interface{}{
 			{
 				"handler": "reverse_proxy",
+				"flush_interval": "0s",
 				"upstreams": []map[string]interface{}{
 					{
 						"dial": "api:8081",
