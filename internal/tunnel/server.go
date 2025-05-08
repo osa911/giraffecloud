@@ -298,6 +298,7 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 		s.logger.Error("Failed to create yamux session: %v", err)
 		return
 	}
+
 	connection := &Connection{
 		conn:         conn,
 		tunnel:       updatedTunnel,
@@ -365,6 +366,9 @@ func (s *TunnelServer) proxyConnection(tunnelConn *Connection, httpConn net.Conn
 		return
 	}
 	s.logger.Info("Opened yamux stream to client for tunnel ID %d", tunnelConn.tunnel.ID)
+
+	// Stream implements net.Conn
+	stream.Write([]byte("ping"))
 
 	// Removed JSON header write to avoid corrupting the beginning of the HTTP stream
 

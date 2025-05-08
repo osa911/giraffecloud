@@ -175,6 +175,12 @@ func (t *Tunnel) acceptStreams() {
 // handleStream proxies a single yamux stream to the local service
 func (t *Tunnel) handleStream(stream net.Conn, cfg *Config) {
 	logger := logging.GetGlobalLogger()
+
+	// Listen for a message
+	buf := make([]byte, 4)
+	stream.Read(buf)
+	logger.Info("Received message: %s", string(buf))
+
 	defer stream.Close()
 
 	reader := bufio.NewReader(stream)
@@ -193,8 +199,7 @@ func (t *Tunnel) handleStream(stream net.Conn, cfg *Config) {
 	// Copy any buffered data, peek and log for debugging partial/incomplete HTTP requests
 	if buffered := reader.Buffered(); buffered > 0 {
 		logger.Info("Forwarding %d bytes of buffered data to local service", buffered)
-		peek, err := reader.Peek(buffered)
-		if err == nil {
+		if peek, err := reader.Peek(buffered); err == nil {
 			loggedBytes := 512
 			if len(peek) < 512 {
 				loggedBytes = len(peek)
@@ -204,6 +209,7 @@ func (t *Tunnel) handleStream(stream net.Conn, cfg *Config) {
 			if writeErr != nil {
 				logger.Error("Failed to write peeked data to localConn: %v", writeErr)
 			} else {
+				logger.Info("Wrote %d bytes of peeked data to localConn", len(peek))
 				_, _ = reader.Discard(buffered)
 			}
 		} else {
