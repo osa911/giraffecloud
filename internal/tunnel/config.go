@@ -14,73 +14,41 @@ type Server struct {
 	Port int    `json:"port"` // Port number
 }
 
-// Config holds tunnel-specific configuration
+// Config represents the tunnel client configuration
 type Config struct {
-	APIHost    string `json:"api_host"`    // Host for API operations (login, certs)
-	TunnelHost string `json:"tunnel_host"` // Host for tunnel connection
-	// Server configuration
-	Server Server `json:"server"` // Remote server configuration
+	Token     string         `json:"token"`
+	Domain    string         `json:"domain"`
+	LocalPort int           `json:"local_port"`
+	Server    ServerConfig   `json:"server"`
+	Security  SecurityConfig `json:"security"`
+}
 
-	// Local service configuration
-	Local Server `json:"local"` // Local service configuration
+// ServerConfig represents server connection settings
+type ServerConfig struct {
+	Host string `json:"host"`
+	Port int    `json:"port"`
+}
 
-	// Protocol configuration
-	Protocol string `json:"protocol"` // Protocol type (http, https, tcp)
-
-	// Security configuration
-	Security struct {
-		// InsecureSkipVerify should only be used for development/testing
-		// When true, the client will not verify the server's certificate
-		InsecureSkipVerify bool `json:"insecure_skip_verify"`
-		// CACert is the path to a CA certificate file to trust
-		CACert string `json:"ca_cert"`
-		// ClientCert is the path to the client certificate file
-		ClientCert string `json:"client_cert"`
-		// ClientKey is the path to the client private key file
-		ClientKey string `json:"client_key"`
-	} `json:"security"`
-
-	// Logging configuration
-	Logging logging.Config `json:"logging"` // Logging configuration
-
-	// Authentication
-	Token string `json:"token"` // Authentication token
+// SecurityConfig represents security settings
+type SecurityConfig struct {
+	InsecureSkipVerify bool   `json:"insecure_skip_verify"`
+	CACert             string `json:"ca_cert"`
+	ClientCert         string `json:"client_cert"`
+	ClientKey          string `json:"client_key"`
 }
 
 // DefaultConfig provides default tunnel configuration
 var DefaultConfig = Config{
-	APIHost:    "api.giraffecloud.xyz",
-	TunnelHost: "tunnel.giraffecloud.xyz",
-	Server: Server{
+	Server: ServerConfig{
 		Host: "tunnel.giraffecloud.xyz",
 		Port: 4443,
 	},
-	Local: Server{
-		Host: "localhost",
-		Port: 8080,
-	},
-	Protocol: "https",
-	Security: struct {
-		InsecureSkipVerify bool `json:"insecure_skip_verify"`
-		CACert string `json:"ca_cert"`
-		ClientCert string `json:"client_cert"`
-		ClientKey string `json:"client_key"`
-	}{
+	Security: SecurityConfig{
 		InsecureSkipVerify: false,
-		CACert: "",
-		ClientCert: "",
-		ClientKey: "",
-	},
-	Logging: logging.Config{
-		Level:      "info",
-		File:       "~/.giraffecloud/tunnel.log",
-		MaxSize:    100,
-		MaxBackups: 3,
-		MaxAge:     7,
 	},
 }
 
-// LoadConfig loads tunnel configuration from the default location
+// LoadConfig loads the configuration from the default location
 func LoadConfig() (*Config, error) {
 	logger := logging.GetGlobalLogger()
 	logger.Info("Loading tunnel configuration")
@@ -91,17 +59,13 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("failed to get home directory: %w", err)
 	}
 
-	configDir := filepath.Join(homeDir, ".giraffecloud")
-	configPath := filepath.Join(configDir, "tunnel.json")
-
-	// Return default config if file doesn't exist
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		logger.Info("Config file not found, using default configuration")
-		return &DefaultConfig, nil
-	}
-
+	configPath := filepath.Join(homeDir, ".giraffecloud", "config.json")
 	data, err := os.ReadFile(configPath)
 	if err != nil {
+		if os.IsNotExist(err) {
+			logger.Info("Config file not found, using default configuration")
+			return &DefaultConfig, nil
+		}
 		logger.Error("Failed to read config file %s: %v", configPath, err)
 		return nil, fmt.Errorf("failed to read tunnel config file: %w", err)
 	}
@@ -117,7 +81,7 @@ func LoadConfig() (*Config, error) {
 	return &cfg, nil
 }
 
-// SaveConfig saves tunnel configuration to the default location
+// SaveConfig saves the configuration to the default location
 func SaveConfig(cfg *Config) error {
 	logger := logging.GetGlobalLogger()
 	logger.Info("Saving tunnel configuration")
@@ -140,13 +104,13 @@ func SaveConfig(cfg *Config) error {
 	}
 	logger.Info("Ensured config directory exists: %s", configDir)
 
+	configPath := filepath.Join(configDir, "config.json")
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		logger.Error("Failed to marshal config: %v", err)
 		return fmt.Errorf("failed to marshal tunnel config: %w", err)
 	}
 
-	configPath := filepath.Join(configDir, "tunnel.json")
 	if err := os.WriteFile(configPath, data, 0600); err != nil {
 		logger.Error("Failed to write config file %s: %v", configPath, err)
 		return fmt.Errorf("failed to write tunnel config file: %w", err)
@@ -166,15 +130,6 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("token is required")
 	}
 
-	if c.APIHost == "" {
-		logger.Error("API host is required")
-		return fmt.Errorf("api_host is required")
-	}
-	if c.TunnelHost == "" {
-		logger.Error("Tunnel host is required")
-		return fmt.Errorf("tunnel_host is required")
-	}
-
 	if c.Server.Host == "" {
 		logger.Error("Server host is required")
 		return fmt.Errorf("server host is required")
@@ -185,27 +140,8 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("invalid server port: %d", c.Server.Port)
 	}
 
-	if c.Local.Host == "" {
-		logger.Error("Local host is required")
-		return fmt.Errorf("local host is required")
-	}
-
-	if c.Local.Port <= 0 || c.Local.Port > 65535 {
-		logger.Error("Invalid local port: %d", c.Local.Port)
-		return fmt.Errorf("invalid local port: %d", c.Local.Port)
-	}
-
-	switch c.Protocol {
-	case "http", "https", "tcp":
-		// valid protocols
-	default:
-		logger.Error("Invalid protocol: %s", c.Protocol)
-		return fmt.Errorf("invalid protocol: %s", c.Protocol)
-	}
-
-	if err := c.Logging.Validate(); err != nil {
-		logger.Error("Invalid logging config: %v", err)
-		return fmt.Errorf("logging config: %w", err)
+	if c.Security.InsecureSkipVerify {
+		logger.Warn("InsecureSkipVerify is true, the client will not verify the server's certificate")
 	}
 
 	logger.Info("Configuration validation successful")

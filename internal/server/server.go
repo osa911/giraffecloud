@@ -196,7 +196,7 @@ func (s *Server) Init() error {
 
 	// Initialize tunnel server
 	logger.Info("Initializing tunnel server...")
-	s.tunnelServer = tunnel.NewServer(tunnelService, repos.Token)
+	s.tunnelServer = tunnel.NewServer(repos.Token)
 
 	tunnelPort := os.Getenv("TUNNEL_PORT")
 	if tunnelPort == "" {
@@ -297,7 +297,7 @@ func (s *Server) Start(cfg *Config) error {
 				return
 			}
 			logger.Info("Hijacked HTTP connection for tunnel domain %s", domain)
-			s.tunnelServer.ProxyHTTPConnection(domain, conn, nil)
+			s.tunnelServer.ProxyHTTPConnection(domain, conn)
 			return
 		}
 		// Not a tunnel domain: fall back to Gin router

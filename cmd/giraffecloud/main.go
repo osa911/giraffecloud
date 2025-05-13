@@ -60,11 +60,10 @@ var connectCmd = &cobra.Command{
 		// Get tunnel host from flag if provided
 		tunnelHost, _ := cmd.Flags().GetString("tunnel-host")
 		if tunnelHost != "" {
-			cfg.TunnelHost = tunnelHost
+			cfg.Server.Host = tunnelHost
 		}
 
-		// Use TunnelHost for connection
-		cfg.Server.Host = cfg.TunnelHost
+		serverAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 
 		// Create TLS config
 		tlsConfig := &tls.Config{
@@ -100,8 +99,6 @@ var connectCmd = &cobra.Command{
 			logger.Info("Using client certificate: %s", cfg.Security.ClientCert)
 		}
 
-		serverAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
-
 		// Set up context and signal handling
 		ctx, cancel := context.WithCancel(context.Background())
 		sigChan := make(chan os.Signal, 1)
@@ -130,7 +127,7 @@ var connectCmd = &cobra.Command{
 				s := spinner.New(spinner.CharSets[14], 120*time.Millisecond)
 				s.Suffix = " Connecting to GiraffeCloud..."
 				s.Start()
-				err := t.ConnectWithContext(ctx, serverAddr, cfg.Token, tlsConfig)
+				err := t.Connect(serverAddr, cfg.Token, cfg.Domain, cfg.LocalPort, tlsConfig)
 				s.Stop()
 
 				if err != nil {
@@ -268,11 +265,11 @@ Example:
 		// Get API host from flag if provided
 		apiHost, _ := cmd.Flags().GetString("api-host")
 		if apiHost != "" {
-			cfg.APIHost = apiHost
+			cfg.Server.Host = apiHost
 		}
 
-		// Use APIHost for certificate fetching
-		serverHost := cfg.APIHost
+		// Use Server.Host for certificate fetching
+		serverHost := cfg.Server.Host
 
 		// Create certificates directory
 		homeDir, err := os.UserHomeDir()
