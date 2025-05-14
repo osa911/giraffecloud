@@ -80,20 +80,7 @@ func (t *Tunnel) Disconnect() error {
 
 // handleIncomingConnections handles incoming connections from the server
 func (t *Tunnel) handleIncomingConnections() {
-	for {
-		select {
-		case <-t.stopChan:
-			return
-		default:
-			// Handle each incoming connection
-			t.handleConnection()
-		}
-	}
-}
-
-// handleConnection handles a single connection from the server
-func (t *Tunnel) handleConnection() {
-	// Connect to local service
+	// Connect to local service once
 	localConn, err := net.Dial("tcp", fmt.Sprintf("localhost:%d", t.localPort))
 	if err != nil {
 		t.logger.Error("Failed to connect to local service: %v", err)
@@ -105,16 +92,23 @@ func (t *Tunnel) handleConnection() {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
+	// Copy from tunnel to local service
 	go func() {
 		defer wg.Done()
-		io.Copy(localConn, t.conn)
+		if _, err := io.Copy(localConn, t.conn); err != nil {
+			t.logger.Error("Error copying data from tunnel to local service: %v", err)
+		}
 	}()
 
+	// Copy from local service to tunnel
 	go func() {
 		defer wg.Done()
-		io.Copy(t.conn, localConn)
+		if _, err := io.Copy(t.conn, localConn); err != nil {
+			t.logger.Error("Error copying data from local service to tunnel: %v", err)
+		}
 	}()
 
+	// Wait for either connection to close
 	wg.Wait()
 }
 

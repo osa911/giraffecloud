@@ -192,18 +192,24 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 		return
 	}
 
-	// Copy data bidirectionally
+	// Copy data bidirectionally without closing the connections
 	var wg sync.WaitGroup
 	wg.Add(2)
 
+	// Copy from client to tunnel
 	go func() {
 		defer wg.Done()
-		io.Copy(tunnelConn.conn, conn)
+		if _, err := io.Copy(tunnelConn.conn, conn); err != nil {
+			s.logger.Error("Error copying data from client to tunnel: %v", err)
+		}
 	}()
 
+	// Copy from tunnel to client
 	go func() {
 		defer wg.Done()
-		io.Copy(conn, tunnelConn.conn)
+		if _, err := io.Copy(conn, tunnelConn.conn); err != nil {
+			s.logger.Error("Error copying data from tunnel to client: %v", err)
+		}
 	}()
 
 	wg.Wait()
