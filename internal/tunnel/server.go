@@ -208,6 +208,7 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 
 	// Forward data in both directions concurrently
 	go func() {
+		defer close(clientToTunnelErr)
 		_, err := io.Copy(tunnelWriter, clientReader)
 		if err != nil {
 			s.logger.Error("[PROXY DEBUG] Error copying client to tunnel: %v", err)
@@ -217,6 +218,7 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 	}()
 
 	go func() {
+		defer close(tunnelToClientErr)
 		_, err := io.Copy(clientWriter, tunnelReader)
 		if err != nil {
 			s.logger.Error("[PROXY DEBUG] Error copying tunnel to client: %v", err)
@@ -232,14 +234,14 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 			s.logger.Error("[PROXY DEBUG] Client to tunnel error: %v", err)
 		}
 		tunnelWriter.Flush()
-		// Wait for response data
+		// Wait for response data with a longer timeout
 		select {
 		case err := <-tunnelToClientErr:
 			if err != nil && err != io.EOF {
 				s.logger.Error("[PROXY DEBUG] Tunnel to client error: %v", err)
 			}
 			clientWriter.Flush()
-		case <-time.After(5 * time.Second):
+		case <-time.After(30 * time.Second): // Increased timeout for response
 			s.logger.Info("[PROXY DEBUG] Response wait timeout")
 		}
 	case err := <-tunnelToClientErr:
@@ -254,13 +256,19 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 				s.logger.Error("[PROXY DEBUG] Client to tunnel error: %v", err)
 			}
 			tunnelWriter.Flush()
-		case <-time.After(5 * time.Second):
+		case <-time.After(30 * time.Second): // Increased timeout for request completion
 			s.logger.Info("[PROXY DEBUG] Request completion timeout")
 		}
 	case <-time.After(60 * time.Second):
 		s.logger.Info("[PROXY DEBUG] Connection timeout")
 	}
 
+	// Ensure all data is written before closing
+	clientWriter.Flush()
+	tunnelWriter.Flush()
+
+	// Close connections
+	conn.Close()
 	close(done)
 	s.logger.Info("[PROXY DEBUG] Proxy connection completed for domain: %s", domain)
 }

@@ -113,7 +113,9 @@ func (t *Tunnel) handleIncomingConnections() {
 
 			// Forward data in both directions concurrently
 			go func() {
-				_, err := io.Copy(localWriter, tunnelReader)
+				defer close(tunnelToLocalErr)
+				n, err := io.Copy(localWriter, tunnelReader)
+				t.logger.Info("[TUNNEL DEBUG] Forwarded %d bytes from tunnel to local", n)
 				if err != nil {
 					t.logger.Error("[TUNNEL DEBUG] Error copying tunnel to local: %v", err)
 				}
@@ -122,7 +124,9 @@ func (t *Tunnel) handleIncomingConnections() {
 			}()
 
 			go func() {
-				_, err := io.Copy(tunnelWriter, localReader)
+				defer close(localToTunnelErr)
+				n, err := io.Copy(tunnelWriter, localReader)
+				t.logger.Info("[TUNNEL DEBUG] Forwarded %d bytes from local to tunnel", n)
 				if err != nil {
 					t.logger.Error("[TUNNEL DEBUG] Error copying local to tunnel: %v", err)
 				}
@@ -137,14 +141,14 @@ func (t *Tunnel) handleIncomingConnections() {
 					t.logger.Error("[TUNNEL DEBUG] Tunnel to local error: %v", err)
 				}
 				localWriter.Flush()
-				// Wait for response data
+				// Wait for response data with a longer timeout
 				select {
 				case err := <-localToTunnelErr:
 					if err != nil && err != io.EOF {
 						t.logger.Error("[TUNNEL DEBUG] Local to tunnel error: %v", err)
 					}
 					tunnelWriter.Flush()
-				case <-time.After(5 * time.Second):
+				case <-time.After(30 * time.Second): // Increased timeout for response
 					t.logger.Info("[TUNNEL DEBUG] Response wait timeout")
 				}
 			case err := <-localToTunnelErr:
@@ -159,7 +163,7 @@ func (t *Tunnel) handleIncomingConnections() {
 						t.logger.Error("[TUNNEL DEBUG] Tunnel to local error: %v", err)
 					}
 					localWriter.Flush()
-				case <-time.After(5 * time.Second):
+				case <-time.After(30 * time.Second): // Increased timeout for request completion
 					t.logger.Info("[TUNNEL DEBUG] Request completion timeout")
 				}
 			case <-t.stopChan:
@@ -167,6 +171,10 @@ func (t *Tunnel) handleIncomingConnections() {
 			case <-time.After(60 * time.Second):
 				t.logger.Info("[TUNNEL DEBUG] Connection timeout")
 			}
+
+			// Ensure all data is written before closing
+			localWriter.Flush()
+			tunnelWriter.Flush()
 
 			// Cleanup
 			localConn.Close()
