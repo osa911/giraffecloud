@@ -2,6 +2,7 @@ package tunnel
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -210,7 +211,7 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 		defer wg.Done()
 		for {
 			// Read request from client
-			data := make([]byte, 4096)
+			data := make([]byte, 32*1024) // Increase buffer size for larger requests
 			n, err := clientReader.Read(data)
 			if err != nil {
 				if err != io.EOF {
@@ -237,6 +238,12 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 				return
 			}
 			s.logger.Info("[PROXY DEBUG] Flushed tunnel writer")
+
+			// If this was the end of the request (empty line), break
+			if bytes.Contains(data[:n], []byte("\r\n\r\n")) {
+				s.logger.Info("[PROXY DEBUG] End of request detected")
+				break
+			}
 		}
 	}()
 
@@ -245,7 +252,7 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 		defer wg.Done()
 		for {
 			// Read response from tunnel
-			data := make([]byte, 4096)
+			data := make([]byte, 32*1024) // Increase buffer size for larger responses
 			n, err := tunnelReader.Read(data)
 			if err != nil {
 				if err != io.EOF {
@@ -272,6 +279,12 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 				return
 			}
 			s.logger.Info("[PROXY DEBUG] Flushed client writer")
+
+			// If this was the end of the response (empty line), break
+			if bytes.Contains(data[:n], []byte("\r\n\r\n")) {
+				s.logger.Info("[PROXY DEBUG] End of response detected")
+				break
+			}
 		}
 	}()
 

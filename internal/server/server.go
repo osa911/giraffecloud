@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -303,12 +304,7 @@ func (s *Server) Start(cfg *Config) error {
 				return
 			}
 
-			// Write the initial response headers before hijacking
-			w.Header().Set("Connection", "upgrade")
-			w.Header().Set("Upgrade", "tcp")
-			w.WriteHeader(http.StatusSwitchingProtocols)
-
-			conn, bufrw, err := hj.Hijack()
+			conn, _, err := hj.Hijack()
 			if err != nil {
 				logger.Error("[HIJACK DEBUG] Hijack failed: %v", err)
 				http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -317,17 +313,30 @@ func (s *Server) Start(cfg *Config) error {
 			defer conn.Close()
 			logger.Info("[HIJACK DEBUG] Successfully hijacked connection for domain: %s", domain)
 
-			// Check if there's any buffered data
-			buffered := bufrw.Reader.Buffered()
-			if buffered > 0 {
-				logger.Info("[HIJACK DEBUG] Found %d bytes of buffered data in hijacked connection", buffered)
-				data := make([]byte, buffered)
-				n, err := bufrw.Reader.Read(data)
+			// Reconstruct the original request as a string
+			reqString := fmt.Sprintf("%s %s HTTP/%d.%d\r\n", r.Method, r.URL.RequestURI(), r.ProtoMajor, r.ProtoMinor)
+			for key, values := range r.Header {
+				for _, value := range values {
+					reqString += fmt.Sprintf("%s: %s\r\n", key, value)
+				}
+			}
+			reqString += "\r\n"
+
+			if r.Body != nil {
+				body, err := io.ReadAll(r.Body)
 				if err != nil {
-					logger.Error("[HIJACK DEBUG] Error reading buffered data: %v", err)
+					logger.Error("[HIJACK DEBUG] Error reading request body: %v", err)
 					return
 				}
-				logger.Info("[HIJACK DEBUG] Read %d bytes of buffered data: %s", n, string(data[:n]))
+				reqString += string(body)
+			}
+
+			logger.Info("[HIJACK DEBUG] Forwarding HTTP request:\n%s", reqString)
+
+			// Write the request to the connection
+			if _, err := conn.Write([]byte(reqString)); err != nil {
+				logger.Error("[HIJACK DEBUG] Error writing request to connection: %v", err)
+				return
 			}
 
 			logger.Info("[HIJACK DEBUG] Proxying connection for domain: %s", domain)
