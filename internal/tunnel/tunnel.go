@@ -95,40 +95,54 @@ func (t *Tunnel) handleIncomingConnections() {
 			t.logger.Info("[TUNNEL DEBUG] Received stop signal, stopping connection handler")
 			return
 		default:
-			// Read the request line and headers
-			var requestData []byte
+			// First, read the request line
+			requestLine, err := tunnelReader.ReadString('\n')
+			if err != nil {
+				if err != io.EOF {
+					t.logger.Error("[TUNNEL DEBUG] Error reading request line: %v", err)
+				}
+				time.Sleep(100 * time.Millisecond)
+				continue
+			}
+			t.logger.Info("[TUNNEL DEBUG] Request line: %s", strings.TrimSpace(requestLine))
+
+			// Initialize request data with the request line
+			requestData := []byte(requestLine)
+
+			// Read headers until we hit an empty line
 			for {
-				line, err := tunnelReader.ReadBytes('\n')
+				line, err := tunnelReader.ReadString('\n')
 				if err != nil {
-					if err != io.EOF {
-						t.logger.Error("[TUNNEL DEBUG] Error reading request line: %v", err)
-					}
-					time.Sleep(100 * time.Millisecond)
+					t.logger.Error("[TUNNEL DEBUG] Error reading header line: %v", err)
 					continue
 				}
-				requestData = append(requestData, line...)
+				requestData = append(requestData, []byte(line)...)
 
 				// Check if we've reached the end of headers
-				if len(line) == 2 && line[0] == '\r' && line[1] == '\n' {
+				if line == "\r\n" {
 					break
 				}
 			}
 
-			if len(requestData) == 0 {
-				t.logger.Info("[TUNNEL DEBUG] No request data received, continuing...")
-				continue
-			}
-
 			t.logger.Info("[TUNNEL DEBUG] Read request headers (%d bytes)", len(requestData))
 
-			// Read request body if Content-Length is present
+			// Parse the request line to get the method
+			parts := strings.Split(strings.TrimSpace(requestLine), " ")
+			if len(parts) < 3 {
+				t.logger.Error("[TUNNEL DEBUG] Invalid request line format")
+				continue
+			}
+			method := parts[0]
+
+			// Check for Content-Length in headers
 			contentLength := 0
 			headers := string(requestData)
 			if match := regexp.MustCompile(`(?i)Content-Length: (\d+)`).FindStringSubmatch(headers); len(match) > 1 {
 				contentLength, _ = strconv.Atoi(match[1])
 			}
 
-			if contentLength > 0 {
+			// Read body for POST/PUT/PATCH methods or if Content-Length is present
+			if (method == "POST" || method == "PUT" || method == "PATCH" || contentLength > 0) && !strings.Contains(headers, "Transfer-Encoding: chunked") {
 				t.logger.Info("[TUNNEL DEBUG] Reading request body of length: %d", contentLength)
 				body := make([]byte, contentLength)
 				_, err := io.ReadFull(tunnelReader, body)
@@ -137,6 +151,34 @@ func (t *Tunnel) handleIncomingConnections() {
 					continue
 				}
 				requestData = append(requestData, body...)
+			} else if strings.Contains(headers, "Transfer-Encoding: chunked") {
+				t.logger.Info("[TUNNEL DEBUG] Reading chunked request body")
+				for {
+					// Read chunk size line
+					line, err := tunnelReader.ReadString('\n')
+					if err != nil {
+						t.logger.Error("[TUNNEL DEBUG] Error reading chunk size: %v", err)
+						continue
+					}
+					requestData = append(requestData, []byte(line)...)
+
+					// Parse chunk size
+					chunkSize, err := strconv.ParseInt(strings.TrimSpace(line), 16, 64)
+					if err != nil || chunkSize == 0 {
+						break
+					}
+
+					// Read chunk data
+					chunk := make([]byte, chunkSize+2) // +2 for CRLF
+					_, err = io.ReadFull(tunnelReader, chunk)
+					if err != nil {
+						t.logger.Error("[TUNNEL DEBUG] Error reading chunk data: %v", err)
+						break
+					}
+					requestData = append(requestData, chunk...)
+				}
+				// Add final CRLF
+				requestData = append(requestData, []byte("\r\n")...)
 			}
 
 			t.logger.Info("[TUNNEL DEBUG] Total request size: %d bytes", len(requestData))
@@ -170,56 +212,65 @@ func (t *Tunnel) handleIncomingConnections() {
 			}
 			t.logger.Info("[TUNNEL DEBUG] Wrote request to local service")
 
-			// Read the response headers
-			var responseData []byte
+			// Read the response status line
+			statusLine, err := localReader.ReadString('\n')
+			if err != nil {
+				t.logger.Error("[TUNNEL DEBUG] Error reading response status line: %v", err)
+				localConn.Close()
+				continue
+			}
+			t.logger.Info("[TUNNEL DEBUG] Response status: %s", strings.TrimSpace(statusLine))
+
+			// Initialize response data with status line
+			responseData := []byte(statusLine)
+
+			// Read response headers
 			for {
-				line, err := localReader.ReadBytes('\n')
+				line, err := localReader.ReadString('\n')
 				if err != nil {
-					if err != io.EOF {
-						t.logger.Error("[TUNNEL DEBUG] Error reading response headers: %v", err)
-					}
-					break
+					t.logger.Error("[TUNNEL DEBUG] Error reading response header: %v", err)
+					localConn.Close()
+					continue
 				}
-				responseData = append(responseData, line...)
+				responseData = append(responseData, []byte(line)...)
 
 				// Check if we've reached the end of headers
-				if len(line) == 2 && line[0] == '\r' && line[1] == '\n' {
+				if line == "\r\n" {
 					break
 				}
 			}
 
-			// Read response body based on Content-Length or Transfer-Encoding
+			// Check for Content-Length and Transfer-Encoding in response
 			headers = string(responseData)
 			contentLength = 0
 			if match := regexp.MustCompile(`(?i)Content-Length: (\d+)`).FindStringSubmatch(headers); len(match) > 1 {
 				contentLength, _ = strconv.Atoi(match[1])
 			}
-			chunked := regexp.MustCompile(`(?i)Transfer-Encoding: chunked`).MatchString(headers)
 
+			// Read response body based on Content-Length or Transfer-Encoding
 			if contentLength > 0 {
 				t.logger.Info("[TUNNEL DEBUG] Reading response body of length: %d", contentLength)
 				body := make([]byte, contentLength)
 				_, err := io.ReadFull(localReader, body)
 				if err != nil {
 					t.logger.Error("[TUNNEL DEBUG] Error reading response body: %v", err)
-				} else {
-					responseData = append(responseData, body...)
+					localConn.Close()
+					continue
 				}
-			} else if chunked {
+				responseData = append(responseData, body...)
+			} else if strings.Contains(headers, "Transfer-Encoding: chunked") {
 				t.logger.Info("[TUNNEL DEBUG] Reading chunked response body")
 				for {
 					// Read chunk size
-					line, err := localReader.ReadBytes('\n')
+					line, err := localReader.ReadString('\n')
 					if err != nil {
-						if err != io.EOF {
-							t.logger.Error("[TUNNEL DEBUG] Error reading chunk size: %v", err)
-						}
+						t.logger.Error("[TUNNEL DEBUG] Error reading chunk size: %v", err)
 						break
 					}
-					responseData = append(responseData, line...)
+					responseData = append(responseData, []byte(line)...)
 
 					// Parse chunk size
-					chunkSize, err := strconv.ParseInt(strings.TrimSpace(string(line)), 16, 64)
+					chunkSize, err := strconv.ParseInt(strings.TrimSpace(line), 16, 64)
 					if err != nil || chunkSize == 0 {
 						break
 					}
@@ -233,12 +284,8 @@ func (t *Tunnel) handleIncomingConnections() {
 					}
 					responseData = append(responseData, chunk...)
 				}
-			}
-
-			if len(responseData) == 0 {
-				t.logger.Error("[TUNNEL DEBUG] No response data received from local service")
-				localConn.Close()
-				continue
+				// Add final CRLF
+				responseData = append(responseData, []byte("\r\n")...)
 			}
 
 			t.logger.Info("[TUNNEL DEBUG] Total response size: %d bytes", len(responseData))
