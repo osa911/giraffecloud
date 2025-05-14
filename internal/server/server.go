@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -307,82 +307,62 @@ func (s *Server) Start(cfg *Config) error {
 
 			conn, bufrw, err := hj.Hijack()
 			if err != nil {
-				logger.Error("[HIJACK DEBUG] Hijack failed: %v", err)
+				logger.Error("[HIJACK DEBUG] Failed to hijack connection: %v", err)
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			defer conn.Close()
 			logger.Info("[HIJACK DEBUG] Successfully hijacked connection for domain: %s", domain)
 
-			// Set TCP keep-alive to prevent connection from being closed prematurely
-			if tcpConn, ok := conn.(*net.TCPConn); ok {
-				tcpConn.SetKeepAlive(true)
-				tcpConn.SetKeepAlivePeriod(30 * time.Second)
-			}
-
-			// Read any buffered data from the hijacked connection
-			if bufrw.Reader.Buffered() > 0 {
-				buffered := make([]byte, bufrw.Reader.Buffered())
-				_, err := bufrw.Reader.Read(buffered)
-				if err != nil {
-					logger.Error("[HIJACK DEBUG] Error reading buffered data: %v", err)
-					return
-				}
-				logger.Info("[HIJACK DEBUG] Read %d bytes of buffered data", len(buffered))
-			}
-
-			// Reconstruct the original request as a string
-			reqString := fmt.Sprintf("%s %s HTTP/%d.%d\r\n", r.Method, r.URL.RequestURI(), r.ProtoMajor, r.ProtoMinor)
+			// Reconstruct the request
+			var requestData strings.Builder
+			requestData.WriteString(fmt.Sprintf("%s %s %s\r\n", r.Method, r.URL.RequestURI(), r.Proto))
 
 			// Add Host header first
-			reqString += fmt.Sprintf("Host: %s\r\n", domain)
+			requestData.WriteString(fmt.Sprintf("Host: %s\r\n", r.Host))
 
-			// Add Content-Length if we have a body
-			if r.ContentLength > 0 {
-				reqString += fmt.Sprintf("Content-Length: %d\r\n", r.ContentLength)
-			}
-
-			// Add all other headers
+			// Add remaining headers
 			for key, values := range r.Header {
-				// Skip headers we've already handled or don't want to forward
-				if key == "Host" || key == "Content-Length" {
-					continue
-				}
 				for _, value := range values {
-					reqString += fmt.Sprintf("%s: %s\r\n", key, value)
+					requestData.WriteString(fmt.Sprintf("%s: %s\r\n", key, value))
 				}
 			}
+			requestData.WriteString("\r\n") // Empty line to separate headers from body
 
-			// Add the empty line to separate headers from body
-			reqString += "\r\n"
+			logger.Info("[HIJACK DEBUG] Forwarding HTTP request:\n%s", requestData.String())
 
-			logger.Info("[HIJACK DEBUG] Forwarding HTTP request:\n%s", reqString)
-
-			// Write the request headers
-			if _, err := conn.Write([]byte(reqString)); err != nil {
-				logger.Error("[HIJACK DEBUG] Error writing request headers: %v", err)
+			// Write the request line and headers
+			if _, err := conn.Write([]byte(requestData.String())); err != nil {
+				logger.Error("[HIJACK DEBUG] Failed to write request headers: %v", err)
+				conn.Close()
 				return
 			}
 
-			// Copy the request body if present
+			// Copy request body if present
 			if r.Body != nil {
 				logger.Info("[HIJACK DEBUG] Copying request body")
 				written, err := io.Copy(conn, r.Body)
 				if err != nil {
-					logger.Error("[HIJACK DEBUG] Error copying request body: %v", err)
+					logger.Error("[HIJACK DEBUG] Failed to copy request body: %v", err)
+					conn.Close()
 					return
 				}
 				logger.Info("[HIJACK DEBUG] Wrote %d bytes of request body", written)
-				r.Body.Close()
+			}
+
+			// Ensure any buffered data is written
+			if bufrw.Writer.Buffered() > 0 {
+				if err := bufrw.Writer.Flush(); err != nil {
+					logger.Error("[HIJACK DEBUG] Failed to flush buffered data: %v", err)
+					conn.Close()
+					return
+				}
 			}
 
 			logger.Info("[HIJACK DEBUG] Proxying connection for domain: %s", domain)
 			s.tunnelServer.ProxyConnection(domain, conn)
-			return
+		} else {
+			http.Error(w, "Not Found", http.StatusNotFound)
 		}
-
-		logger.Info("[HIJACK DEBUG] Not a tunnel domain, forwarding to Gin router: %s", domain)
-		s.router.ServeHTTP(w, r)
 	})
 
 	// Start HTTP server on :8081 for Caddy to forward tunnel domain requests

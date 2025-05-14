@@ -11,9 +11,7 @@ import (
 	"giraffecloud/internal/repository"
 	"io"
 	"net"
-	"regexp"
-	"strconv"
-	"strings"
+	"time"
 )
 
 /**
@@ -197,210 +195,89 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 
 	s.logger.Info("[PROXY DEBUG] Starting proxy connection for domain: %s", domain)
 
+	// Set TCP keep-alive to prevent connection from being closed prematurely
+	if tcpConn, ok := conn.(*net.TCPConn); ok {
+		tcpConn.SetKeepAlive(true)
+		tcpConn.SetKeepAlivePeriod(30 * time.Second)
+	}
+
 	// Create buffered readers and writers with larger buffer sizes
 	clientReader := bufio.NewReaderSize(conn, 32*1024) // 32KB buffer
 	clientWriter := bufio.NewWriterSize(conn, 32*1024)
 	tunnelReader := bufio.NewReaderSize(tunnelConn.conn, 32*1024)
 	tunnelWriter := bufio.NewWriterSize(tunnelConn.conn, 32*1024)
 
-	// First, read the request line
-	requestLine, err := clientReader.ReadString('\n')
-	if err != nil {
-		s.logger.Error("[PROXY DEBUG] Error reading request line: %v", err)
-		conn.Close()
-		return
-	}
-	s.logger.Info("[PROXY DEBUG] Request line: %s", strings.TrimSpace(requestLine))
+	// Create error channels for both directions
+	clientToTunnelErr := make(chan error, 1)
+	tunnelToClientErr := make(chan error, 1)
+	done := make(chan struct{})
 
-	// Initialize request data with the request line
-	requestData := []byte(requestLine)
-
-	// Read headers until we hit an empty line
-	for {
-		line, err := clientReader.ReadString('\n')
-		if err != nil {
-			s.logger.Error("[PROXY DEBUG] Error reading header line: %v", err)
-			conn.Close()
-			return
+	// Forward data from client to tunnel
+	go func() {
+		defer close(clientToTunnelErr)
+		written, err := io.Copy(tunnelWriter, clientReader)
+		s.logger.Info("[PROXY DEBUG] Forwarded %d bytes from client to tunnel", written)
+		if err != nil && err != io.EOF {
+			s.logger.Error("[PROXY DEBUG] Error forwarding client to tunnel: %v", err)
 		}
-		requestData = append(requestData, []byte(line)...)
+		tunnelWriter.Flush()
+		clientToTunnelErr <- err
+	}()
 
-		// Check if we've reached the end of headers (empty line)
-		if line == "\r\n" {
-			break
+	// Forward data from tunnel to client
+	go func() {
+		defer close(tunnelToClientErr)
+		written, err := io.Copy(clientWriter, tunnelReader)
+		s.logger.Info("[PROXY DEBUG] Forwarded %d bytes from tunnel to client", written)
+		if err != nil && err != io.EOF {
+			s.logger.Error("[PROXY DEBUG] Error forwarding tunnel to client: %v", err)
 		}
-	}
+		clientWriter.Flush()
+		tunnelToClientErr <- err
+	}()
 
-	s.logger.Info("[PROXY DEBUG] Read request headers (%d bytes)", len(requestData))
-
-	// Parse the request line to get the method
-	parts := strings.Split(strings.TrimSpace(requestLine), " ")
-	if len(parts) < 3 {
-		s.logger.Error("[PROXY DEBUG] Invalid request line format")
-		conn.Close()
-		return
-	}
-	method := parts[0]
-
-	// Check for Content-Length in headers
-	contentLength := 0
-	headers := string(requestData)
-	if match := regexp.MustCompile(`(?i)Content-Length: (\d+)`).FindStringSubmatch(headers); len(match) > 1 {
-		contentLength, _ = strconv.Atoi(match[1])
-	}
-
-	// Read body for POST/PUT/PATCH methods or if Content-Length is present
-	if (method == "POST" || method == "PUT" || method == "PATCH" || contentLength > 0) && !strings.Contains(headers, "Transfer-Encoding: chunked") {
-		s.logger.Info("[PROXY DEBUG] Reading request body of length: %d", contentLength)
-		body := make([]byte, contentLength)
-		_, err := io.ReadFull(clientReader, body)
-		if err != nil {
-			s.logger.Error("[PROXY DEBUG] Error reading request body: %v", err)
-			conn.Close()
-			return
+	// Wait for either direction to complete or timeout
+	select {
+	case err := <-clientToTunnelErr:
+		if err != nil && err != io.EOF {
+			s.logger.Error("[PROXY DEBUG] Client to tunnel error: %v", err)
 		}
-		requestData = append(requestData, body...)
-	} else if strings.Contains(headers, "Transfer-Encoding: chunked") {
-		s.logger.Info("[PROXY DEBUG] Reading chunked request body")
-		for {
-			// Read chunk size line
-			line, err := clientReader.ReadString('\n')
-			if err != nil {
-				s.logger.Error("[PROXY DEBUG] Error reading chunk size: %v", err)
-				conn.Close()
-				return
+		tunnelWriter.Flush()
+		// Wait for response with timeout
+		select {
+		case err := <-tunnelToClientErr:
+			if err != nil && err != io.EOF {
+				s.logger.Error("[PROXY DEBUG] Tunnel to client error: %v", err)
 			}
-			requestData = append(requestData, []byte(line)...)
-
-			// Parse chunk size
-			chunkSize, err := strconv.ParseInt(strings.TrimSpace(line), 16, 64)
-			if err != nil || chunkSize == 0 {
-				break
+			clientWriter.Flush()
+		case <-time.After(30 * time.Second):
+			s.logger.Info("[PROXY DEBUG] Response wait timeout")
+		}
+	case err := <-tunnelToClientErr:
+		if err != nil && err != io.EOF {
+			s.logger.Error("[PROXY DEBUG] Tunnel to client error: %v", err)
+		}
+		clientWriter.Flush()
+		// Wait for request completion
+		select {
+		case err := <-clientToTunnelErr:
+			if err != nil && err != io.EOF {
+				s.logger.Error("[PROXY DEBUG] Client to tunnel error: %v", err)
 			}
-
-			// Read chunk data
-			chunk := make([]byte, chunkSize+2) // +2 for CRLF
-			_, err = io.ReadFull(clientReader, chunk)
-			if err != nil {
-				s.logger.Error("[PROXY DEBUG] Error reading chunk data: %v", err)
-				conn.Close()
-				return
-			}
-			requestData = append(requestData, chunk...)
+			tunnelWriter.Flush()
+		case <-time.After(30 * time.Second):
+			s.logger.Info("[PROXY DEBUG] Request completion timeout")
 		}
-		// Add final CRLF
-		requestData = append(requestData, []byte("\r\n")...)
+	case <-time.After(60 * time.Second):
+		s.logger.Info("[PROXY DEBUG] Connection timeout")
 	}
 
-	s.logger.Info("[PROXY DEBUG] Total request size: %d bytes", len(requestData))
+	// Ensure all data is written before closing
+	clientWriter.Flush()
+	tunnelWriter.Flush()
 
-	// Forward the request to the tunnel
-	_, err = tunnelWriter.Write(requestData)
-	if err != nil {
-		s.logger.Error("[PROXY DEBUG] Failed to write request to tunnel: %v", err)
-		conn.Close()
-		return
-	}
-	err = tunnelWriter.Flush()
-	if err != nil {
-		s.logger.Error("[PROXY DEBUG] Failed to flush request to tunnel: %v", err)
-		conn.Close()
-		return
-	}
-	s.logger.Info("[PROXY DEBUG] Forwarded request to tunnel")
-
-	// Read the response status line
-	statusLine, err := tunnelReader.ReadString('\n')
-	if err != nil {
-		s.logger.Error("[PROXY DEBUG] Error reading response status line: %v", err)
-		conn.Close()
-		return
-	}
-	s.logger.Info("[PROXY DEBUG] Response status: %s", strings.TrimSpace(statusLine))
-
-	// Initialize response data with status line
-	responseData := []byte(statusLine)
-
-	// Read response headers
-	for {
-		line, err := tunnelReader.ReadString('\n')
-		if err != nil {
-			s.logger.Error("[PROXY DEBUG] Error reading response header: %v", err)
-			conn.Close()
-			return
-		}
-		responseData = append(responseData, []byte(line)...)
-
-		// Check if we've reached the end of headers
-		if line == "\r\n" {
-			break
-		}
-	}
-
-	// Check for Content-Length and Transfer-Encoding in response
-	headers = string(responseData)
-	contentLength = 0
-	if match := regexp.MustCompile(`(?i)Content-Length: (\d+)`).FindStringSubmatch(headers); len(match) > 1 {
-		contentLength, _ = strconv.Atoi(match[1])
-	}
-
-	// Read response body based on Content-Length or Transfer-Encoding
-	if contentLength > 0 {
-		s.logger.Info("[PROXY DEBUG] Reading response body of length: %d", contentLength)
-		body := make([]byte, contentLength)
-		_, err := io.ReadFull(tunnelReader, body)
-		if err != nil {
-			s.logger.Error("[PROXY DEBUG] Error reading response body: %v", err)
-			conn.Close()
-			return
-		}
-		responseData = append(responseData, body...)
-	} else if strings.Contains(headers, "Transfer-Encoding: chunked") {
-		s.logger.Info("[PROXY DEBUG] Reading chunked response body")
-		for {
-			// Read chunk size
-			line, err := tunnelReader.ReadString('\n')
-			if err != nil {
-				s.logger.Error("[PROXY DEBUG] Error reading chunk size: %v", err)
-				break
-			}
-			responseData = append(responseData, []byte(line)...)
-
-			// Parse chunk size
-			chunkSize, err := strconv.ParseInt(strings.TrimSpace(line), 16, 64)
-			if err != nil || chunkSize == 0 {
-				break
-			}
-
-			// Read chunk data
-			chunk := make([]byte, chunkSize+2) // +2 for CRLF
-			_, err = io.ReadFull(tunnelReader, chunk)
-			if err != nil {
-				s.logger.Error("[PROXY DEBUG] Error reading chunk data: %v", err)
-				break
-			}
-			responseData = append(responseData, chunk...)
-		}
-		// Add final CRLF
-		responseData = append(responseData, []byte("\r\n")...)
-	}
-
-	s.logger.Info("[PROXY DEBUG] Total response size: %d bytes", len(responseData))
-
-	// Write the response back to the client
-	_, err = clientWriter.Write(responseData)
-	if err != nil {
-		s.logger.Error("[PROXY DEBUG] Failed to write response to client: %v", err)
-	} else {
-		err = clientWriter.Flush()
-		if err != nil {
-			s.logger.Error("[PROXY DEBUG] Failed to flush response to client: %v", err)
-		} else {
-			s.logger.Info("[PROXY DEBUG] Successfully wrote and flushed response to client")
-		}
-	}
-
-	// Cleanup
+	// Close connections
 	conn.Close()
+	close(done)
 	s.logger.Info("[PROXY DEBUG] Proxy connection completed for domain: %s", domain)
 }
