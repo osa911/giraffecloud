@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"time"
 )
 
 // Tunnel represents a secure tunnel connection
@@ -49,7 +50,17 @@ func (t *Tunnel) Connect(serverAddr, token, domain string, localPort int, tlsCon
 
 	// Update local values with server response
 	t.domain = resp.Domain
-	t.localPort = resp.TargetPort
+	if t.localPort <= 0 {
+		t.localPort = resp.TargetPort
+	}
+
+	// Check if the local port is actually listening
+	localConn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", t.localPort), 5*time.Second)
+	if err != nil {
+		conn.Close()
+		return fmt.Errorf("no service found listening on port %d - make sure your service is running first", t.localPort)
+	}
+	localConn.Close()
 
 	// Start handling incoming connections
 	go t.handleIncomingConnections()

@@ -9,7 +9,6 @@ import (
 	"giraffecloud/internal/logging"
 	"giraffecloud/internal/tunnel"
 	"giraffecloud/internal/version"
-	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -55,8 +54,8 @@ var connectCmd = &cobra.Command{
 The tunnel will forward requests from your assigned domain to your local service.
 
 Example:
-  giraffecloud connect --local-port 3000  # Forward to localhost:3000
-  giraffecloud connect --local-port 8080  # Forward to localhost:8080`,
+  giraffecloud connect                  # Use port configured on server
+  giraffecloud connect --local-port 3000  # Override with local port 3000`,
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg, err := tunnel.LoadConfig()
 		if err != nil {
@@ -77,22 +76,6 @@ Example:
 		if localPort != 0 {
 			cfg.LocalPort = localPort
 		}
-
-		// Validate local port
-		if cfg.LocalPort <= 0 {
-			logger.Error("Local port must be specified. Use --local-port flag to specify which port to forward to.")
-			logger.Info("Example: giraffecloud connect --local-port 3000")
-			os.Exit(1)
-		}
-
-		// Check if the local port is actually listening
-		conn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", cfg.LocalPort), 5*time.Second)
-		if err != nil {
-			logger.Error("No service found listening on port %d. Make sure your service is running first.", cfg.LocalPort)
-			logger.Info("Example: Start your service on port %d, then run this command again.", cfg.LocalPort)
-			os.Exit(1)
-		}
-		conn.Close()
 
 		serverAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 
@@ -141,7 +124,11 @@ Example:
 		}()
 
 		logger.Info("Starting tunnel connection to %s", serverAddr)
-		logger.Info("Forwarding requests to localhost:%d", cfg.LocalPort)
+		if cfg.LocalPort > 0 {
+			logger.Info("Will forward requests to localhost:%d (overridden by --local-port flag)", cfg.LocalPort)
+		} else {
+			logger.Info("Will use port from server configuration")
+		}
 
 		t := tunnel.NewTunnel()
 
