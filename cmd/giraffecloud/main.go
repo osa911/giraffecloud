@@ -9,6 +9,7 @@ import (
 	"giraffecloud/internal/logging"
 	"giraffecloud/internal/tunnel"
 	"giraffecloud/internal/version"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -16,7 +17,6 @@ import (
 	"time"
 
 	"github.com/briandowns/spinner"
-	"github.com/cheggaaa/pb/v3"
 	"github.com/spf13/cobra"
 )
 
@@ -51,6 +51,12 @@ local services through GiraffeCloud's infrastructure.`,
 var connectCmd = &cobra.Command{
 	Use:   "connect",
 	Short: "Connect to GiraffeCloud and establish a tunnel",
+	Long: `Connect to GiraffeCloud and establish a tunnel to expose your local service.
+The tunnel will forward requests from your assigned domain to your local service.
+
+Example:
+  giraffecloud connect --local-port 3000  # Forward to localhost:3000
+  giraffecloud connect --local-port 8080  # Forward to localhost:8080`,
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg, err := tunnel.LoadConfig()
 		if err != nil {
@@ -61,12 +67,32 @@ var connectCmd = &cobra.Command{
 		// Get tunnel host and port from flags if provided
 		tunnelHost, _ := cmd.Flags().GetString("tunnel-host")
 		tunnelPort, _ := cmd.Flags().GetInt("tunnel-port")
+		localPort, _ := cmd.Flags().GetInt("local-port")
 		if tunnelHost != "" {
 			cfg.Server.Host = tunnelHost
 		}
 		if tunnelPort != 0 {
 			cfg.Server.Port = tunnelPort
 		}
+		if localPort != 0 {
+			cfg.LocalPort = localPort
+		}
+
+		// Validate local port
+		if cfg.LocalPort <= 0 {
+			logger.Error("Local port must be specified. Use --local-port flag to specify which port to forward to.")
+			logger.Info("Example: giraffecloud connect --local-port 3000")
+			os.Exit(1)
+		}
+
+		// Check if the local port is actually listening
+		conn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", cfg.LocalPort), 5*time.Second)
+		if err != nil {
+			logger.Error("No service found listening on port %d. Make sure your service is running first.", cfg.LocalPort)
+			logger.Info("Example: Start your service on port %d, then run this command again.", cfg.LocalPort)
+			os.Exit(1)
+		}
+		conn.Close()
 
 		serverAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 
@@ -114,79 +140,28 @@ var connectCmd = &cobra.Command{
 			cancel()
 		}()
 
-		retryDelay := 5 * time.Second
-		maxDelay := 60 * time.Second
-		attempt := 0
+		logger.Info("Starting tunnel connection to %s", serverAddr)
+		logger.Info("Forwarding requests to localhost:%d", cfg.LocalPort)
 
-		logger.Info("Starting tunnel connection loop. Press Ctrl+C to stop.")
-		for {
-			select {
-			case <-ctx.Done():
-				logger.Info("Shutdown requested, exiting connect loop.")
-				return
-			default:
-				t := tunnel.NewTunnel()
-				logger.Info("Connecting to GiraffeCloud at %s (attempt %d)", serverAddr, attempt+1)
+		t := tunnel.NewTunnel()
 
-				// Spinner while connecting
-				s := spinner.New(spinner.CharSets[14], 120*time.Millisecond)
-				s.Suffix = " Connecting to GiraffeCloud..."
-				s.Start()
-				err := t.Connect(serverAddr, cfg.Token, cfg.Domain, cfg.LocalPort, tlsConfig)
-				s.Stop()
+		// Spinner while connecting
+		s := spinner.New(spinner.CharSets[14], 120*time.Millisecond)
+		s.Suffix = " Connecting to GiraffeCloud..."
+		s.Start()
+		err = t.Connect(serverAddr, cfg.Token, cfg.Domain, cfg.LocalPort, tlsConfig)
+		s.Stop()
 
-				if err != nil {
-					if ctx.Err() != nil {
-						logger.Info("Context canceled, exiting connect loop.")
-						return
-					}
-					logger.Error("Failed to connect to GiraffeCloud: %v", err)
-					attempt++
-					delay := retryDelay * time.Duration(1<<uint(attempt))
-					if delay > maxDelay {
-						delay = maxDelay
-					}
-					logger.Info("Retrying in %s... (press Ctrl+C to exit)", delay)
-					// Progress bar for reconnect delay
-					bar := pb.New64(int64(delay.Seconds()))
-					bar.SetTemplate(pb.Simple)
-					bar.Set(pb.SIBytesPrefix, "")
-					bar.Set(pb.Bytes, false)
-					bar.Start()
-					for i := 0; i < int(delay.Seconds()); i++ {
-						if ctx.Err() != nil {
-							bar.Finish()
-							logger.Info("Context canceled during reconnect delay, exiting connect loop.")
-							return
-						}
-						time.Sleep(1 * time.Second)
-						bar.Increment()
-					}
-					bar.Finish()
-					continue
-				}
-				logger.Info("Tunnel is running. Press Ctrl+C to stop.")
-				// Wait for disconnect (keepAlive will exit on disconnect)
-				for t.IsConnected() {
-					if ctx.Err() != nil {
-						logger.Info("Context canceled, disconnecting tunnel.")
-						t.Disconnect()
-						return
-					}
-					time.Sleep(1 * time.Second)
-				}
-				logger.Warn("Tunnel connection lost. Will attempt to reconnect.")
-				attempt = 0 // Reset attempt counter after a successful connection
-				// Short delay before reconnecting
-				for i := 0; i < 2; i++ {
-					if ctx.Err() != nil {
-						logger.Info("Context canceled during reconnect wait, exiting connect loop.")
-						return
-					}
-					time.Sleep(1 * time.Second)
-				}
-			}
+		if err != nil {
+			logger.Error("Failed to connect to GiraffeCloud: %v", err)
+			os.Exit(1)
 		}
+
+		logger.Info("Tunnel is running. Press Ctrl+C to stop.")
+
+		<-ctx.Done()
+		logger.Info("Shutting down tunnel...")
+		t.Disconnect()
 	},
 }
 
@@ -343,6 +318,8 @@ func init() {
 	// Add host flags to connect command
 	connectCmd.Flags().String("tunnel-host", "", "Tunnel host to connect to (default: tunnel.giraffecloud.xyz)")
 	connectCmd.Flags().Int("tunnel-port", 4443, "Tunnel port to connect to (default: 4443)")
+	connectCmd.Flags().Int("local-port", 0, "Local port to forward requests to (required)")
+	connectCmd.MarkFlagRequired("local-port")
 
 	// Add host flags to login command
 	loginCmd.Flags().String("api-host", "", "API host for login/certificates (default: api.giraffecloud.xyz)")
