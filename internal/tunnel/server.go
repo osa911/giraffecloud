@@ -353,10 +353,10 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 	}
 
 	// Send the request data through the tunnel
-	dataMsg := DataMessage{
+	requestDataMsg := DataMessage{
 		Data: requestData.Bytes(),
 	}
-	payload, _ := json.Marshal(dataMsg)
+	payload, _ := json.Marshal(requestDataMsg)
 	msg := TunnelMessage{
 		Type:    MessageTypeData,
 		Payload: payload,
@@ -378,14 +378,14 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 		return
 	}
 
-	var dataMsg DataMessage
-	if err := json.Unmarshal(responseMsg.Payload, &dataMsg); err != nil {
+	var responseDataMsg DataMessage
+	if err := json.Unmarshal(responseMsg.Payload, &responseDataMsg); err != nil {
 		s.logger.Error("[PROXY DEBUG] Error unmarshaling response data: %v", err)
 		return
 	}
 
 	// Write response back to client
-	if _, err := conn.Write(dataMsg.Data); err != nil {
+	if _, err := conn.Write(responseDataMsg.Data); err != nil {
 		s.logger.Error("[PROXY DEBUG] Error writing response to client: %v", err)
 		return
 	}

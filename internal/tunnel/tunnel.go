@@ -470,8 +470,8 @@ func (t *Tunnel) handlePingPong() {
 		default:
 			// Wait for ping
 			t.conn.SetReadDeadline(time.Now().Add(35 * time.Second)) // Slightly longer than server's ping interval
-			var pingMsg PingMessage
-			if err := json.NewDecoder(t.conn).Decode(&pingMsg); err != nil {
+			var msg TunnelMessage
+			if err := json.NewDecoder(t.conn).Decode(&msg); err != nil {
 				if err != io.EOF {
 					t.logger.Error("[PING DEBUG] Error reading ping: %v", err)
 				}
@@ -481,19 +481,31 @@ func (t *Tunnel) handlePingPong() {
 			t.conn.SetReadDeadline(time.Time{}) // Reset deadline
 
 			// Verify ping message
-			if pingMsg.Type != "ping" {
-				t.logger.Error("[PING DEBUG] Invalid ping message type: %s", pingMsg.Type)
+			if msg.Type != MessageTypePing {
+				t.logger.Error("[PING DEBUG] Invalid message type: %s", msg.Type)
+				t.Disconnect()
+				return
+			}
+
+			// Parse ping payload
+			var pingMsg PingMessage
+			if err := json.Unmarshal(msg.Payload, &pingMsg); err != nil {
+				t.logger.Error("[PING DEBUG] Error unmarshaling ping: %v", err)
 				t.Disconnect()
 				return
 			}
 
 			// Send pong response
 			pongMsg := PongMessage{
-				Type:      "pong",
 				Timestamp: pingMsg.Timestamp,
 				RTT:       time.Now().UnixNano() - pingMsg.Timestamp,
 			}
-			if err := json.NewEncoder(t.conn).Encode(pongMsg); err != nil {
+			pongPayload, _ := json.Marshal(pongMsg)
+			response := TunnelMessage{
+				Type:    MessageTypePong,
+				Payload: pongPayload,
+			}
+			if err := json.NewEncoder(t.conn).Encode(response); err != nil {
 				t.logger.Error("[PING DEBUG] Error sending pong: %v", err)
 				t.Disconnect()
 				return
