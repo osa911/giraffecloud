@@ -1,6 +1,7 @@
 package tunnel
 
 import (
+	"bufio"
 	"crypto/tls"
 	"fmt"
 	"giraffecloud/internal/logging"
@@ -88,23 +89,61 @@ func (t *Tunnel) handleIncomingConnections() {
 	}
 	defer localConn.Close()
 
-	// Copy data bidirectionally
+	// Create buffered reader and writer for the tunnel connection
+	tunnelReader := bufio.NewReader(t.conn)
+	tunnelWriter := bufio.NewWriter(t.conn)
+	localReader := bufio.NewReader(localConn)
+	localWriter := bufio.NewWriter(localConn)
+
+	// Copy data bidirectionally with buffering
 	var wg sync.WaitGroup
 	wg.Add(2)
 
 	// Copy from tunnel to local service
 	go func() {
 		defer wg.Done()
-		if _, err := io.Copy(localConn, t.conn); err != nil {
-			t.logger.Error("Error copying data from tunnel to local service: %v", err)
+		for {
+			// Read the raw request from tunnel
+			data := make([]byte, 4096)
+			n, err := tunnelReader.Read(data)
+			if err != nil {
+				if err != io.EOF {
+					t.logger.Error("Error reading from tunnel: %v", err)
+				}
+				return
+			}
+
+			// Write to local service
+			_, err = localWriter.Write(data[:n])
+			if err != nil {
+				t.logger.Error("Error writing to local service: %v", err)
+				return
+			}
+			localWriter.Flush()
 		}
 	}()
 
 	// Copy from local service to tunnel
 	go func() {
 		defer wg.Done()
-		if _, err := io.Copy(t.conn, localConn); err != nil {
-			t.logger.Error("Error copying data from local service to tunnel: %v", err)
+		for {
+			// Read response from local service
+			data := make([]byte, 4096)
+			n, err := localReader.Read(data)
+			if err != nil {
+				if err != io.EOF {
+					t.logger.Error("Error reading from local service: %v", err)
+				}
+				return
+			}
+
+			// Write back to tunnel
+			_, err = tunnelWriter.Write(data[:n])
+			if err != nil {
+				t.logger.Error("Error writing to tunnel: %v", err)
+				return
+			}
+			tunnelWriter.Flush()
 		}
 	}()
 

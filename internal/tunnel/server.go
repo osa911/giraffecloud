@@ -1,6 +1,7 @@
 package tunnel
 
 import (
+	"bufio"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -192,23 +193,65 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 		return
 	}
 
-	// Copy data bidirectionally without closing the connections
+	// Create buffered readers and writers
+	clientReader := bufio.NewReader(conn)
+	clientWriter := bufio.NewWriter(conn)
+	tunnelReader := bufio.NewReader(tunnelConn.conn)
+	tunnelWriter := bufio.NewWriter(tunnelConn.conn)
+
+	// Copy data bidirectionally with buffering
 	var wg sync.WaitGroup
 	wg.Add(2)
 
 	// Copy from client to tunnel
 	go func() {
 		defer wg.Done()
-		if _, err := io.Copy(tunnelConn.conn, conn); err != nil {
-			s.logger.Error("Error copying data from client to tunnel: %v", err)
+		for {
+			// Read request from client
+			data := make([]byte, 4096)
+			n, err := clientReader.Read(data)
+			if err != nil {
+				if err != io.EOF {
+					s.logger.Error("Error reading from client: %v", err)
+				}
+				return
+			}
+
+			s.logger.Info("[DEBUG] Forwarding request to tunnel: %s", string(data[:n]))
+
+			// Write to tunnel
+			_, err = tunnelWriter.Write(data[:n])
+			if err != nil {
+				s.logger.Error("Error writing to tunnel: %v", err)
+				return
+			}
+			tunnelWriter.Flush()
 		}
 	}()
 
 	// Copy from tunnel to client
 	go func() {
 		defer wg.Done()
-		if _, err := io.Copy(conn, tunnelConn.conn); err != nil {
-			s.logger.Error("Error copying data from tunnel to client: %v", err)
+		for {
+			// Read response from tunnel
+			data := make([]byte, 4096)
+			n, err := tunnelReader.Read(data)
+			if err != nil {
+				if err != io.EOF {
+					s.logger.Error("Error reading from tunnel: %v", err)
+				}
+				return
+			}
+
+			s.logger.Info("[DEBUG] Received response from tunnel: %s", string(data[:n]))
+
+			// Write back to client
+			_, err = clientWriter.Write(data[:n])
+			if err != nil {
+				s.logger.Error("Error writing to client: %v", err)
+				return
+			}
+			clientWriter.Flush()
 		}
 	}()
 
