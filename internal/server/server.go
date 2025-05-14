@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -304,7 +305,7 @@ func (s *Server) Start(cfg *Config) error {
 				return
 			}
 
-			conn, _, err := hj.Hijack()
+			conn, bufrw, err := hj.Hijack()
 			if err != nil {
 				logger.Error("[HIJACK DEBUG] Hijack failed: %v", err)
 				http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -313,14 +314,21 @@ func (s *Server) Start(cfg *Config) error {
 			defer conn.Close()
 			logger.Info("[HIJACK DEBUG] Successfully hijacked connection for domain: %s", domain)
 
-			// Read the body first if it exists
-			var body []byte
-			if r.Body != nil {
-				body, err = io.ReadAll(r.Body)
+			// Set TCP keep-alive to prevent connection from being closed prematurely
+			if tcpConn, ok := conn.(*net.TCPConn); ok {
+				tcpConn.SetKeepAlive(true)
+				tcpConn.SetKeepAlivePeriod(30 * time.Second)
+			}
+
+			// Read any buffered data from the hijacked connection
+			if bufrw.Reader.Buffered() > 0 {
+				buffered := make([]byte, bufrw.Reader.Buffered())
+				_, err := bufrw.Reader.Read(buffered)
 				if err != nil {
-					logger.Error("[HIJACK DEBUG] Error reading request body: %v", err)
+					logger.Error("[HIJACK DEBUG] Error reading buffered data: %v", err)
 					return
 				}
+				logger.Info("[HIJACK DEBUG] Read %d bytes of buffered data", len(buffered))
 			}
 
 			// Reconstruct the original request as a string
@@ -330,8 +338,8 @@ func (s *Server) Start(cfg *Config) error {
 			reqString += fmt.Sprintf("Host: %s\r\n", domain)
 
 			// Add Content-Length if we have a body
-			if len(body) > 0 {
-				reqString += fmt.Sprintf("Content-Length: %d\r\n", len(body))
+			if r.ContentLength > 0 {
+				reqString += fmt.Sprintf("Content-Length: %d\r\n", r.ContentLength)
 			}
 
 			// Add all other headers
@@ -348,17 +356,24 @@ func (s *Server) Start(cfg *Config) error {
 			// Add the empty line to separate headers from body
 			reqString += "\r\n"
 
-			// Add the body if it exists
-			if len(body) > 0 {
-				reqString += string(body)
-			}
-
 			logger.Info("[HIJACK DEBUG] Forwarding HTTP request:\n%s", reqString)
 
-			// Write the request to the connection
+			// Write the request headers
 			if _, err := conn.Write([]byte(reqString)); err != nil {
-				logger.Error("[HIJACK DEBUG] Error writing request to connection: %v", err)
+				logger.Error("[HIJACK DEBUG] Error writing request headers: %v", err)
 				return
+			}
+
+			// Copy the request body if present
+			if r.Body != nil {
+				logger.Info("[HIJACK DEBUG] Copying request body")
+				written, err := io.Copy(conn, r.Body)
+				if err != nil {
+					logger.Error("[HIJACK DEBUG] Error copying request body: %v", err)
+					return
+				}
+				logger.Info("[HIJACK DEBUG] Wrote %d bytes of request body", written)
+				r.Body.Close()
 			}
 
 			logger.Info("[HIJACK DEBUG] Proxying connection for domain: %s", domain)

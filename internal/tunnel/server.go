@@ -195,12 +195,6 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 
 	s.logger.Info("[PROXY DEBUG] Starting proxy connection for domain: %s", domain)
 
-	// Set timeouts for the connections
-	conn.SetReadDeadline(time.Now().Add(30 * time.Second))
-	conn.SetWriteDeadline(time.Now().Add(30 * time.Second))
-	tunnelConn.conn.SetReadDeadline(time.Now().Add(30 * time.Second))
-	tunnelConn.conn.SetWriteDeadline(time.Now().Add(30 * time.Second))
-
 	// Create buffered readers and writers with larger buffer sizes
 	clientReader := bufio.NewReaderSize(conn, 32*1024) // 32KB buffer
 	clientWriter := bufio.NewWriterSize(conn, 32*1024)
@@ -214,97 +208,59 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 
 	// Forward data in both directions concurrently
 	go func() {
-		n, err := io.Copy(tunnelWriter, clientReader)
-		s.logger.Info("[PROXY DEBUG] Forwarded %d bytes from client to tunnel", n)
-		if err := tunnelWriter.Flush(); err != nil {
-			s.logger.Error("[PROXY DEBUG] Error flushing tunnel writer: %v", err)
-		} else {
-			s.logger.Info("[PROXY DEBUG] Successfully flushed tunnel writer")
+		_, err := io.Copy(tunnelWriter, clientReader)
+		if err != nil {
+			s.logger.Error("[PROXY DEBUG] Error copying client to tunnel: %v", err)
 		}
+		tunnelWriter.Flush()
 		clientToTunnelErr <- err
 	}()
 
 	go func() {
-		n, err := io.Copy(clientWriter, tunnelReader)
-		s.logger.Info("[PROXY DEBUG] Forwarded %d bytes from tunnel to client", n)
-		if err := clientWriter.Flush(); err != nil {
-			s.logger.Error("[PROXY DEBUG] Error flushing client writer: %v", err)
-		} else {
-			s.logger.Info("[PROXY DEBUG] Successfully flushed client writer")
+		_, err := io.Copy(clientWriter, tunnelReader)
+		if err != nil {
+			s.logger.Error("[PROXY DEBUG] Error copying tunnel to client: %v", err)
 		}
+		clientWriter.Flush()
 		tunnelToClientErr <- err
 	}()
 
-	// Set up a timeout for the entire proxy operation
-	go func() {
-		select {
-		case <-time.After(60 * time.Second):
-			s.logger.Info("[PROXY DEBUG] Connection timeout for domain: %s", domain)
-			close(done)
-		case <-done:
-			return
-		}
-	}()
-
-	// Wait for either direction to complete or error
-	cleanup := func() {
-		s.logger.Info("[PROXY DEBUG] Starting cleanup for domain: %s", domain)
-		// Ensure all buffered data is written before closing
-		if err := clientWriter.Flush(); err != nil {
-			s.logger.Error("[PROXY DEBUG] Error flushing client writer during cleanup: %v", err)
-		}
-		if err := tunnelWriter.Flush(); err != nil {
-			s.logger.Error("[PROXY DEBUG] Error flushing tunnel writer during cleanup: %v", err)
-		}
-
-		// Reset deadlines to prevent any lingering operations
-		conn.SetReadDeadline(time.Time{})
-		conn.SetWriteDeadline(time.Time{})
-		tunnelConn.conn.SetReadDeadline(time.Time{})
-		tunnelConn.conn.SetWriteDeadline(time.Time{})
-
-		// Close connections
-		if err := conn.Close(); err != nil {
-			s.logger.Error("[PROXY DEBUG] Error closing client connection: %v", err)
-		}
-
-		close(done)
-		s.logger.Info("[PROXY DEBUG] Cleanup completed for domain: %s", domain)
-	}
-
-	// Wait for data transfer to complete in both directions
-	var clientToTunnelError, tunnelToClientError error
+	// Wait for either direction to complete
 	select {
-	case clientToTunnelError = <-clientToTunnelErr:
-		s.logger.Info("[PROXY DEBUG] Client to tunnel transfer completed")
-		// Wait a short time for response data
-		select {
-		case tunnelToClientError = <-tunnelToClientErr:
-			s.logger.Info("[PROXY DEBUG] Tunnel to client transfer completed")
-		case <-time.After(5 * time.Second):
-			s.logger.Info("[PROXY DEBUG] Waiting for response timed out")
+	case err := <-clientToTunnelErr:
+		if err != nil && err != io.EOF {
+			s.logger.Error("[PROXY DEBUG] Client to tunnel error: %v", err)
 		}
-	case tunnelToClientError = <-tunnelToClientErr:
-		s.logger.Info("[PROXY DEBUG] Tunnel to client transfer completed first")
-		// Wait for request to complete
+		tunnelWriter.Flush()
+		// Wait for response data
 		select {
-		case clientToTunnelError = <-clientToTunnelErr:
-			s.logger.Info("[PROXY DEBUG] Client to tunnel transfer completed")
+		case err := <-tunnelToClientErr:
+			if err != nil && err != io.EOF {
+				s.logger.Error("[PROXY DEBUG] Tunnel to client error: %v", err)
+			}
+			clientWriter.Flush()
 		case <-time.After(5 * time.Second):
-			s.logger.Info("[PROXY DEBUG] Waiting for request completion timed out")
+			s.logger.Info("[PROXY DEBUG] Response wait timeout")
 		}
-	case <-done:
-		s.logger.Info("[PROXY DEBUG] Connection timed out")
+	case err := <-tunnelToClientErr:
+		if err != nil && err != io.EOF {
+			s.logger.Error("[PROXY DEBUG] Tunnel to client error: %v", err)
+		}
+		clientWriter.Flush()
+		// Wait for request completion
+		select {
+		case err := <-clientToTunnelErr:
+			if err != nil && err != io.EOF {
+				s.logger.Error("[PROXY DEBUG] Client to tunnel error: %v", err)
+			}
+			tunnelWriter.Flush()
+		case <-time.After(5 * time.Second):
+			s.logger.Info("[PROXY DEBUG] Request completion timeout")
+		}
+	case <-time.After(60 * time.Second):
+		s.logger.Info("[PROXY DEBUG] Connection timeout")
 	}
 
-	// Log any non-EOF errors
-	if clientToTunnelError != nil && clientToTunnelError != io.EOF {
-		s.logger.Error("[PROXY DEBUG] Error forwarding client to tunnel: %v", clientToTunnelError)
-	}
-	if tunnelToClientError != nil && tunnelToClientError != io.EOF {
-		s.logger.Error("[PROXY DEBUG] Error forwarding tunnel to client: %v", tunnelToClientError)
-	}
-
-	cleanup()
+	close(done)
 	s.logger.Info("[PROXY DEBUG] Proxy connection completed for domain: %s", domain)
 }
