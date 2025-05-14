@@ -11,6 +11,9 @@ import (
 	"giraffecloud/internal/repository"
 	"io"
 	"net"
+	"regexp"
+	"strconv"
+	"strings"
 )
 
 /**
@@ -200,30 +203,45 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 	tunnelReader := bufio.NewReaderSize(tunnelConn.conn, 32*1024)
 	tunnelWriter := bufio.NewWriterSize(tunnelConn.conn, 32*1024)
 
-	// Read the request from the client
-	requestData := make([]byte, 0)
-	buffer := make([]byte, 4096)
+	// Read the request line and headers
+	var requestData []byte
 	for {
-		n, err := clientReader.Read(buffer)
+		line, err := clientReader.ReadBytes('\n')
 		if err != nil {
-			if err != io.EOF {
-				s.logger.Error("[PROXY DEBUG] Error reading request from client: %v", err)
-			}
-			break
+			s.logger.Error("[PROXY DEBUG] Error reading request line: %v", err)
+			conn.Close()
+			return
 		}
-		requestData = append(requestData, buffer[:n]...)
-		if n < len(buffer) {
+		requestData = append(requestData, line...)
+
+		// Check if we've reached the end of headers (empty line)
+		if len(line) == 2 && line[0] == '\r' && line[1] == '\n' {
 			break
 		}
 	}
 
-	if len(requestData) == 0 {
-		s.logger.Error("[PROXY DEBUG] No request data received from client")
-		conn.Close()
-		return
+	s.logger.Info("[PROXY DEBUG] Read request headers (%d bytes)", len(requestData))
+
+	// Read request body if Content-Length is present
+	contentLength := 0
+	headers := string(requestData)
+	if match := regexp.MustCompile(`(?i)Content-Length: (\d+)`).FindStringSubmatch(headers); len(match) > 1 {
+		contentLength, _ = strconv.Atoi(match[1])
 	}
 
-	s.logger.Info("[PROXY DEBUG] Received request data from client (%d bytes)", len(requestData))
+	if contentLength > 0 {
+		s.logger.Info("[PROXY DEBUG] Reading request body of length: %d", contentLength)
+		body := make([]byte, contentLength)
+		_, err := io.ReadFull(clientReader, body)
+		if err != nil {
+			s.logger.Error("[PROXY DEBUG] Error reading request body: %v", err)
+			conn.Close()
+			return
+		}
+		requestData = append(requestData, body...)
+	}
+
+	s.logger.Info("[PROXY DEBUG] Total request size: %d bytes", len(requestData))
 
 	// Forward the request to the tunnel
 	_, err := tunnelWriter.Write(requestData)
@@ -240,19 +258,68 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 	}
 	s.logger.Info("[PROXY DEBUG] Forwarded request to tunnel")
 
-	// Read the response from the tunnel
-	responseData := make([]byte, 0)
+	// Read the response headers
+	var responseData []byte
 	for {
-		n, err := tunnelReader.Read(buffer)
+		line, err := tunnelReader.ReadBytes('\n')
 		if err != nil {
 			if err != io.EOF {
-				s.logger.Error("[PROXY DEBUG] Error reading response from tunnel: %v", err)
+				s.logger.Error("[PROXY DEBUG] Error reading response headers: %v", err)
 			}
 			break
 		}
-		responseData = append(responseData, buffer[:n]...)
-		if n < len(buffer) {
+		responseData = append(responseData, line...)
+
+		// Check if we've reached the end of headers
+		if len(line) == 2 && line[0] == '\r' && line[1] == '\n' {
 			break
+		}
+	}
+
+	// Read response body based on Content-Length or Transfer-Encoding
+	headers = string(responseData)
+	contentLength = 0
+	if match := regexp.MustCompile(`(?i)Content-Length: (\d+)`).FindStringSubmatch(headers); len(match) > 1 {
+		contentLength, _ = strconv.Atoi(match[1])
+	}
+	chunked := regexp.MustCompile(`(?i)Transfer-Encoding: chunked`).MatchString(headers)
+
+	if contentLength > 0 {
+		s.logger.Info("[PROXY DEBUG] Reading response body of length: %d", contentLength)
+		body := make([]byte, contentLength)
+		_, err := io.ReadFull(tunnelReader, body)
+		if err != nil {
+			s.logger.Error("[PROXY DEBUG] Error reading response body: %v", err)
+		} else {
+			responseData = append(responseData, body...)
+		}
+	} else if chunked {
+		s.logger.Info("[PROXY DEBUG] Reading chunked response body")
+		for {
+			// Read chunk size
+			line, err := tunnelReader.ReadBytes('\n')
+			if err != nil {
+				if err != io.EOF {
+					s.logger.Error("[PROXY DEBUG] Error reading chunk size: %v", err)
+				}
+				break
+			}
+			responseData = append(responseData, line...)
+
+			// Parse chunk size
+			chunkSize, err := strconv.ParseInt(strings.TrimSpace(string(line)), 16, 64)
+			if err != nil || chunkSize == 0 {
+				break
+			}
+
+			// Read chunk data
+			chunk := make([]byte, chunkSize+2) // +2 for CRLF
+			_, err = io.ReadFull(tunnelReader, chunk)
+			if err != nil {
+				s.logger.Error("[PROXY DEBUG] Error reading chunk data: %v", err)
+				break
+			}
+			responseData = append(responseData, chunk...)
 		}
 	}
 
@@ -262,7 +329,7 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 		return
 	}
 
-	s.logger.Info("[PROXY DEBUG] Received response from tunnel (%d bytes)", len(responseData))
+	s.logger.Info("[PROXY DEBUG] Total response size: %d bytes", len(responseData))
 
 	// Write the response back to the client
 	_, err = clientWriter.Write(responseData)
