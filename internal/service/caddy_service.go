@@ -79,7 +79,7 @@ func (s *caddyService) ConfigureRoute(domain string, targetIP string, targetPort
 				"handler": "reverse_proxy",
 				"upstreams": []map[string]interface{}{
 					{
-						"dial": "api:8081", // Forward to tunnel server instead of client IP
+						"dial": fmt.Sprintf("%s:%d", targetIP, targetPort), // Use client's IP and port
 					},
 				},
 				"transport": map[string]interface{}{
