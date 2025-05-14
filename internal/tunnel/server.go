@@ -11,7 +11,6 @@ import (
 	"giraffecloud/internal/repository"
 	"io"
 	"net"
-	"sync"
 )
 
 /**
@@ -201,76 +200,50 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 	tunnelReader := bufio.NewReader(tunnelConn.conn)
 	tunnelWriter := bufio.NewWriter(tunnelConn.conn)
 
-	// Copy data bidirectionally with buffering
-	var wg sync.WaitGroup
-	wg.Add(2)
-
-	// Copy from client to tunnel
-	go func() {
-		defer wg.Done()
-		for {
-			// Read request from client
-			data := make([]byte, 32*1024) // Increase buffer size for larger requests
-			n, err := clientReader.Read(data)
-			if err != nil {
-				if err != io.EOF {
-					s.logger.Error("[PROXY DEBUG] Error reading from client: %v", err)
-				} else {
-					s.logger.Info("[PROXY DEBUG] Client connection closed (EOF)")
-				}
-				tunnelConn.conn.Close() // Close tunnel connection when client disconnects
-				return
-			}
-
-			if n == 0 {
-				continue
-			}
-
-			s.logger.Info("[PROXY DEBUG] Read %d bytes from client", n)
-			s.logger.Info("[PROXY DEBUG] Client request: %s", string(data[:n]))
-
-			// Write to tunnel
-			written, err := tunnelWriter.Write(data[:n])
-			if err != nil {
-				s.logger.Error("[PROXY DEBUG] Error writing to tunnel: %v", err)
-				return
-			}
-			s.logger.Info("[PROXY DEBUG] Wrote %d bytes to tunnel", written)
-
-			if err := tunnelWriter.Flush(); err != nil {
-				s.logger.Error("[PROXY DEBUG] Error flushing tunnel writer: %v", err)
-				return
-			}
-			s.logger.Info("[PROXY DEBUG] Flushed tunnel writer")
+	// Read the request from client
+	requestData := make([]byte, 32*1024)
+	n, err := clientReader.Read(requestData)
+	if err != nil {
+		if err != io.EOF {
+			s.logger.Error("[PROXY DEBUG] Error reading from client: %v", err)
+		} else {
+			s.logger.Info("[PROXY DEBUG] Client connection closed (EOF)")
 		}
-	}()
+		return
+	}
 
-	// Copy from tunnel to client
-	go func() {
-		defer wg.Done()
-		for {
-			// Read response from tunnel
-			data := make([]byte, 32*1024) // Increase buffer size for larger responses
-			n, err := tunnelReader.Read(data)
-			if err != nil {
-				if err != io.EOF {
-					s.logger.Error("[PROXY DEBUG] Error reading from tunnel: %v", err)
-				} else {
-					s.logger.Info("[PROXY DEBUG] Tunnel connection closed (EOF)")
-				}
-				conn.Close() // Close client connection when tunnel disconnects
-				return
-			}
+	if n > 0 {
+		s.logger.Info("[PROXY DEBUG] Read %d bytes from client", n)
+		s.logger.Info("[PROXY DEBUG] Client request: %s", string(requestData[:n]))
 
-			if n == 0 {
-				continue
-			}
+		// Write request to tunnel
+		written, err := tunnelWriter.Write(requestData[:n])
+		if err != nil {
+			s.logger.Error("[PROXY DEBUG] Error writing to tunnel: %v", err)
+			return
+		}
+		s.logger.Info("[PROXY DEBUG] Wrote %d bytes to tunnel", written)
 
+		if err := tunnelWriter.Flush(); err != nil {
+			s.logger.Error("[PROXY DEBUG] Error flushing tunnel writer: %v", err)
+			return
+		}
+		s.logger.Info("[PROXY DEBUG] Flushed tunnel writer")
+
+		// Read response from tunnel
+		responseData := make([]byte, 32*1024)
+		n, err = tunnelReader.Read(responseData)
+		if err != nil && err != io.EOF {
+			s.logger.Error("[PROXY DEBUG] Error reading from tunnel: %v", err)
+			return
+		}
+
+		if n > 0 {
 			s.logger.Info("[PROXY DEBUG] Read %d bytes from tunnel", n)
-			s.logger.Info("[PROXY DEBUG] Tunnel response: %s", string(data[:n]))
+			s.logger.Info("[PROXY DEBUG] Tunnel response: %s", string(responseData[:n]))
 
-			// Write back to client
-			written, err := clientWriter.Write(data[:n])
+			// Write response back to client
+			written, err = clientWriter.Write(responseData[:n])
 			if err != nil {
 				s.logger.Error("[PROXY DEBUG] Error writing to client: %v", err)
 				return
@@ -283,9 +256,7 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 			}
 			s.logger.Info("[PROXY DEBUG] Flushed client writer")
 		}
-	}()
+	}
 
-	s.logger.Info("[PROXY DEBUG] Waiting for proxy goroutines to complete")
-	wg.Wait()
 	s.logger.Info("[PROXY DEBUG] Proxy connection completed for domain: %s", domain)
 }
