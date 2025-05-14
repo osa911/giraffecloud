@@ -74,11 +74,21 @@ func (s *caddyService) ConfigureRoute(domain string, targetIP string, targetPort
 				"handler": "reverse_proxy",
 				"upstreams": []map[string]interface{}{
 					{
-						"dial": fmt.Sprintf("%s:%d", targetIP, targetPort),
+						"dial": "api:8081", // Always forward to our HTTP server
 					},
 				},
 				"transport": map[string]interface{}{
 					"protocol": "http",
+				},
+				"headers": map[string]interface{}{
+					"request": map[string]interface{}{
+						"set": map[string]interface{}{
+							"Host": []string{domain}, // Preserve the original host
+							"X-Real-IP": []string{"{http.request.remote.host}"},
+							"X-Forwarded-For": []string{"{http.request.remote.host}"},
+							"X-Forwarded-Proto": []string{"{http.request.scheme}"},
+						},
+					},
 				},
 			},
 		},
@@ -116,7 +126,7 @@ func (s *caddyService) ConfigureRoute(domain string, targetIP string, targetPort
 		return fmt.Errorf("failed to configure route (status %d): %s", resp.StatusCode, string(body))
 	}
 
-	s.logger.Info("Successfully configured route for domain: %s -> %s:%d", domain, targetIP, targetPort)
+	s.logger.Info("Successfully configured route for domain: %s -> api:8081 (tunnel proxy)", domain)
 	return nil
 }
 

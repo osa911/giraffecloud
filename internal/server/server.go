@@ -282,32 +282,55 @@ func (s *Server) Start(cfg *Config) error {
 	// Custom handler for tunnel domains only
 	httpHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		domain := r.Host
-		logger.Info("[HIJACK DEBUG] Received HTTP request for domain: %s", domain)
+		logger.Info("[HIJACK DEBUG] Received HTTP request for domain: %s, method: %s, path: %s", domain, r.Method, r.URL.Path)
+		logger.Info("[HIJACK DEBUG] Headers: %+v", r.Header)
+
 		isTunnel := s.tunnelServer.IsTunnelDomain(domain)
 		logger.Info("[HIJACK DEBUG] HTTP request for domain: %s, isTunnel: %v", domain, isTunnel)
+
 		if isTunnel {
+			logger.Info("[HIJACK DEBUG] Attempting to hijack connection for domain: %s", domain)
 			hj, ok := w.(http.Hijacker)
 			if !ok {
+				logger.Error("[HIJACK DEBUG] Failed to hijack: ResponseWriter doesn't support hijacking")
 				http.Error(w, "webserver doesn't support hijacking", http.StatusInternalServerError)
 				return
 			}
-			conn, _, err := hj.Hijack()
+
+			conn, bufrw, err := hj.Hijack()
 			if err != nil {
+				logger.Error("[HIJACK DEBUG] Hijack failed: %v", err)
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			logger.Info("Hijacked HTTP connection for tunnel domain %s", domain)
+			logger.Info("[HIJACK DEBUG] Successfully hijacked connection for domain: %s", domain)
+
+			// Check if there's any buffered data
+			if bufrw.Reader.Buffered() > 0 {
+				logger.Info("[HIJACK DEBUG] Found buffered data in hijacked connection")
+			}
+
+			logger.Info("[HIJACK DEBUG] Proxying connection for domain: %s", domain)
 			s.tunnelServer.ProxyConnection(domain, conn)
 			return
 		}
-		// Not a tunnel domain: fall back to Gin router
+
+		logger.Info("[HIJACK DEBUG] Not a tunnel domain, forwarding to Gin router: %s", domain)
 		s.router.ServeHTTP(w, r)
 	})
 
 	// Start HTTP server on :8081 for Caddy to forward tunnel domain requests
 	go func() {
 		logger.Info("Starting HTTP hijack server on :8081 for tunnel domains")
-		if err := http.ListenAndServe(":8081", httpHandler); err != nil && err != http.ErrServerClosed {
+		server := &http.Server{
+			Addr:    ":8081",
+			Handler: httpHandler,
+			// Add timeouts to prevent hanging connections
+			ReadTimeout:    30 * time.Second,
+			WriteTimeout:   30 * time.Second,
+			IdleTimeout:    60 * time.Second,
+		}
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Error("HTTP hijack server error: %v", err)
 		}
 		logger.Info("HTTP hijack server stopped")
