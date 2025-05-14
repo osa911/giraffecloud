@@ -41,10 +41,15 @@ func (t *Tunnel) Connect(serverAddr, token, domain string, localPort int, tlsCon
 	t.conn = conn
 
 	// Perform handshake
-	if _, err := Perform(conn, token, domain, localPort); err != nil {
+	resp, err := Perform(conn, token)
+	if err != nil {
 		conn.Close()
 		return fmt.Errorf("handshake failed: %w", err)
 	}
+
+	// Update local values with server response
+	t.domain = resp.Domain
+	t.localPort = resp.TargetPort
 
 	// Start handling incoming connections
 	go t.handleIncomingConnections()
