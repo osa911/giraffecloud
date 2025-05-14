@@ -12,6 +12,7 @@ import (
 	"giraffecloud/internal/repository"
 	"io"
 	"net"
+	"sync"
 	"time"
 )
 
@@ -38,6 +39,18 @@ type TunnelServer struct {
 	connections   *ConnectionManager
 }
 
+// TunnelConnection represents an active tunnel connection
+type TunnelConnection struct {
+	conn       net.Conn          // The underlying network connection
+	domain     string            // The domain this tunnel serves
+	targetPort int              // The target port on the client side
+	stopChan   chan struct{}     // Channel to signal connection stop
+	lastPing   time.Time         // Time of last successful ping
+	reader     *json.Decoder     // JSON decoder for reading messages
+	writer     *json.Encoder     // JSON encoder for writing messages
+	readerMu   sync.Mutex        // Mutex for synchronizing reader access
+	writerMu   sync.Mutex        // Mutex for synchronizing writer access
+}
 
 // NewServer creates a new tunnel server instance
 func NewServer(tokenRepo repository.TokenRepository, tunnelRepo repository.TunnelRepository, tunnelService interfaces.TunnelService) *TunnelServer {
@@ -172,7 +185,7 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 		return
 	}
 
-	// Create connection object
+	// Create connection object with synchronized reader/writer
 	connection := s.connections.AddConnection(tunnel.Domain, conn, tunnel.TargetPort)
 	connection.reader = decoder
 	connection.writer = encoder
@@ -187,16 +200,23 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 
 	// Start message reader goroutine
 	go func() {
-		defer close(dataChan)
-		defer close(controlChan)
+		defer func() {
+			close(dataChan)
+			close(controlChan)
+			s.logger.Info("[TUNNEL DEBUG] Message reader stopped")
+		}()
 
 		for {
 			select {
 			case <-stopChan:
 				return
 			default:
+				connection.readerMu.Lock()
 				var msg TunnelMessage
-				if err := decoder.Decode(&msg); err != nil {
+				err := connection.reader.Decode(&msg)
+				connection.readerMu.Unlock()
+
+				if err != nil {
 					if err != io.EOF {
 						errChan <- fmt.Errorf("error reading message: %w", err)
 					}
@@ -249,7 +269,10 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 
 				// Set write deadline for ping
 				conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
-				if err := encoder.Encode(pingMsg); err != nil {
+				connection.writerMu.Lock()
+				err := connection.writer.Encode(pingMsg)
+				connection.writerMu.Unlock()
+				if err != nil {
 					errChan <- fmt.Errorf("error sending ping: %w", err)
 					return
 				}
@@ -292,6 +315,11 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 			case <-stopChan:
 				return
 			case msg := <-dataChan:
+				if msg == nil {
+					s.logger.Error("Received nil data message")
+					continue
+				}
+
 				var dataPayload DataMessage
 				if err := json.Unmarshal(msg.Payload, &dataPayload); err != nil {
 					s.logger.Error("Error unmarshaling data message: %v", err)
@@ -299,9 +327,28 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 				}
 
 				// Process data message
-				// This is where you would handle the actual tunnel data
-				// For now, we'll just log it
 				s.logger.Debug("Received data message of length: %d", len(dataPayload.Data))
+
+				// Send response back through tunnel
+				responsePayload, _ := json.Marshal(DataMessage{
+					Data: dataPayload.Data, // Echo back for now
+				})
+				responseMsg := TunnelMessage{
+					Type:    MessageTypeData,
+					ID:      msg.ID, // Use same ID for correlation
+					Payload: responsePayload,
+				}
+
+				// Set write deadline for response
+				conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+				connection.writerMu.Lock()
+				err := connection.writer.Encode(responseMsg)
+				connection.writerMu.Unlock()
+				if err != nil {
+					s.logger.Error("Error sending response: %v", err)
+					continue
+				}
+				conn.SetWriteDeadline(time.Time{})
 			}
 		}
 	}()

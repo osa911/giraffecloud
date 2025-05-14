@@ -3,6 +3,7 @@ package tunnel
 import (
 	"encoding/json"
 	"net"
+	"sync"
 	"time"
 )
 
@@ -50,13 +51,24 @@ type DataMessage struct {
 	Data []byte `json:"data"` // The actual data being transferred
 }
 
+// MessageCorrelation tracks request/response message pairs
+type MessageCorrelation struct {
+	RequestTime  time.Time
+	ResponseChan chan *TunnelMessage
+	Timeout     time.Duration
+}
+
 // TunnelConnection represents an active tunnel connection
 type TunnelConnection struct {
-	conn       net.Conn          // The underlying network connection
-	domain     string            // The domain this tunnel serves
-	targetPort int              // The target port on the client side
-	stopChan   chan struct{}     // Channel to signal connection stop
-	lastPing   time.Time         // Time of last successful ping
-	reader     *json.Decoder     // JSON decoder for reading messages
-	writer     *json.Encoder     // JSON encoder for writing messages
+	conn           net.Conn          // The underlying network connection
+	domain         string            // The domain this tunnel serves
+	targetPort     int              // The target port on the client side
+	stopChan       chan struct{}     // Channel to signal connection stop
+	lastPing       time.Time         // Time of last successful ping
+	reader         *json.Decoder     // JSON decoder for reading messages
+	writer         *json.Encoder     // JSON encoder for writing messages
+	readerMu       sync.Mutex        // Mutex for synchronizing reader access
+	writerMu       sync.Mutex        // Mutex for synchronizing writer access
+	correlationMap sync.Map          // Thread-safe map for message correlation
+	cleanupTicker  *time.Ticker     // Ticker for cleaning up stale correlations
 }

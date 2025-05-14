@@ -10,6 +10,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -21,6 +22,7 @@ type Tunnel struct {
 	domain    string
 	localPort int
 	logger    *logging.Logger
+	correlationMap sync.Map
 }
 
 // NewTunnel creates a new tunnel instance
@@ -44,9 +46,23 @@ func (t *Tunnel) Connect(serverAddr, token, domain string, localPort int, tlsCon
 	}
 	t.conn = conn
 
+	// Create channels before starting goroutines
+	dataChan := make(chan *TunnelMessage, 100)    // Buffer for data messages
+	controlChan := make(chan *TunnelMessage, 100) // Buffer for control messages
+	errChan := make(chan error, 2)                // Error channel
+	t.stopChan = make(chan struct{})              // Stop channel
+
+	// Start correlation cleanup
+	t.startCorrelationCleanup()
+
+	// Create JSON encoder/decoder
+	decoder := json.NewDecoder(conn)
+	encoder := json.NewEncoder(conn)
+
 	// Perform handshake
 	resp, err := Perform(conn, token)
 	if err != nil {
+		close(t.stopChan)
 		conn.Close()
 		return fmt.Errorf("handshake failed: %w", err)
 	}
@@ -60,25 +76,41 @@ func (t *Tunnel) Connect(serverAddr, token, domain string, localPort int, tlsCon
 	// Check if the local port is actually listening
 	localConn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", t.localPort), 5*time.Second)
 	if err != nil {
+		close(t.stopChan)
 		conn.Close()
 		return fmt.Errorf("no service found listening on port %d - make sure your service is running first", t.localPort)
 	}
 	localConn.Close()
 
-	// Create channels for different message types
-	dataChan := make(chan *TunnelMessage, 100)    // Buffer for data messages
-	controlChan := make(chan *TunnelMessage, 100) // Buffer for control messages
-	errChan := make(chan error, 2)                // Error channel
-	t.stopChan = make(chan struct{})              // Stop channel
+	// Start error handler goroutine
+	go func() {
+		defer t.logger.Info("[TUNNEL DEBUG] Error handler stopped")
 
-	// Create JSON encoder/decoder
-	decoder := json.NewDecoder(conn)
-	encoder := json.NewEncoder(conn)
+		for {
+			select {
+			case <-t.stopChan:
+				return
+			case err := <-errChan:
+				if err != nil {
+					t.logger.Error("Tunnel error: %v", err)
+					// If error is critical, initiate shutdown
+					if isCriticalError(err) {
+						t.logger.Error("Critical error detected, initiating tunnel shutdown")
+						close(t.stopChan)
+						return
+					}
+				}
+			}
+		}
+	}()
 
 	// Start message reader goroutine
 	go func() {
-		defer close(dataChan)
-		defer close(controlChan)
+		defer func() {
+			close(dataChan)
+			close(controlChan)
+			t.logger.Info("[TUNNEL DEBUG] Message reader stopped")
+		}()
 
 		for {
 			select {
@@ -92,6 +124,9 @@ func (t *Tunnel) Connect(serverAddr, token, domain string, localPort int, tlsCon
 					}
 					return
 				}
+
+				// Check if this is a response to a correlated message
+				t.handleResponse(&msg)
 
 				// Route message based on type
 				switch msg.Type {
@@ -116,11 +151,18 @@ func (t *Tunnel) Connect(serverAddr, token, domain string, localPort int, tlsCon
 
 	// Start ping handler goroutine
 	go func() {
+		defer t.logger.Info("[TUNNEL DEBUG] Ping handler stopped")
+
 		for {
 			select {
 			case <-t.stopChan:
 				return
 			case msg := <-controlChan:
+				if msg == nil {
+					t.logger.Error("Received nil control message")
+					continue
+				}
+
 				if msg.Type == MessageTypePing {
 					// Handle ping message
 					var pingMsg PingMessage
@@ -154,11 +196,18 @@ func (t *Tunnel) Connect(serverAddr, token, domain string, localPort int, tlsCon
 
 	// Start data handler goroutine
 	go func() {
+		defer t.logger.Info("[TUNNEL DEBUG] Data handler stopped")
+
 		for {
 			select {
 			case <-t.stopChan:
 				return
 			case msg := <-dataChan:
+				if msg == nil {
+					t.logger.Error("Received nil data message")
+					continue
+				}
+
 				var dataPayload DataMessage
 				if err := json.Unmarshal(msg.Payload, &dataPayload); err != nil {
 					t.logger.Error("Error unmarshaling data message: %v", err)
@@ -221,14 +270,36 @@ func (t *Tunnel) Connect(serverAddr, token, domain string, localPort int, tlsCon
 	return nil
 }
 
-// Disconnect closes the tunnel connection
+// Disconnect closes the tunnel connection and cleans up resources
 func (t *Tunnel) Disconnect() error {
 	if t.conn == nil {
 		return nil
 	}
 
+	// Signal all goroutines to stop
 	close(t.stopChan)
-	return t.conn.Close()
+
+	// Set a deadline for graceful shutdown
+	t.conn.SetDeadline(time.Now().Add(5 * time.Second))
+
+	// Send a final control message to notify server
+	encoder := json.NewEncoder(t.conn)
+	closeMsg := TunnelMessage{
+		Type: MessageTypeControl,
+		ID:   "shutdown",
+		Payload: json.RawMessage(`{"action":"shutdown","reason":"client_disconnect"}`),
+	}
+	_ = encoder.Encode(closeMsg)
+
+	// Close the connection
+	err := t.conn.Close()
+	t.conn = nil
+
+	// Wait for a moment to allow goroutines to clean up
+	time.Sleep(100 * time.Millisecond)
+
+	t.logger.Info("Tunnel disconnected")
+	return err
 }
 
 // handleIncomingConnections handles incoming connections from the server
@@ -519,4 +590,92 @@ func (t *Tunnel) handlePingPong() {
 // IsConnected returns true if the tunnel is connected
 func (t *Tunnel) IsConnected() bool {
 	return t.conn != nil
+}
+
+// isCriticalError determines if an error should trigger tunnel shutdown
+func isCriticalError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	// Check for network-related errors that should trigger shutdown
+	if netErr, ok := err.(net.Error); ok {
+		// Timeout errors might be temporary
+		if netErr.Timeout() {
+			return false
+		}
+		// Other network errors are critical
+		return true
+	}
+
+	// Check for EOF and connection reset errors
+	errStr := err.Error()
+	return strings.Contains(errStr, "EOF") ||
+		strings.Contains(errStr, "connection reset") ||
+		strings.Contains(errStr, "broken pipe")
+}
+
+// startCorrelationCleanup starts a goroutine to clean up stale message correlations
+func (t *Tunnel) startCorrelationCleanup() {
+	ticker := time.NewTicker(30 * time.Second)
+	go func() {
+		defer ticker.Stop()
+		for {
+			select {
+			case <-t.stopChan:
+				return
+			case <-ticker.C:
+				now := time.Now()
+				t.correlationMap.Range(func(key, value interface{}) bool {
+					if corr, ok := value.(*MessageCorrelation); ok {
+						if now.Sub(corr.RequestTime) > corr.Timeout {
+							t.correlationMap.Delete(key)
+							close(corr.ResponseChan)
+						}
+					}
+					return true
+				})
+			}
+		}
+	}()
+}
+
+// waitForResponse waits for a correlated response message
+func (t *Tunnel) waitForResponse(msgID string, timeout time.Duration) (*TunnelMessage, error) {
+	responseChan := make(chan *TunnelMessage, 1)
+	correlation := &MessageCorrelation{
+		RequestTime:  time.Now(),
+		ResponseChan: responseChan,
+		Timeout:     timeout,
+	}
+	t.correlationMap.Store(msgID, correlation)
+
+	// Clean up correlation entry when done
+	defer func() {
+		t.correlationMap.Delete(msgID)
+		close(responseChan)
+	}()
+
+	select {
+	case response := <-responseChan:
+		return response, nil
+	case <-time.After(timeout):
+		return nil, fmt.Errorf("timeout waiting for response to message %s", msgID)
+	case <-t.stopChan:
+		return nil, fmt.Errorf("tunnel stopped while waiting for response")
+	}
+}
+
+// handleResponse processes a response message using correlation
+func (t *Tunnel) handleResponse(msg *TunnelMessage) {
+	if value, ok := t.correlationMap.Load(msg.ID); ok {
+		if correlation, ok := value.(*MessageCorrelation); ok {
+			select {
+			case correlation.ResponseChan <- msg:
+				// Response sent successfully
+			default:
+				t.logger.Warn("Response channel full or closed for message %s", msg.ID)
+			}
+		}
+	}
 }
