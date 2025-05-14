@@ -66,6 +66,11 @@ func (s *caddyService) ConfigureRoute(domain string, targetIP string, targetPort
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// First, ensure the domain is in the TLS automation policy
+	if err := s.ensureTLSPolicy(domain); err != nil {
+		return fmt.Errorf("failed to configure TLS policy: %w", err)
+	}
+
 	// Create route configuration
 	config := map[string]interface{}{
 		"@id": domain,
@@ -74,7 +79,7 @@ func (s *caddyService) ConfigureRoute(domain string, targetIP string, targetPort
 				"handler": "reverse_proxy",
 				"upstreams": []map[string]interface{}{
 					{
-						"dial": "api:8081", // Always forward to our HTTP server
+						"dial": "api:8081", // Forward to our API service that handles tunnels
 					},
 				},
 				"transport": map[string]interface{}{
@@ -126,7 +131,130 @@ func (s *caddyService) ConfigureRoute(domain string, targetIP string, targetPort
 		return fmt.Errorf("failed to configure route (status %d): %s", resp.StatusCode, string(body))
 	}
 
-	s.logger.Info("Successfully configured route for domain: %s -> api:8081 (tunnel proxy)", domain)
+	s.logger.Info("Successfully configured route for domain: %s (tunnel proxy)", domain)
+	return nil
+}
+
+// ensureTLSPolicy ensures that the domain is included in Caddy's TLS automation policy
+func (s *caddyService) ensureTLSPolicy(domain string) error {
+	// Get current config
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/config/", s.baseURL), nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to get current config: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var currentConfig map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&currentConfig); err != nil {
+		return fmt.Errorf("failed to decode current config: %w", err)
+	}
+
+	// Navigate to TLS automation policies
+	apps, ok := currentConfig["apps"].(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("invalid config structure: apps not found")
+	}
+
+	tls, ok := apps["tls"].(map[string]interface{})
+	if !ok {
+		tls = make(map[string]interface{})
+		apps["tls"] = tls
+	}
+
+	automation, ok := tls["automation"].(map[string]interface{})
+	if !ok {
+		automation = make(map[string]interface{})
+		tls["automation"] = automation
+	}
+
+	policies, ok := automation["policies"].([]interface{})
+	if !ok || len(policies) == 0 {
+		// Create default policy if none exists
+		policies = []interface{}{
+			map[string]interface{}{
+				"subjects": []string{"giraffecloud.xyz", "*.giraffecloud.xyz"},
+				"issuers": []interface{}{
+					map[string]interface{}{
+						"module": "acme",
+						"ca":     "https://acme-v02.api.letsencrypt.org/directory",
+						"challenges": map[string]interface{}{
+							"http": map[string]interface{}{
+								"disabled": false,
+							},
+							"dns": map[string]interface{}{
+								"disabled": true,
+							},
+							"tls-alpn": map[string]interface{}{
+								"disabled": true,
+							},
+						},
+					},
+				},
+			},
+		}
+		automation["policies"] = policies
+	}
+
+	// Check if domain is already in policy
+	policy := policies[0].(map[string]interface{})
+	subjects, ok := policy["subjects"].([]interface{})
+	if !ok {
+		subjects = []interface{}{}
+	}
+
+	// Convert subjects to strings for comparison
+	subjectStrings := make([]string, len(subjects))
+	for i, s := range subjects {
+		subjectStrings[i] = s.(string)
+	}
+
+	// Add domain if not already present
+	domainFound := false
+	for _, s := range subjectStrings {
+		if s == domain {
+			domainFound = true
+			break
+		}
+	}
+
+	if !domainFound {
+		subjectStrings = append(subjectStrings, domain)
+		policy["subjects"] = subjectStrings
+	}
+
+	// Update config if domain was added
+	if !domainFound {
+		jsonConfig, err := json.Marshal(currentConfig)
+		if err != nil {
+			return fmt.Errorf("failed to marshal updated config: %w", err)
+		}
+
+		req, err = http.NewRequest(http.MethodPost, fmt.Sprintf("%s/load", s.baseURL), bytes.NewBuffer(jsonConfig))
+		if err != nil {
+			return fmt.Errorf("failed to create request: %w", err)
+		}
+
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err = s.client.Do(req)
+		if err != nil {
+			return fmt.Errorf("failed to send request: %w", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			return fmt.Errorf("failed to update TLS policy (status %d): %s", resp.StatusCode, string(body))
+		}
+
+		s.logger.Info("Successfully added domain %s to TLS automation policy", domain)
+	}
+
 	return nil
 }
 

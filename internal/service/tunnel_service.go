@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"giraffecloud/internal/db/ent"
+	"giraffecloud/internal/logging"
 	"giraffecloud/internal/repository"
 )
 
@@ -141,24 +142,40 @@ func (s *tunnelService) UpdateClientIP(ctx context.Context, id uint32, clientIP 
 		return fmt.Errorf("failed to get tunnel: %w", err)
 	}
 
+	logger := logging.GetGlobalLogger()
+
+	logger.Info("[DEBUG] Updating client IP for tunnel %d, domain: %s, IP: %s", id, tunnel.Domain, clientIP)
+
 	// Update client IP in database
 	if err := s.repo.UpdateClientIP(ctx, id, clientIP); err != nil {
+		logger.Error("[DEBUG] Failed to update client IP in database: %v", err)
 		return fmt.Errorf("failed to update client IP: %w", err)
 	}
 
+	logger.Info("[DEBUG] Successfully updated client IP in database")
+
 	// Configure or remove Caddy route based on client IP
 	if s.caddyService != nil {
+		logger.Info("[DEBUG] Caddy service is available")
 		if clientIP != "" && tunnel.IsActive {
+			logger.Info("[DEBUG] Configuring Caddy route for domain: %s -> %s:%d", tunnel.Domain, clientIP, tunnel.TargetPort)
 			// Configure route when client connects
 			if err := s.caddyService.ConfigureRoute(tunnel.Domain, clientIP, tunnel.TargetPort); err != nil {
+				logger.Error("[DEBUG] Failed to configure Caddy route: %v", err)
 				return fmt.Errorf("failed to configure Caddy route: %w", err)
 			}
+			logger.Info("[DEBUG] Successfully configured Caddy route")
 		} else {
+			logger.Info("[DEBUG] Removing Caddy route for domain: %s", tunnel.Domain)
 			// Remove route when client disconnects
 			if err := s.caddyService.RemoveRoute(tunnel.Domain); err != nil {
+				logger.Error("[DEBUG] Failed to remove Caddy route: %v", err)
 				return fmt.Errorf("failed to remove Caddy route: %w", err)
 			}
+			logger.Info("[DEBUG] Successfully removed Caddy route")
 		}
+	} else {
+		logger.Warn("[DEBUG] Caddy service is nil, skipping route configuration")
 	}
 
 	return nil
