@@ -18,6 +18,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/briandowns/spinner"
 	"github.com/gin-gonic/gin"
 )
 
@@ -129,6 +130,12 @@ func (h *TunnelCertificateHandler) IssueClientCertificate(c *gin.Context) {
 func FetchCertificates(apiHost string, apiPort int, token string) (*CertificateResponse, error) {
 	logger := logging.GetGlobalLogger()
 	logger.Info("Fetching certificates from API server: %s:%d", apiHost, apiPort)
+
+	// Start spinner
+	s := spinner.New(spinner.CharSets[14], 120*time.Millisecond)
+	s.Suffix = " Downloading certificates..."
+	s.Start()
+	defer s.Stop()
 
 	url := fmt.Sprintf("https://%s:%d/api/v1/tunnels/certificates", apiHost, apiPort)
 	req, err := http.NewRequest(http.MethodGet, url, nil)
