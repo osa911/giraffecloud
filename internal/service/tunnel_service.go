@@ -99,30 +99,47 @@ func (s *tunnelService) DeleteTunnel(ctx context.Context, userID uint32, tunnelI
 
 // UpdateTunnel updates a tunnel's configuration
 func (s *tunnelService) UpdateTunnel(ctx context.Context, userID uint32, tunnelID uint32, updates interface{}) (*ent.Tunnel, error) {
+	logger := logging.GetGlobalLogger()
+	logger.Info("[DEBUG] UpdateTunnel called for tunnelID=%d, userID=%d", tunnelID, userID)
+
 	// Get current tunnel state
 	currentTunnel, err := s.repo.GetByID(ctx, tunnelID)
 	if err != nil {
+		logger.Error("[DEBUG] Failed to get tunnel: %v", err)
 		return nil, fmt.Errorf("failed to get tunnel: %w", err)
 	}
 
 	// Update tunnel in database
 	tunnel, err := s.repo.Update(ctx, tunnelID, updates)
 	if err != nil {
+		logger.Error("[DEBUG] Failed to update tunnel: %v", err)
 		return nil, fmt.Errorf("failed to update tunnel: %w", err)
 	}
 
 	// Handle Caddy configuration updates if client is connected
 	if tunnel.ClientIP != "" && s.caddyService != nil {
+		logger.Info("[DEBUG] Handling Caddy configuration for tunnel %d, domain: %s, IP: %s", tunnelID, tunnel.Domain, tunnel.ClientIP)
 		if tunnel.IsActive {
 			// Configure/update route if tunnel is active
 			if err := s.caddyService.ConfigureRoute(tunnel.Domain, tunnel.ClientIP, tunnel.TargetPort); err != nil {
-				fmt.Printf("Warning: Failed to configure Caddy route: %v\n", err)
+				logger.Error("[DEBUG] Failed to configure Caddy route: %v", err)
+			} else {
+				logger.Info("[DEBUG] Successfully configured Caddy route for domain: %s", tunnel.Domain)
 			}
 		} else if currentTunnel.IsActive {
 			// Remove route if tunnel was deactivated
 			if err := s.caddyService.RemoveRoute(tunnel.Domain); err != nil {
-				fmt.Printf("Warning: Failed to remove Caddy route: %v\n", err)
+				logger.Error("[DEBUG] Failed to remove Caddy route: %v", err)
+			} else {
+				logger.Info("[DEBUG] Successfully removed Caddy route for domain: %s", tunnel.Domain)
 			}
+		}
+	} else {
+		if s.caddyService == nil {
+			logger.Warn("[DEBUG] Caddy service is nil, skipping route configuration")
+		}
+		if tunnel.ClientIP == "" {
+			logger.Info("[DEBUG] No client IP set, skipping Caddy configuration")
 		}
 	}
 
@@ -136,15 +153,17 @@ func (s *tunnelService) GetByToken(ctx context.Context, token string) (*ent.Tunn
 
 // UpdateClientIP updates a tunnel's client IP and configures Caddy route
 func (s *tunnelService) UpdateClientIP(ctx context.Context, id uint32, clientIP string) error {
+	logger := logging.GetGlobalLogger()
+	logger.Info("[DEBUG] UpdateClientIP called for tunnel %d with IP %s", id, clientIP)
+
 	// Get current tunnel state
 	tunnel, err := s.repo.GetByID(ctx, id)
 	if err != nil {
+		logger.Error("[DEBUG] Failed to get tunnel: %v", err)
 		return fmt.Errorf("failed to get tunnel: %w", err)
 	}
 
-	logger := logging.GetGlobalLogger()
-
-	logger.Info("[DEBUG] Updating client IP for tunnel %d, domain: %s, IP: %s", id, tunnel.Domain, clientIP)
+	logger.Info("[DEBUG] Current tunnel state - Domain: %s, Active: %v, CurrentIP: %s", tunnel.Domain, tunnel.IsActive, tunnel.ClientIP)
 
 	// Update client IP in database
 	if err := s.repo.UpdateClientIP(ctx, id, clientIP); err != nil {
