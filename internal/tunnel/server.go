@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"giraffecloud/internal/interfaces"
 	"giraffecloud/internal/logging"
 	"giraffecloud/internal/repository"
 	"io"
@@ -26,26 +27,21 @@ type ClientIPUpdateFunc func(ctx context.Context, tunnelID uint32, clientIP stri
 
 // TunnelServer represents the tunnel server
 type TunnelServer struct {
-	listener    net.Listener
-	logger      *logging.Logger
-	tlsConfig   *tls.Config
-	tokenRepo   repository.TokenRepository
-	tunnelRepo  repository.TunnelRepository
-	connections *ConnectionManager
+	listener      net.Listener
+	logger        *logging.Logger
+	tlsConfig     *tls.Config
+	tokenRepo     repository.TokenRepository
+	tunnelRepo    repository.TunnelRepository
+	tunnelService interfaces.TunnelService
+	connections   *ConnectionManager
 }
 
-// Connection represents an active tunnel connection
-type Connection struct {
-	conn     net.Conn
-	domain   string
-	stopChan chan struct{}
-}
 
 // NewServer creates a new tunnel server instance
-func NewServer(tokenRepo repository.TokenRepository, tunnelRepo repository.TunnelRepository) *TunnelServer {
+func NewServer(tokenRepo repository.TokenRepository, tunnelRepo repository.TunnelRepository, tunnelService interfaces.TunnelService) *TunnelServer {
 	return &TunnelServer{
-		logger:      logging.GetGlobalLogger(),
-		connections: NewConnectionManager(),
+		logger:        logging.GetGlobalLogger(),
+		connections:   NewConnectionManager(),
 		tlsConfig: &tls.Config{
 			MinVersion: tls.VersionTLS12,
 			GetCertificate: func(info *tls.ClientHelloInfo) (*tls.Certificate, error) {
@@ -56,8 +52,9 @@ func NewServer(tokenRepo repository.TokenRepository, tunnelRepo repository.Tunne
 				return &cert, nil
 			},
 		},
-		tokenRepo:  tokenRepo,
-		tunnelRepo: tunnelRepo,
+		tokenRepo:     tokenRepo,
+		tunnelRepo:    tunnelRepo,
+		tunnelService: tunnelService,
 	}
 }
 
@@ -147,8 +144,8 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 		return
 	}
 
-	// Update client IP in database
-	if err := s.tunnelRepo.UpdateClientIP(context.Background(), uint32(tunnel.ID), clientIP); err != nil {
+	// Update client IP using tunnel service
+	if err := s.tunnelService.UpdateClientIP(context.Background(), uint32(tunnel.ID), clientIP); err != nil {
 		s.logger.Error("Failed to update client IP: %v", err)
 		json.NewEncoder(conn).Encode(TunnelHandshakeResponse{
 			Status:  "error",
