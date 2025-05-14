@@ -21,14 +21,17 @@ TODO:
 - Add metrics
 */
 
+// ClientIPUpdateFunc is a callback function for client IP updates
+type ClientIPUpdateFunc func(ctx context.Context, tunnelID uint32, clientIP string) error
+
 // TunnelServer represents the tunnel server
 type TunnelServer struct {
 	listener    net.Listener
 	logger      *logging.Logger
-	mu          sync.RWMutex
-	connections map[string]*TunnelConnection // domain -> connection
 	tlsConfig   *tls.Config
 	tokenRepo   repository.TokenRepository
+	tunnelRepo  repository.TunnelRepository
+	connections *ConnectionManager
 }
 
 // Connection represents an active tunnel connection
@@ -39,10 +42,10 @@ type Connection struct {
 }
 
 // NewServer creates a new tunnel server instance
-func NewServer(tokenRepo repository.TokenRepository) *TunnelServer {
+func NewServer(tokenRepo repository.TokenRepository, tunnelRepo repository.TunnelRepository) *TunnelServer {
 	return &TunnelServer{
 		logger:      logging.GetGlobalLogger(),
-		connections: make(map[string]*TunnelConnection),
+		connections: NewConnectionManager(),
 		tlsConfig: &tls.Config{
 			MinVersion: tls.VersionTLS12,
 			GetCertificate: func(info *tls.ClientHelloInfo) (*tls.Certificate, error) {
@@ -53,7 +56,8 @@ func NewServer(tokenRepo repository.TokenRepository) *TunnelServer {
 				return &cert, nil
 			},
 		},
-		tokenRepo: tokenRepo,
+		tokenRepo:  tokenRepo,
+		tunnelRepo: tunnelRepo,
 	}
 }
 
@@ -73,9 +77,6 @@ func (s *TunnelServer) Start(addr string) error {
 
 // Stop stops the tunnel server
 func (s *TunnelServer) Stop() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if s.listener == nil {
 		return nil
 	}
@@ -84,12 +85,6 @@ func (s *TunnelServer) Stop() error {
 		return fmt.Errorf("failed to close listener: %w", err)
 	}
 
-	for _, conn := range s.connections {
-		close(conn.stopChan)
-		conn.conn.Close()
-	}
-
-	s.connections = make(map[string]*TunnelConnection)
 	return nil
 }
 
@@ -115,9 +110,10 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 		return
 	}
 
-	// Validate token
-	tokenRecord, err := s.tokenRepo.GetByToken(context.Background(), req.Token)
+	// Get tunnel by token
+	tunnel, err := s.tunnelRepo.GetByToken(context.Background(), req.Token)
 	if err != nil {
+		s.logger.Error("Failed to get tunnel: %v", err)
 		json.NewEncoder(conn).Encode(TunnelHandshakeResponse{
 			Status:  "error",
 			Message: "Invalid token",
@@ -125,23 +121,18 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 		return
 	}
 
-	s.logger.Info("User %d connected with domain %s", tokenRecord.UserID, req.Domain)
+	s.logger.Info("User %d connected with token %s", tunnel.UserID, tunnel.Token)
 
 	// Store connection
-	connection := &TunnelConnection{
-		conn:     conn,
-		domain:   req.Domain,
-		stopChan: make(chan struct{}),
-	}
+	connection := s.connections.AddConnection(tunnel.Domain, conn, tunnel.TargetPort)
+	defer s.connections.RemoveConnection(tunnel.Domain)
 
-	s.mu.Lock()
-	s.connections[req.Domain] = connection
-	s.mu.Unlock()
-
-	// Send success response
+	// Send success response with domain and port
 	if err := json.NewEncoder(conn).Encode(TunnelHandshakeResponse{
-		Status:  "success",
-		Message: "Connected successfully",
+		Status:     "success",
+		Message:    "Connected successfully",
+		Domain:     tunnel.Domain,
+		TargetPort: tunnel.TargetPort,
 	}); err != nil {
 		s.logger.Error("Failed to send response: %v", err)
 		return
@@ -149,34 +140,21 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 
 	// Wait for connection to close
 	<-connection.stopChan
-
-	// Cleanup
-	s.mu.Lock()
-	delete(s.connections, req.Domain)
-	s.mu.Unlock()
 }
 
 // GetConnection returns the tunnel connection for a domain
 func (s *TunnelServer) GetConnection(domain string) *TunnelConnection {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.connections[domain]
+	return s.connections.GetConnection(domain)
 }
 
 // IsTunnelDomain returns true if the domain has an active tunnel
 func (s *TunnelServer) IsTunnelDomain(domain string) bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	_, exists := s.connections[domain]
-	return exists
+	return s.connections.HasDomain(domain)
 }
 
 // ProxyConnection handles proxying an HTTP connection to the appropriate tunnel
 func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
-	s.mu.RLock()
-	tunnelConn := s.connections[domain]
-	s.mu.RUnlock()
-
+	tunnelConn := s.connections.GetConnection(domain)
 	if tunnelConn == nil {
 		s.logger.Error("No tunnel connection found for domain: %s", domain)
 		conn.Close()

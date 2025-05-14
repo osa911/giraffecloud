@@ -160,13 +160,19 @@ func (s *Server) Init() error {
 	csrfService := service.NewCSRFService()
 	logger.Info("Core services initialized")
 
+	// Initialize connection manager
+	logger.Info("Initializing connection manager...")
+	connectionManager := tunnel.NewConnectionManager()
+	logger.Info("Connection manager initialized")
+
+	// Initialize Caddy service if in production
 	var caddyService service.CaddyService
 	if os.Getenv("ENV") == "production" {
 		// Initialize Caddy service using standardized configuration
 		logger.Info("Initializing Caddy service...")
 		logger.Info("Using Caddy config path: %s", caddy.CaddyPaths.Config)
 
-		caddyService = service.NewCaddyService(s.tunnelServer)
+		caddyService = service.NewCaddyService(connectionManager)
 
 		// Load initial Caddy configuration
 		logger.Info("Loading initial Caddy configuration...")
@@ -196,7 +202,7 @@ func (s *Server) Init() error {
 
 	// Initialize tunnel server
 	logger.Info("Initializing tunnel server...")
-	s.tunnelServer = tunnel.NewServer(repos.Token)
+	s.tunnelServer = tunnel.NewServer(repos.Token, repos.Tunnel)
 
 	tunnelPort := os.Getenv("TUNNEL_PORT")
 	if tunnelPort == "" {

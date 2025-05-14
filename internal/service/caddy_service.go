@@ -22,20 +22,20 @@ type CaddyService interface {
 }
 
 type caddyService struct {
-	logger       *logging.Logger
-	client       *http.Client
-	baseURL      string
-	mu           sync.RWMutex
-	tunnelServer *tunnel.TunnelServer
+	logger      *logging.Logger
+	client      *http.Client
+	baseURL     string
+	mu          sync.RWMutex
+	connections *tunnel.ConnectionManager
 }
 
 // NewCaddyService creates a new Caddy service instance
-func NewCaddyService(tunnelServer *tunnel.TunnelServer) CaddyService {
+func NewCaddyService(connections *tunnel.ConnectionManager) CaddyService {
 	return &caddyService{
-		logger:   logging.GetGlobalLogger(),
-		client:   &http.Client{},
-		baseURL:  "http://172.20.0.4:2019",
-		tunnelServer: tunnelServer,
+		logger:      logging.GetGlobalLogger(),
+		client:      &http.Client{},
+		baseURL:     "http://172.20.0.4:2019",
+		connections: connections,
 	}
 }
 
