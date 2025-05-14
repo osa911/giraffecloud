@@ -136,6 +136,27 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 
 	s.logger.Info("User %d connected with token %s", tunnel.UserID, tunnel.Token)
 
+	// Get client IP from connection
+	clientIP, _, err := net.SplitHostPort(conn.RemoteAddr().String())
+	if err != nil {
+		s.logger.Error("Failed to get client IP: %v", err)
+		json.NewEncoder(conn).Encode(TunnelHandshakeResponse{
+			Status:  "error",
+			Message: "Failed to get client IP",
+		})
+		return
+	}
+
+	// Update client IP in database
+	if err := s.tunnelRepo.UpdateClientIP(context.Background(), uint32(tunnel.ID), clientIP); err != nil {
+		s.logger.Error("Failed to update client IP: %v", err)
+		json.NewEncoder(conn).Encode(TunnelHandshakeResponse{
+			Status:  "error",
+			Message: "Failed to update client IP",
+		})
+		return
+	}
+
 	// Store connection
 	connection := s.connections.AddConnection(tunnel.Domain, conn, tunnel.TargetPort)
 	defer s.connections.RemoveConnection(tunnel.Domain)
