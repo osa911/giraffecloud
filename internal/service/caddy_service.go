@@ -159,38 +159,57 @@ func (s *caddyService) RemoveRoute(domain string) error {
 
 // LoadConfig loads the initial Caddy configuration
 func (s *caddyService) LoadConfig() error {
-	// Initial configuration for Caddy
-	config := map[string]interface{}{
-		"apps": map[string]interface{}{
-			"http": map[string]interface{}{
-				"servers": map[string]interface{}{
-					"srv0": map[string]interface{}{
-						"listen": []string{":443"},
-						"routes": []interface{}{},
-						"automatic_https": map[string]interface{}{
-							"disable": false, // Enable automatic HTTPS
-						},
-					},
-				},
-			},
-		},
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// First get the current config
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/config/", s.baseURL), nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// Convert config to JSON
-	jsonConfig, err := json.Marshal(config)
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to get current config: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var currentConfig map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&currentConfig); err != nil {
+		return fmt.Errorf("failed to decode current config: %w", err)
+	}
+
+	// Ensure required configuration exists
+	if apps, ok := currentConfig["apps"].(map[string]interface{}); ok {
+		if http, ok := apps["http"].(map[string]interface{}); ok {
+			if servers, ok := http["servers"].(map[string]interface{}); ok {
+				if srv0, ok := servers["srv0"].(map[string]interface{}); ok {
+					// Ensure automatic HTTPS is enabled
+					srv0["automatic_https"] = map[string]interface{}{
+						"disable": false,
+					}
+					// Ensure proper listening addresses
+					srv0["listen"] = []string{":80", ":443"}
+				}
+			}
+		}
+	}
+
+	// Convert config back to JSON
+	jsonConfig, err := json.Marshal(currentConfig)
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
-	// Send config to Caddy
-	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/load", s.baseURL), bytes.NewBuffer(jsonConfig))
+	// Send updated config back to Caddy
+	req, err = http.NewRequest(http.MethodPost, fmt.Sprintf("%s/load", s.baseURL), bytes.NewBuffer(jsonConfig))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := s.client.Do(req)
+	resp, err = s.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -201,7 +220,7 @@ func (s *caddyService) LoadConfig() error {
 		return fmt.Errorf("failed to load config (status %d): %s", resp.StatusCode, string(body))
 	}
 
-	s.logger.Info("Successfully loaded initial Caddy configuration")
+	s.logger.Info("Successfully loaded and updated Caddy configuration")
 	return nil
 }
 
