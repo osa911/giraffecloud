@@ -156,28 +156,11 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 	s.mu.Unlock()
 }
 
-// ProxyHTTPConnection proxies an incoming HTTP connection to the tunnel client
-func (s *TunnelServer) ProxyHTTPConnection(domain string, httpConn net.Conn) {
+// GetConnection returns the tunnel connection for a domain
+func (s *TunnelServer) GetConnection(domain string) *TunnelConnection {
 	s.mu.RLock()
-	tunnelConn := s.connections[domain]
-	s.mu.RUnlock()
-
-	if tunnelConn == nil {
-		s.logger.Error("No tunnel connection for domain %s", domain)
-		httpConn.Close()
-		return
-	}
-
-	// Copy data bidirectionally
-	go func() {
-		io.Copy(tunnelConn.conn, httpConn)
-		httpConn.Close()
-	}()
-
-	go func() {
-		io.Copy(httpConn, tunnelConn.conn)
-		tunnelConn.conn.Close()
-	}()
+	defer s.mu.RUnlock()
+	return s.connections[domain]
 }
 
 // IsTunnelDomain returns true if the domain has an active tunnel
@@ -186,4 +169,33 @@ func (s *TunnelServer) IsTunnelDomain(domain string) bool {
 	defer s.mu.RUnlock()
 	_, exists := s.connections[domain]
 	return exists
+}
+
+// ProxyConnection handles proxying an HTTP connection to the appropriate tunnel
+func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
+	s.mu.RLock()
+	tunnelConn := s.connections[domain]
+	s.mu.RUnlock()
+
+	if tunnelConn == nil {
+		s.logger.Error("No tunnel connection found for domain: %s", domain)
+		conn.Close()
+		return
+	}
+
+	// Copy data bidirectionally
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		io.Copy(tunnelConn.conn, conn)
+	}()
+
+	go func() {
+		defer wg.Done()
+		io.Copy(conn, tunnelConn.conn)
+	}()
+
+	wg.Wait()
 }

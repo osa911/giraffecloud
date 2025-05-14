@@ -166,7 +166,7 @@ func (s *Server) Init() error {
 		logger.Info("Initializing Caddy service...")
 		logger.Info("Using Caddy config path: %s", caddy.CaddyPaths.Config)
 
-		caddyService = service.NewCaddyService()
+		caddyService = service.NewCaddyService(s.tunnelServer)
 
 		// Load initial Caddy configuration
 		logger.Info("Loading initial Caddy configuration...")
@@ -297,7 +297,7 @@ func (s *Server) Start(cfg *Config) error {
 				return
 			}
 			logger.Info("Hijacked HTTP connection for tunnel domain %s", domain)
-			s.tunnelServer.ProxyHTTPConnection(domain, conn)
+			s.tunnelServer.ProxyConnection(domain, conn)
 			return
 		}
 		// Not a tunnel domain: fall back to Gin router
