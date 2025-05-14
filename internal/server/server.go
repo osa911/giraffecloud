@@ -303,17 +303,31 @@ func (s *Server) Start(cfg *Config) error {
 				return
 			}
 
+			// Write the initial response headers before hijacking
+			w.Header().Set("Connection", "upgrade")
+			w.Header().Set("Upgrade", "tcp")
+			w.WriteHeader(http.StatusSwitchingProtocols)
+
 			conn, bufrw, err := hj.Hijack()
 			if err != nil {
 				logger.Error("[HIJACK DEBUG] Hijack failed: %v", err)
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
+			defer conn.Close()
 			logger.Info("[HIJACK DEBUG] Successfully hijacked connection for domain: %s", domain)
 
 			// Check if there's any buffered data
-			if bufrw.Reader.Buffered() > 0 {
-				logger.Info("[HIJACK DEBUG] Found buffered data in hijacked connection")
+			buffered := bufrw.Reader.Buffered()
+			if buffered > 0 {
+				logger.Info("[HIJACK DEBUG] Found %d bytes of buffered data in hijacked connection", buffered)
+				data := make([]byte, buffered)
+				n, err := bufrw.Reader.Read(data)
+				if err != nil {
+					logger.Error("[HIJACK DEBUG] Error reading buffered data: %v", err)
+					return
+				}
+				logger.Info("[HIJACK DEBUG] Read %d bytes of buffered data: %s", n, string(data[:n]))
 			}
 
 			logger.Info("[HIJACK DEBUG] Proxying connection for domain: %s", domain)

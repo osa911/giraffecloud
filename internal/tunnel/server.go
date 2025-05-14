@@ -193,6 +193,8 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 		return
 	}
 
+	s.logger.Info("[PROXY DEBUG] Starting proxy connection for domain: %s", domain)
+
 	// Create buffered readers and writers
 	clientReader := bufio.NewReader(conn)
 	clientWriter := bufio.NewWriter(conn)
@@ -212,20 +214,29 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 			n, err := clientReader.Read(data)
 			if err != nil {
 				if err != io.EOF {
-					s.logger.Error("Error reading from client: %v", err)
+					s.logger.Error("[PROXY DEBUG] Error reading from client: %v", err)
+				} else {
+					s.logger.Info("[PROXY DEBUG] Client connection closed (EOF)")
 				}
 				return
 			}
 
-			s.logger.Info("[DEBUG] Forwarding request to tunnel: %s", string(data[:n]))
+			s.logger.Info("[PROXY DEBUG] Read %d bytes from client", n)
+			s.logger.Info("[PROXY DEBUG] Client request: %s", string(data[:n]))
 
 			// Write to tunnel
-			_, err = tunnelWriter.Write(data[:n])
+			written, err := tunnelWriter.Write(data[:n])
 			if err != nil {
-				s.logger.Error("Error writing to tunnel: %v", err)
+				s.logger.Error("[PROXY DEBUG] Error writing to tunnel: %v", err)
 				return
 			}
-			tunnelWriter.Flush()
+			s.logger.Info("[PROXY DEBUG] Wrote %d bytes to tunnel", written)
+
+			if err := tunnelWriter.Flush(); err != nil {
+				s.logger.Error("[PROXY DEBUG] Error flushing tunnel writer: %v", err)
+				return
+			}
+			s.logger.Info("[PROXY DEBUG] Flushed tunnel writer")
 		}
 	}()
 
@@ -238,22 +249,33 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 			n, err := tunnelReader.Read(data)
 			if err != nil {
 				if err != io.EOF {
-					s.logger.Error("Error reading from tunnel: %v", err)
+					s.logger.Error("[PROXY DEBUG] Error reading from tunnel: %v", err)
+				} else {
+					s.logger.Info("[PROXY DEBUG] Tunnel connection closed (EOF)")
 				}
 				return
 			}
 
-			s.logger.Info("[DEBUG] Received response from tunnel: %s", string(data[:n]))
+			s.logger.Info("[PROXY DEBUG] Read %d bytes from tunnel", n)
+			s.logger.Info("[PROXY DEBUG] Tunnel response: %s", string(data[:n]))
 
 			// Write back to client
-			_, err = clientWriter.Write(data[:n])
+			written, err := clientWriter.Write(data[:n])
 			if err != nil {
-				s.logger.Error("Error writing to client: %v", err)
+				s.logger.Error("[PROXY DEBUG] Error writing to client: %v", err)
 				return
 			}
-			clientWriter.Flush()
+			s.logger.Info("[PROXY DEBUG] Wrote %d bytes to client", written)
+
+			if err := clientWriter.Flush(); err != nil {
+				s.logger.Error("[PROXY DEBUG] Error flushing client writer: %v", err)
+				return
+			}
+			s.logger.Info("[PROXY DEBUG] Flushed client writer")
 		}
 	}()
 
+	s.logger.Info("[PROXY DEBUG] Waiting for proxy goroutines to complete")
 	wg.Wait()
+	s.logger.Info("[PROXY DEBUG] Proxy connection completed for domain: %s", domain)
 }
