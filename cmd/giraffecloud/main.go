@@ -318,8 +318,7 @@ func init() {
 	// Add host flags to connect command
 	connectCmd.Flags().String("tunnel-host", "", "Tunnel host to connect to (default: tunnel.giraffecloud.xyz)")
 	connectCmd.Flags().Int("tunnel-port", 4443, "Tunnel port to connect to (default: 4443)")
-	connectCmd.Flags().Int("local-port", 0, "Local port to forward requests to (required)")
-	connectCmd.MarkFlagRequired("local-port")
+	connectCmd.Flags().Int("local-port", 0, "Local port to forward requests to (optional, defaults to port configured on server)")
 
 	// Add host flags to login command
 	loginCmd.Flags().String("api-host", "", "API host for login/certificates (default: api.giraffecloud.xyz)")
