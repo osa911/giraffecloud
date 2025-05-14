@@ -362,6 +362,7 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 	tunnelConn := s.connections.GetConnection(domain)
 	if tunnelConn == nil {
 		s.logger.Error("No tunnel connection found for domain: %s", domain)
+		s.writeHTTPError(conn, 502, "Bad Gateway - Tunnel not connected")
 		return
 	}
 
@@ -378,12 +379,29 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 	// Create buffered reader for the client connection
 	clientReader := bufio.NewReaderSize(conn, 32*1024)
 
-	// Read the entire request into a buffer
+	// Read the entire request into a buffer with timeout
 	var requestData bytes.Buffer
-	if _, err := io.Copy(&requestData, clientReader); err != nil {
-		s.logger.Error("[PROXY DEBUG] Error reading request: %v", err)
+	readDone := make(chan error, 1)
+	go func() {
+		_, err := io.Copy(&requestData, clientReader)
+		readDone <- err
+	}()
+
+	select {
+	case err := <-readDone:
+		if err != nil {
+			s.logger.Error("[PROXY DEBUG] Error reading request: %v", err)
+			s.writeHTTPError(conn, 502, "Bad Gateway - Error reading request")
+			return
+		}
+	case <-time.After(10 * time.Second):
+		s.logger.Error("[PROXY DEBUG] Timeout reading request")
+		s.writeHTTPError(conn, 504, "Gateway Timeout - Request read timeout")
 		return
 	}
+
+	// Generate unique message ID for correlation
+	msgID := fmt.Sprintf("proxy-%d", time.Now().UnixNano())
 
 	// Send the request data through the tunnel
 	requestDataMsg := DataMessage{
@@ -392,36 +410,89 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 	payload, _ := json.Marshal(requestDataMsg)
 	msg := TunnelMessage{
 		Type:    MessageTypeData,
+		ID:      msgID,
 		Payload: payload,
 	}
+
+	// Lock the writer mutex
+	tunnelConn.writerMu.Lock()
 	if err := tunnelConn.writer.Encode(msg); err != nil {
+		tunnelConn.writerMu.Unlock()
 		s.logger.Error("[PROXY DEBUG] Error sending request data: %v", err)
+		s.writeHTTPError(conn, 502, "Bad Gateway - Error sending request to tunnel")
 		return
 	}
+	tunnelConn.writerMu.Unlock()
 
-	// Wait for response data
-	var responseMsg TunnelMessage
-	if err := tunnelConn.reader.Decode(&responseMsg); err != nil {
-		s.logger.Error("[PROXY DEBUG] Error reading response data: %v", err)
+	// Wait for response data with timeout
+	responseChan := make(chan *TunnelMessage, 1)
+	errorChan := make(chan error, 1)
+
+	go func() {
+		tunnelConn.readerMu.Lock()
+		defer tunnelConn.readerMu.Unlock()
+
+		var responseMsg TunnelMessage
+		if err := tunnelConn.reader.Decode(&responseMsg); err != nil {
+			errorChan <- fmt.Errorf("error reading response data: %w", err)
+			return
+		}
+
+		if responseMsg.Type != MessageTypeData {
+			errorChan <- fmt.Errorf("unexpected message type in response: %s", responseMsg.Type)
+			return
+		}
+
+		if responseMsg.ID != msgID {
+			errorChan <- fmt.Errorf("response message ID mismatch: got %s, want %s", responseMsg.ID, msgID)
+			return
+		}
+
+		responseChan <- &responseMsg
+	}()
+
+	// Wait for response with timeout
+	select {
+	case responseMsg := <-responseChan:
+		var responseDataMsg DataMessage
+		if err := json.Unmarshal(responseMsg.Payload, &responseDataMsg); err != nil {
+			s.logger.Error("[PROXY DEBUG] Error unmarshaling response data: %v", err)
+			s.writeHTTPError(conn, 502, "Bad Gateway - Error processing response")
+			return
+		}
+
+		// Write response back to client
+		if _, err := conn.Write(responseDataMsg.Data); err != nil {
+			s.logger.Error("[PROXY DEBUG] Error writing response to client: %v", err)
+			return
+		}
+
+		s.logger.Info("[PROXY DEBUG] Request/response cycle completed successfully")
+
+	case err := <-errorChan:
+		s.logger.Error("[PROXY DEBUG] Error in response handling: %v", err)
+		s.writeHTTPError(conn, 502, "Bad Gateway - Error receiving response from tunnel")
+		return
+
+	case <-time.After(30 * time.Second):
+		s.logger.Error("[PROXY DEBUG] Timeout waiting for response")
+		s.writeHTTPError(conn, 504, "Gateway Timeout - Response timeout")
 		return
 	}
+}
 
-	if responseMsg.Type != MessageTypeData {
-		s.logger.Error("[PROXY DEBUG] Unexpected message type in response: %s", responseMsg.Type)
-		return
+// writeHTTPError writes a proper HTTP error response
+func (s *TunnelServer) writeHTTPError(conn net.Conn, code int, message string) {
+	statusText := "Bad Gateway"
+	if code == 504 {
+		statusText = "Gateway Timeout"
 	}
 
-	var responseDataMsg DataMessage
-	if err := json.Unmarshal(responseMsg.Payload, &responseDataMsg); err != nil {
-		s.logger.Error("[PROXY DEBUG] Error unmarshaling response data: %v", err)
-		return
-	}
+	response := fmt.Sprintf("HTTP/1.1 %d %s\r\n"+
+		"Content-Type: text/plain\r\n"+
+		"Connection: close\r\n"+
+		"\r\n"+
+		"%s", code, statusText, message)
 
-	// Write response back to client
-	if _, err := conn.Write(responseDataMsg.Data); err != nil {
-		s.logger.Error("[PROXY DEBUG] Error writing response to client: %v", err)
-		return
-	}
-
-	s.logger.Info("[PROXY DEBUG] Request/response cycle completed successfully")
+	conn.Write([]byte(response))
 }
