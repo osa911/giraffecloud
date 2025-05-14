@@ -313,21 +313,43 @@ func (s *Server) Start(cfg *Config) error {
 			defer conn.Close()
 			logger.Info("[HIJACK DEBUG] Successfully hijacked connection for domain: %s", domain)
 
-			// Reconstruct the original request as a string
-			reqString := fmt.Sprintf("%s %s HTTP/%d.%d\r\n", r.Method, r.URL.RequestURI(), r.ProtoMajor, r.ProtoMinor)
-			for key, values := range r.Header {
-				for _, value := range values {
-					reqString += fmt.Sprintf("%s: %s\r\n", key, value)
-				}
-			}
-			reqString += "\r\n"
-
+			// Read the body first if it exists
+			var body []byte
 			if r.Body != nil {
-				body, err := io.ReadAll(r.Body)
+				body, err = io.ReadAll(r.Body)
 				if err != nil {
 					logger.Error("[HIJACK DEBUG] Error reading request body: %v", err)
 					return
 				}
+			}
+
+			// Reconstruct the original request as a string
+			reqString := fmt.Sprintf("%s %s HTTP/%d.%d\r\n", r.Method, r.URL.RequestURI(), r.ProtoMajor, r.ProtoMinor)
+
+			// Add Host header first
+			reqString += fmt.Sprintf("Host: %s\r\n", domain)
+
+			// Add Content-Length if we have a body
+			if len(body) > 0 {
+				reqString += fmt.Sprintf("Content-Length: %d\r\n", len(body))
+			}
+
+			// Add all other headers
+			for key, values := range r.Header {
+				// Skip headers we've already handled or don't want to forward
+				if key == "Host" || key == "Content-Length" {
+					continue
+				}
+				for _, value := range values {
+					reqString += fmt.Sprintf("%s: %s\r\n", key, value)
+				}
+			}
+
+			// Add the empty line to separate headers from body
+			reqString += "\r\n"
+
+			// Add the body if it exists
+			if len(body) > 0 {
 				reqString += string(body)
 			}
 

@@ -2,7 +2,6 @@ package tunnel
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -219,7 +218,12 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 				} else {
 					s.logger.Info("[PROXY DEBUG] Client connection closed (EOF)")
 				}
+				tunnelConn.conn.Close() // Close tunnel connection when client disconnects
 				return
+			}
+
+			if n == 0 {
+				continue
 			}
 
 			s.logger.Info("[PROXY DEBUG] Read %d bytes from client", n)
@@ -238,12 +242,6 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 				return
 			}
 			s.logger.Info("[PROXY DEBUG] Flushed tunnel writer")
-
-			// If this was the end of the request (empty line), break
-			if bytes.Contains(data[:n], []byte("\r\n\r\n")) {
-				s.logger.Info("[PROXY DEBUG] End of request detected")
-				break
-			}
 		}
 	}()
 
@@ -260,7 +258,12 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 				} else {
 					s.logger.Info("[PROXY DEBUG] Tunnel connection closed (EOF)")
 				}
+				conn.Close() // Close client connection when tunnel disconnects
 				return
+			}
+
+			if n == 0 {
+				continue
 			}
 
 			s.logger.Info("[PROXY DEBUG] Read %d bytes from tunnel", n)
@@ -279,12 +282,6 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 				return
 			}
 			s.logger.Info("[PROXY DEBUG] Flushed client writer")
-
-			// If this was the end of the response (empty line), break
-			if bytes.Contains(data[:n], []byte("\r\n\r\n")) {
-				s.logger.Info("[PROXY DEBUG] End of response detected")
-				break
-			}
 		}
 	}()
 
