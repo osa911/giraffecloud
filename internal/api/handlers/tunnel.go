@@ -3,7 +3,7 @@ package handlers
 import (
 	"giraffecloud/internal/api/constants"
 	"giraffecloud/internal/api/dto/common"
-	"giraffecloud/internal/service"
+	"giraffecloud/internal/interfaces"
 	"giraffecloud/internal/utils"
 	"strconv"
 
@@ -14,11 +14,11 @@ import (
 
 // TunnelHandler handles tunnel-related HTTP requests
 type TunnelHandler struct {
-	tunnelService service.TunnelService
+	tunnelService interfaces.TunnelService
 }
 
 // NewTunnelHandler creates a new tunnel handler instance
-func NewTunnelHandler(tunnelService service.TunnelService) *TunnelHandler {
+func NewTunnelHandler(tunnelService interfaces.TunnelService) *TunnelHandler {
 	return &TunnelHandler{
 		tunnelService: tunnelService,
 	}
