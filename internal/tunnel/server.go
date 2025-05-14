@@ -12,7 +12,6 @@ import (
 	"giraffecloud/internal/repository"
 	"io"
 	"net"
-	"sync"
 	"time"
 )
 
@@ -37,19 +36,6 @@ type TunnelServer struct {
 	tunnelRepo    repository.TunnelRepository
 	tunnelService interfaces.TunnelService
 	connections   *ConnectionManager
-}
-
-// TunnelConnection represents an active tunnel connection
-type TunnelConnection struct {
-	conn       net.Conn          // The underlying network connection
-	domain     string            // The domain this tunnel serves
-	targetPort int              // The target port on the client side
-	stopChan   chan struct{}     // Channel to signal connection stop
-	lastPing   time.Time         // Time of last successful ping
-	reader     *json.Decoder     // JSON decoder for reading messages
-	writer     *json.Encoder     // JSON encoder for writing messages
-	readerMu   sync.Mutex        // Mutex for synchronizing reader access
-	writerMu   sync.Mutex        // Mutex for synchronizing writer access
 }
 
 // NewServer creates a new tunnel server instance
