@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"giraffecloud/internal/api/handlers"
 	"giraffecloud/internal/logging"
 	"giraffecloud/internal/tunnel"
 	"giraffecloud/internal/version"
@@ -57,10 +58,14 @@ var connectCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		// Get tunnel host from flag if provided
+		// Get tunnel host and port from flags if provided
 		tunnelHost, _ := cmd.Flags().GetString("tunnel-host")
+		tunnelPort, _ := cmd.Flags().GetInt("tunnel-port")
 		if tunnelHost != "" {
 			cfg.Server.Host = tunnelHost
+		}
+		if tunnelPort != 0 {
+			cfg.Server.Port = tunnelPort
 		}
 
 		serverAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
@@ -238,8 +243,8 @@ var versionCmd = &cobra.Command{
 }
 
 var loginCmd = &cobra.Command{
-	Use:   "login --token <TOKEN>",
-	Short: "Login to GiraffeCloud using an API token",
+	Use:   "login",
+	Short: "Login to GiraffeCloud and obtain certificates",
 	Long: `Login to GiraffeCloud using an API token.
 The token will be stored securely in your config file (~/.giraffecloud/config).
 This command will also fetch your client certificates from the server.
@@ -247,59 +252,63 @@ This command will also fetch your client certificates from the server.
 After successful login, use 'giraffecloud connect' to establish a tunnel connection.
 
 Example:
-  1. giraffecloud login --token your-api-token
-  2. giraffecloud connect`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		token, err := cmd.Flags().GetString("token")
-		if err != nil {
-			logger.Error("Failed to get token flag: %v", err)
-			return err
-		}
-
+  giraffecloud login --token your-api-token [--api-host api.giraffecloud.xyz] [--api-port 443]`,
+	Run: func(cmd *cobra.Command, args []string) {
 		cfg, err := tunnel.LoadConfig()
 		if err != nil {
-			logger.Error("Failed to load config: %v", err)
-			return err
+			logger.Error("Error loading config: %v", err)
+			os.Exit(1)
 		}
 
-		// Get API host from flag if provided
+		// Get API host and port from flags if provided
 		apiHost, _ := cmd.Flags().GetString("api-host")
+		apiPort, _ := cmd.Flags().GetInt("api-port")
 		if apiHost != "" {
-			cfg.Server.Host = apiHost
+			cfg.API.Host = apiHost
+		}
+		if apiPort != 0 {
+			cfg.API.Port = apiPort
 		}
 
-		// Use Server.Host for certificate fetching
-		serverHost := cfg.Server.Host
+		token, _ := cmd.Flags().GetString("token")
+		cfg.Token = token
 
 		// Create certificates directory
 		homeDir, err := os.UserHomeDir()
 		if err != nil {
 			logger.Error("Failed to get home directory: %v", err)
-			return err
+			os.Exit(1)
 		}
 		certsDir := filepath.Join(homeDir, ".giraffecloud", "certs")
 		if err := os.MkdirAll(certsDir, 0700); err != nil {
 			logger.Error("Failed to create certificates directory: %v", err)
-			return err
+			os.Exit(1)
 		}
 
-		// Fetch certificates from server
-		logger.Info("Fetching certificates from server...")
-		s := spinner.New(spinner.CharSets[14], 120*time.Millisecond)
-		s.Suffix = " Fetching certificates from server..."
-		s.Writer = os.Stdout
-		s.Start()
-		err = tunnel.FetchCertificates(serverHost, token, certsDir)
-		s.Stop()
-		fmt.Println() // Ensure spinner and logs don't overlap
+		// Fetch certificates from API server
+		certResp, err := handlers.FetchCertificates(cfg.API.Host, cfg.API.Port, cfg.Token)
 		if err != nil {
 			logger.Error("Failed to fetch certificates: %v", err)
-			return err
+			os.Exit(1)
 		}
 		logger.Info("Successfully downloaded certificates")
 
+		// Save certificates to files
+		files := map[string]string{
+			"ca.crt":     certResp.CACert,
+			"client.crt": certResp.ClientCert,
+			"client.key": certResp.ClientKey,
+		}
+
+		for filename, content := range files {
+			path := filepath.Join(certsDir, filename)
+			if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+				logger.Error("Failed to write certificate file %s: %v", filename, err)
+				os.Exit(1)
+			}
+		}
+
 		// Update config with certificate paths
-		cfg.Token = token
 		cfg.Security.CACert = filepath.Join(certsDir, "ca.crt")
 		cfg.Security.ClientCert = filepath.Join(certsDir, "client.crt")
 		cfg.Security.ClientKey = filepath.Join(certsDir, "client.key")
@@ -307,13 +316,14 @@ Example:
 		// Save the updated config
 		if err := tunnel.SaveConfig(cfg); err != nil {
 			logger.Error("Failed to save config: %v", err)
-			return err
+			os.Exit(1)
 		}
 
-		logger.Info("Successfully logged in to GiraffeCloud (server: %s)", serverHost)
+		logger.Info("Successfully logged in to GiraffeCloud")
+		logger.Info("API server: %s:%d", cfg.API.Host, cfg.API.Port)
+		logger.Info("Tunnel server: %s:%d", cfg.Server.Host, cfg.Server.Port)
 		logger.Info("Certificates stored in: %s", certsDir)
 		logger.Info("Run 'giraffecloud connect' to establish a tunnel connection")
-		return nil
 	},
 }
 
@@ -330,11 +340,13 @@ func init() {
 	serviceCmd.AddCommand(installCmd)
 	serviceCmd.AddCommand(uninstallCmd)
 
-	// Add host flag to connect command
+	// Add host flags to connect command
 	connectCmd.Flags().String("tunnel-host", "", "Tunnel host to connect to (default: tunnel.giraffecloud.xyz)")
+	connectCmd.Flags().Int("tunnel-port", 4443, "Tunnel port to connect to (default: 4443)")
 
-	// Add host flag to login command
+	// Add host flags to login command
 	loginCmd.Flags().String("api-host", "", "API host for login/certificates (default: api.giraffecloud.xyz)")
+	loginCmd.Flags().Int("api-port", 443, "API port for login/certificates (default: 443)")
 	loginCmd.Flags().String("token", "", "API token for authentication")
 	loginCmd.MarkFlagRequired("token")
 

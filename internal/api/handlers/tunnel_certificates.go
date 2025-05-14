@@ -12,7 +12,9 @@ import (
 	"giraffecloud/internal/api/dto/common"
 	"giraffecloud/internal/logging"
 	"giraffecloud/internal/utils"
+	"io"
 	"math/big"
+	"net/http"
 	"os"
 	"time"
 
@@ -121,4 +123,37 @@ func (h *TunnelCertificateHandler) IssueClientCertificate(c *gin.Context) {
 	}
 	c.Header("Content-Type", "application/json")
 	json.NewEncoder(c.Writer).Encode(resp)
+}
+
+// FetchCertificates fetches client certificates from the API server
+func FetchCertificates(apiHost string, apiPort int, token string) (*CertificateResponse, error) {
+	logger := logging.GetGlobalLogger()
+	logger.Info("Fetching certificates from API server: %s:%d", apiHost, apiPort)
+
+	url := fmt.Sprintf("https://%s:%d/api/v1/tunnel/certificates", apiHost, apiPort)
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch certificates: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed to fetch certificates (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var certResp CertificateResponse
+	if err := json.NewDecoder(resp.Body).Decode(&certResp); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &certResp, nil
 }

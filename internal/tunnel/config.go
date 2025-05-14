@@ -20,6 +20,7 @@ type Config struct {
 	Domain    string         `json:"domain"`
 	LocalPort int           `json:"local_port"`
 	Server    ServerConfig   `json:"server"`
+	API       ServerConfig   `json:"api"`
 	Security  SecurityConfig `json:"security"`
 }
 
@@ -42,6 +43,10 @@ var DefaultConfig = Config{
 	Server: ServerConfig{
 		Host: "tunnel.giraffecloud.xyz",
 		Port: 4443,
+	},
+	API: ServerConfig{
+		Host: "api.giraffecloud.xyz",
+		Port: 443,
 	},
 	Security: SecurityConfig{
 		InsecureSkipVerify: false,
@@ -138,6 +143,16 @@ func (c *Config) Validate() error {
 	if c.Server.Port <= 0 || c.Server.Port > 65535 {
 		logger.Error("Invalid server port: %d", c.Server.Port)
 		return fmt.Errorf("invalid server port: %d", c.Server.Port)
+	}
+
+	if c.API.Host == "" {
+		logger.Error("API host is required")
+		return fmt.Errorf("api host is required")
+	}
+
+	if c.API.Port <= 0 || c.API.Port > 65535 {
+		logger.Error("Invalid API port: %d", c.API.Port)
+		return fmt.Errorf("invalid api port: %d", c.API.Port)
 	}
 
 	if c.Security.InsecureSkipVerify {
