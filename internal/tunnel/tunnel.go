@@ -7,6 +7,8 @@ import (
 	"giraffecloud/internal/logging"
 	"io"
 	"net"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -106,69 +108,240 @@ func (t *Tunnel) handleIncomingConnections() {
 			localReader := bufio.NewReader(localConn)
 			localWriter := bufio.NewWriter(localConn)
 
-			// Read the request from tunnel
-			requestData := make([]byte, 32*1024)
-			n, err := tunnelReader.Read(requestData)
-			if err != nil {
-				if err != io.EOF {
-					t.logger.Error("[TUNNEL DEBUG] Error reading request from tunnel: %v", err)
-				} else {
-					t.logger.Info("[TUNNEL DEBUG] Tunnel connection closed (EOF)")
+			// Read the complete HTTP request
+			var requestBuilder strings.Builder
+			var contentLength int64
+			var chunked bool
+			var line string
+
+			// Read headers
+			for {
+				line, err = tunnelReader.ReadString('\n')
+				if err != nil {
+					if err != io.EOF {
+						t.logger.Error("[TUNNEL DEBUG] Error reading request headers: %v", err)
+					} else {
+						t.logger.Info("[TUNNEL DEBUG] Tunnel connection closed (EOF)")
+					}
+					localConn.Close()
+					return
 				}
+				requestBuilder.WriteString(line)
+
+				// Check for Content-Length
+				if strings.HasPrefix(strings.ToLower(line), "content-length:") {
+					contentLength, _ = strconv.ParseInt(strings.TrimSpace(strings.TrimPrefix(line, "Content-Length:")), 10, 64)
+				}
+
+				// Check for chunked encoding
+				if strings.HasPrefix(strings.ToLower(line), "transfer-encoding:") && strings.Contains(strings.ToLower(line), "chunked") {
+					chunked = true
+				}
+
+				// End of headers
+				if line == "\r\n" {
+					break
+				}
+			}
+
+			// Read body if present
+			if contentLength > 0 {
+				body := make([]byte, contentLength)
+				_, err = io.ReadFull(tunnelReader, body)
+				if err != nil {
+					t.logger.Error("[TUNNEL DEBUG] Error reading request body: %v", err)
+					localConn.Close()
+					return
+				}
+				requestBuilder.Write(body)
+			} else if chunked {
+				for {
+					// Read chunk size
+					line, err = tunnelReader.ReadString('\n')
+					if err != nil {
+						t.logger.Error("[TUNNEL DEBUG] Error reading chunk size: %v", err)
+						localConn.Close()
+						return
+					}
+					requestBuilder.WriteString(line)
+
+					// Parse chunk size
+					chunkSize, err := strconv.ParseInt(strings.TrimSpace(line), 16, 64)
+					if err != nil {
+						t.logger.Error("[TUNNEL DEBUG] Error parsing chunk size: %v", err)
+						localConn.Close()
+						return
+					}
+
+					// End of chunks
+					if chunkSize == 0 {
+						// Read final CRLF
+						line, err = tunnelReader.ReadString('\n')
+						if err != nil {
+							t.logger.Error("[TUNNEL DEBUG] Error reading final CRLF: %v", err)
+							localConn.Close()
+							return
+						}
+						requestBuilder.WriteString(line)
+						break
+					}
+
+					// Read chunk data
+					chunk := make([]byte, chunkSize)
+					_, err = io.ReadFull(tunnelReader, chunk)
+					if err != nil {
+						t.logger.Error("[TUNNEL DEBUG] Error reading chunk data: %v", err)
+						localConn.Close()
+						return
+					}
+					requestBuilder.Write(chunk)
+
+					// Read chunk CRLF
+					line, err = tunnelReader.ReadString('\n')
+					if err != nil {
+						t.logger.Error("[TUNNEL DEBUG] Error reading chunk CRLF: %v", err)
+						localConn.Close()
+						return
+					}
+					requestBuilder.WriteString(line)
+				}
+			}
+
+			request := requestBuilder.String()
+			t.logger.Info("[TUNNEL DEBUG] Complete request:\n%s", request)
+
+			// Write the complete request to local service
+			written, err := localWriter.WriteString(request)
+			if err != nil {
+				t.logger.Error("[TUNNEL DEBUG] Error writing to local service: %v", err)
 				localConn.Close()
 				return
 			}
+			t.logger.Info("[TUNNEL DEBUG] Wrote %d bytes to local service", written)
 
-			if n > 0 {
-				t.logger.Info("[TUNNEL DEBUG] Read %d bytes from tunnel", n)
-				t.logger.Info("[TUNNEL DEBUG] Request from tunnel: %s", string(requestData[:n]))
+			if err := localWriter.Flush(); err != nil {
+				t.logger.Error("[TUNNEL DEBUG] Error flushing local writer: %v", err)
+				localConn.Close()
+				return
+			}
+			t.logger.Info("[TUNNEL DEBUG] Flushed local writer")
 
-				// Write request to local service
-				written, err := localWriter.Write(requestData[:n])
+			// Read and forward the response
+			var responseBuilder strings.Builder
+			contentLength = 0
+			chunked = false
+
+			// Read response headers
+			for {
+				line, err = localReader.ReadString('\n')
 				if err != nil {
-					t.logger.Error("[TUNNEL DEBUG] Error writing to local service: %v", err)
-					localConn.Close()
-					continue
-				}
-				t.logger.Info("[TUNNEL DEBUG] Wrote %d bytes to local service", written)
-
-				if err := localWriter.Flush(); err != nil {
-					t.logger.Error("[TUNNEL DEBUG] Error flushing local writer: %v", err)
-					localConn.Close()
-					continue
-				}
-				t.logger.Info("[TUNNEL DEBUG] Flushed local writer")
-
-				// Read response from local service
-				responseData := make([]byte, 32*1024)
-				n, err = localReader.Read(responseData)
-				if err != nil && err != io.EOF {
-					t.logger.Error("[TUNNEL DEBUG] Error reading from local service: %v", err)
-					localConn.Close()
-					continue
-				}
-
-				if n > 0 {
-					t.logger.Info("[TUNNEL DEBUG] Read %d bytes from local service", n)
-					t.logger.Info("[TUNNEL DEBUG] Response from local service: %s", string(responseData[:n]))
-
-					// Write response back to tunnel
-					written, err = tunnelWriter.Write(responseData[:n])
-					if err != nil {
-						t.logger.Error("[TUNNEL DEBUG] Error writing to tunnel: %v", err)
-						localConn.Close()
-						return
+					if err != io.EOF {
+						t.logger.Error("[TUNNEL DEBUG] Error reading response headers: %v", err)
 					}
-					t.logger.Info("[TUNNEL DEBUG] Wrote %d bytes to tunnel", written)
+					localConn.Close()
+					return
+				}
+				responseBuilder.WriteString(line)
 
-					if err := tunnelWriter.Flush(); err != nil {
-						t.logger.Error("[TUNNEL DEBUG] Error flushing tunnel writer: %v", err)
-						localConn.Close()
-						return
-					}
-					t.logger.Info("[TUNNEL DEBUG] Flushed tunnel writer")
+				// Check for Content-Length
+				if strings.HasPrefix(strings.ToLower(line), "content-length:") {
+					contentLength, _ = strconv.ParseInt(strings.TrimSpace(strings.TrimPrefix(line, "Content-Length:")), 10, 64)
+				}
+
+				// Check for chunked encoding
+				if strings.HasPrefix(strings.ToLower(line), "transfer-encoding:") && strings.Contains(strings.ToLower(line), "chunked") {
+					chunked = true
+				}
+
+				// End of headers
+				if line == "\r\n" {
+					break
 				}
 			}
+
+			// Read response body if present
+			if contentLength > 0 {
+				body := make([]byte, contentLength)
+				_, err = io.ReadFull(localReader, body)
+				if err != nil && err != io.EOF {
+					t.logger.Error("[TUNNEL DEBUG] Error reading response body: %v", err)
+					localConn.Close()
+					return
+				}
+				responseBuilder.Write(body)
+			} else if chunked {
+				for {
+					// Read chunk size
+					line, err = localReader.ReadString('\n')
+					if err != nil {
+						if err != io.EOF {
+							t.logger.Error("[TUNNEL DEBUG] Error reading chunk size: %v", err)
+						}
+							localConn.Close()
+							return
+					}
+					responseBuilder.WriteString(line)
+
+					// Parse chunk size
+					chunkSize, err := strconv.ParseInt(strings.TrimSpace(line), 16, 64)
+					if err != nil {
+						t.logger.Error("[TUNNEL DEBUG] Error parsing chunk size: %v", err)
+						localConn.Close()
+						return
+					}
+
+					// End of chunks
+					if chunkSize == 0 {
+						// Read final CRLF
+						line, err = localReader.ReadString('\n')
+						if err != nil && err != io.EOF {
+							t.logger.Error("[TUNNEL DEBUG] Error reading final CRLF: %v", err)
+							localConn.Close()
+							return
+						}
+						responseBuilder.WriteString(line)
+						break
+					}
+
+					// Read chunk data
+					chunk := make([]byte, chunkSize)
+					_, err = io.ReadFull(localReader, chunk)
+					if err != nil && err != io.EOF {
+						t.logger.Error("[TUNNEL DEBUG] Error reading chunk data: %v", err)
+						localConn.Close()
+						return
+					}
+					responseBuilder.Write(chunk)
+
+					// Read chunk CRLF
+					line, err = localReader.ReadString('\n')
+					if err != nil && err != io.EOF {
+						t.logger.Error("[TUNNEL DEBUG] Error reading chunk CRLF: %v", err)
+						localConn.Close()
+						return
+					}
+					responseBuilder.WriteString(line)
+				}
+			}
+
+			response := responseBuilder.String()
+			t.logger.Info("[TUNNEL DEBUG] Complete response:\n%s", response)
+
+			// Write the complete response back to tunnel
+			written, err = tunnelWriter.WriteString(response)
+			if err != nil {
+				t.logger.Error("[TUNNEL DEBUG] Error writing to tunnel: %v", err)
+				localConn.Close()
+				return
+			}
+			t.logger.Info("[TUNNEL DEBUG] Wrote %d bytes to tunnel", written)
+
+			if err := tunnelWriter.Flush(); err != nil {
+				t.logger.Error("[TUNNEL DEBUG] Error flushing tunnel writer: %v", err)
+				localConn.Close()
+				return
+			}
+			t.logger.Info("[TUNNEL DEBUG] Flushed tunnel writer")
 
 			// Close the local connection after handling the request/response
 			localConn.Close()
