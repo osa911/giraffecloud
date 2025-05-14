@@ -92,6 +92,30 @@ func (t *Tunnel) handleIncomingConnections() {
 			t.logger.Info("[TUNNEL DEBUG] Received stop signal, stopping connection handler")
 			return
 		default:
+			// Read the incoming request first
+			requestData := make([]byte, 0)
+			buffer := make([]byte, 4096)
+			for {
+				n, err := tunnelReader.Read(buffer)
+				if err != nil {
+					if err != io.EOF {
+						t.logger.Error("[TUNNEL DEBUG] Error reading request: %v", err)
+					}
+					break
+				}
+				requestData = append(requestData, buffer[:n]...)
+				if n < len(buffer) {
+					break
+				}
+			}
+
+			if len(requestData) == 0 {
+				t.logger.Info("[TUNNEL DEBUG] No request data received, continuing...")
+				continue
+			}
+
+			t.logger.Info("[TUNNEL DEBUG] Received request data (%d bytes)", len(requestData))
+
 			// Create a new connection for each request
 			t.logger.Info("[TUNNEL DEBUG] Attempting to connect to local service at localhost:%d", t.localPort)
 			localConn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", t.localPort), 5*time.Second)
@@ -102,83 +126,51 @@ func (t *Tunnel) handleIncomingConnections() {
 			}
 			t.logger.Info("[TUNNEL DEBUG] Successfully connected to local service")
 
+			// Write the request to the local service
+			_, err = localConn.Write(requestData)
+			if err != nil {
+				t.logger.Error("[TUNNEL DEBUG] Failed to write request to local service: %v", err)
+				localConn.Close()
+				continue
+			}
+			t.logger.Info("[TUNNEL DEBUG] Wrote request to local service")
+
 			// Create buffered reader and writer for the local connection
 			localReader := bufio.NewReaderSize(localConn, 32*1024)
-			localWriter := bufio.NewWriterSize(localConn, 32*1024)
 
-			// Create error channels for both directions
-			tunnelToLocalErr := make(chan error, 1)
-			localToTunnelErr := make(chan error, 1)
-			done := make(chan struct{})
-
-			// Forward data in both directions concurrently
-			go func() {
-				defer close(tunnelToLocalErr)
-				n, err := io.Copy(localWriter, tunnelReader)
-				t.logger.Info("[TUNNEL DEBUG] Forwarded %d bytes from tunnel to local", n)
+			// Read the response from local service
+			responseData := make([]byte, 0)
+			for {
+				n, err := localReader.Read(buffer)
 				if err != nil {
-					t.logger.Error("[TUNNEL DEBUG] Error copying tunnel to local: %v", err)
-				}
-				localWriter.Flush()
-				tunnelToLocalErr <- err
-			}()
-
-			go func() {
-				defer close(localToTunnelErr)
-				n, err := io.Copy(tunnelWriter, localReader)
-				t.logger.Info("[TUNNEL DEBUG] Forwarded %d bytes from local to tunnel", n)
-				if err != nil {
-					t.logger.Error("[TUNNEL DEBUG] Error copying local to tunnel: %v", err)
-				}
-				tunnelWriter.Flush()
-				localToTunnelErr <- err
-			}()
-
-			// Wait for either direction to complete
-			select {
-			case err := <-tunnelToLocalErr:
-				if err != nil && err != io.EOF {
-					t.logger.Error("[TUNNEL DEBUG] Tunnel to local error: %v", err)
-				}
-				localWriter.Flush()
-				// Wait for response data with a longer timeout
-				select {
-				case err := <-localToTunnelErr:
-					if err != nil && err != io.EOF {
-						t.logger.Error("[TUNNEL DEBUG] Local to tunnel error: %v", err)
+					if err != io.EOF {
+						t.logger.Error("[TUNNEL DEBUG] Error reading response: %v", err)
 					}
-					tunnelWriter.Flush()
-				case <-time.After(30 * time.Second): // Increased timeout for response
-					t.logger.Info("[TUNNEL DEBUG] Response wait timeout")
+					break
 				}
-			case err := <-localToTunnelErr:
-				if err != nil && err != io.EOF {
-					t.logger.Error("[TUNNEL DEBUG] Local to tunnel error: %v", err)
+				responseData = append(responseData, buffer[:n]...)
+				if n < len(buffer) {
+					break
 				}
-				tunnelWriter.Flush()
-				// Wait for request completion
-				select {
-				case err := <-tunnelToLocalErr:
-					if err != nil && err != io.EOF {
-						t.logger.Error("[TUNNEL DEBUG] Tunnel to local error: %v", err)
-					}
-					localWriter.Flush()
-				case <-time.After(30 * time.Second): // Increased timeout for request completion
-					t.logger.Info("[TUNNEL DEBUG] Request completion timeout")
-				}
-			case <-t.stopChan:
-				t.logger.Info("[TUNNEL DEBUG] Received stop signal during transfer")
-			case <-time.After(60 * time.Second):
-				t.logger.Info("[TUNNEL DEBUG] Connection timeout")
 			}
 
-			// Ensure all data is written before closing
-			localWriter.Flush()
-			tunnelWriter.Flush()
+			t.logger.Info("[TUNNEL DEBUG] Read response from local service (%d bytes)", len(responseData))
+
+			// Write the response back through the tunnel
+			_, err = tunnelWriter.Write(responseData)
+			if err != nil {
+				t.logger.Error("[TUNNEL DEBUG] Failed to write response to tunnel: %v", err)
+			} else {
+				err = tunnelWriter.Flush()
+				if err != nil {
+					t.logger.Error("[TUNNEL DEBUG] Failed to flush response to tunnel: %v", err)
+				} else {
+					t.logger.Info("[TUNNEL DEBUG] Successfully wrote and flushed response")
+				}
+			}
 
 			// Cleanup
 			localConn.Close()
-			close(done)
 			t.logger.Info("[TUNNEL DEBUG] Connection handling completed")
 		}
 	}
