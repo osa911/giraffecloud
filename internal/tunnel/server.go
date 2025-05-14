@@ -157,10 +157,6 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 		return
 	}
 
-	// Store connection
-	connection := s.connections.AddConnection(tunnel.Domain, conn, tunnel.TargetPort)
-	defer s.connections.RemoveConnection(tunnel.Domain)
-
 	// Send success response with domain and port
 	if err := json.NewEncoder(conn).Encode(TunnelHandshakeResponse{
 		Status:     "success",
@@ -171,6 +167,84 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 		s.logger.Error("Failed to send response: %v", err)
 		return
 	}
+
+	// Send initial ping to verify connection
+	pingMsg := PingMessage{
+		Type:      "ping",
+		Timestamp: time.Now().UnixNano(),
+	}
+	if err := json.NewEncoder(conn).Encode(pingMsg); err != nil {
+		s.logger.Error("Failed to send initial ping: %v", err)
+		return
+	}
+
+	// Wait for pong response with timeout
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	var pongMsg PongMessage
+	if err := json.NewDecoder(conn).Decode(&pongMsg); err != nil {
+		s.logger.Error("Failed to receive pong response: %v", err)
+		return
+	}
+	conn.SetReadDeadline(time.Time{}) // Reset deadline
+
+	// Verify pong response
+	if pongMsg.Type != "pong" || pongMsg.Timestamp != pingMsg.Timestamp {
+		s.logger.Error("Invalid pong response")
+		return
+	}
+
+	rtt := time.Duration(pongMsg.RTT) * time.Nanosecond
+	s.logger.Info("Connection verified with RTT: %v", rtt)
+
+	// Store connection with last ping time
+	connection := s.connections.AddConnection(tunnel.Domain, conn, tunnel.TargetPort)
+	connection.lastPing = time.Now()
+	defer s.connections.RemoveConnection(tunnel.Domain)
+
+	// Start ping/pong goroutine
+	pingTicker := time.NewTicker(30 * time.Second)
+	defer pingTicker.Stop()
+
+	go func() {
+		for {
+			select {
+			case <-connection.stopChan:
+				return
+			case <-pingTicker.C:
+				// Send ping
+				pingMsg := PingMessage{
+					Type:      "ping",
+					Timestamp: time.Now().UnixNano(),
+				}
+				if err := json.NewEncoder(conn).Encode(pingMsg); err != nil {
+					s.logger.Error("Failed to send ping: %v", err)
+					close(connection.stopChan)
+					return
+				}
+
+				// Wait for pong with timeout
+				conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+				var pongMsg PongMessage
+				if err := json.NewDecoder(conn).Decode(&pongMsg); err != nil {
+					s.logger.Error("Failed to receive pong: %v", err)
+					close(connection.stopChan)
+					return
+				}
+				conn.SetReadDeadline(time.Time{}) // Reset deadline
+
+				// Verify pong
+				if pongMsg.Type != "pong" || pongMsg.Timestamp != pingMsg.Timestamp {
+					s.logger.Error("Invalid pong response")
+					close(connection.stopChan)
+					return
+				}
+
+				rtt := time.Duration(pongMsg.RTT) * time.Nanosecond
+				s.logger.Debug("Ping successful, RTT: %v", rtt)
+				connection.lastPing = time.Now()
+			}
+		}
+	}()
 
 	// Wait for connection to close
 	<-connection.stopChan
@@ -219,193 +293,184 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 	tunnelReader := bufio.NewReaderSize(tunnelConn.conn, 32*1024)
 	tunnelWriter := bufio.NewWriterSize(tunnelConn.conn, 32*1024)
 
-	// Create error channels for both directions
+	// Create channels for synchronization
 	errChan := make(chan error, 2)
-	done := make(chan struct{})
+	requestDone := make(chan struct{})
+	responseDone := make(chan struct{})
 
-	// Forward data from client to tunnel
+	// Forward request from client to tunnel
 	go func() {
-		defer func() {
-			s.logger.Info("[PROXY DEBUG] Client to tunnel goroutine completed")
-			close(done)
-		}()
+		defer close(requestDone)
 
+		// Read request line
+		requestLine, err := clientReader.ReadString('\n')
+		if err != nil {
+			if err != io.EOF {
+				s.logger.Error("[PROXY DEBUG] Error reading request line: %v", err)
+				errChan <- fmt.Errorf("error reading request line: %w", err)
+			}
+			return
+		}
+		s.logger.Info("[PROXY DEBUG] Request line: %s", strings.TrimSpace(requestLine))
+
+		// Write request line
+		if _, err := tunnelWriter.WriteString(requestLine); err != nil {
+			s.logger.Error("[PROXY DEBUG] Error writing request line: %v", err)
+			errChan <- fmt.Errorf("error writing request line: %w", err)
+			return
+		}
+
+		// Read and forward headers
+		var contentLength int64
 		for {
-			select {
-			case <-done:
+			line, err := clientReader.ReadString('\n')
+			if err != nil {
+				if err != io.EOF {
+					s.logger.Error("[PROXY DEBUG] Error reading header: %v", err)
+					errChan <- fmt.Errorf("error reading header: %w", err)
+				}
 				return
-			default:
-				// Read request line
-				requestLine, err := clientReader.ReadString('\n')
-				if err != nil {
-					if err != io.EOF {
-						s.logger.Error("[PROXY DEBUG] Error reading request line: %v", err)
-						errChan <- err
-					}
-					return
-				}
-				s.logger.Info("[PROXY DEBUG] Request line: %s", strings.TrimSpace(requestLine))
+			}
 
-				// Write request line
-				if _, err := tunnelWriter.WriteString(requestLine); err != nil {
-					s.logger.Error("[PROXY DEBUG] Error writing request line: %v", err)
-					errChan <- err
-					return
-				}
+			// Write header line
+			if _, err := tunnelWriter.WriteString(line); err != nil {
+				s.logger.Error("[PROXY DEBUG] Error writing header: %v", err)
+				errChan <- fmt.Errorf("error writing header: %w", err)
+				return
+			}
 
-				// Read and forward headers
-				var contentLength int64
-				for {
-					line, err := clientReader.ReadString('\n')
-					if err != nil {
-						if err != io.EOF {
-							s.logger.Error("[PROXY DEBUG] Error reading header: %v", err)
-							errChan <- err
-						}
-						return
-					}
+			// Parse Content-Length if present
+			if strings.HasPrefix(strings.ToLower(line), "content-length:") {
+				contentLength, _ = strconv.ParseInt(strings.TrimSpace(strings.TrimPrefix(line, "Content-Length:")), 10, 64)
+			}
 
-					// Write header line
-					if _, err := tunnelWriter.WriteString(line); err != nil {
-						s.logger.Error("[PROXY DEBUG] Error writing header: %v", err)
-						errChan <- err
-						return
-					}
-
-					// Parse Content-Length if present
-					if strings.HasPrefix(strings.ToLower(line), "content-length:") {
-						contentLength, _ = strconv.ParseInt(strings.TrimSpace(strings.TrimPrefix(line, "Content-Length:")), 10, 64)
-					}
-
-					// Check for end of headers
-					if line == "\r\n" {
-						break
-					}
-				}
-
-				// Flush headers
-				if err := tunnelWriter.Flush(); err != nil {
-					s.logger.Error("[PROXY DEBUG] Error flushing headers: %v", err)
-					errChan <- err
-					return
-				}
-
-				// Forward request body if present
-				if contentLength > 0 {
-					s.logger.Info("[PROXY DEBUG] Forwarding request body of length: %d", contentLength)
-					written, err := io.CopyN(tunnelWriter, clientReader, contentLength)
-					if err != nil {
-						s.logger.Error("[PROXY DEBUG] Error forwarding request body: %v", err)
-						errChan <- err
-						return
-					}
-					s.logger.Info("[PROXY DEBUG] Wrote %d bytes of request body", written)
-
-					// Flush body
-					if err := tunnelWriter.Flush(); err != nil {
-						s.logger.Error("[PROXY DEBUG] Error flushing body: %v", err)
-						errChan <- err
-						return
-					}
-				}
+			// Check for end of headers
+			if line == "\r\n" {
+				break
 			}
 		}
+
+		// Flush headers
+		if err := tunnelWriter.Flush(); err != nil {
+			s.logger.Error("[PROXY DEBUG] Error flushing headers: %v", err)
+			errChan <- fmt.Errorf("error flushing headers: %w", err)
+			return
+		}
+
+		// Forward request body if present
+		if contentLength > 0 {
+			s.logger.Info("[PROXY DEBUG] Forwarding request body of length: %d", contentLength)
+			written, err := io.CopyN(tunnelWriter, clientReader, contentLength)
+			if err != nil {
+				s.logger.Error("[PROXY DEBUG] Error forwarding request body: %v", err)
+				errChan <- fmt.Errorf("error forwarding request body: %w", err)
+				return
+			}
+			s.logger.Info("[PROXY DEBUG] Wrote %d bytes of request body", written)
+
+			// Flush body
+			if err := tunnelWriter.Flush(); err != nil {
+				s.logger.Error("[PROXY DEBUG] Error flushing body: %v", err)
+				errChan <- fmt.Errorf("error flushing body: %w", err)
+				return
+			}
+		}
+
+		s.logger.Info("[PROXY DEBUG] Request forwarding completed")
 	}()
 
-	// Forward data from tunnel to client
+	// Forward response from tunnel to client
 	go func() {
-		defer func() {
-			s.logger.Info("[PROXY DEBUG] Tunnel to client goroutine completed")
-			close(done)
-		}()
+		defer close(responseDone)
 
+		// Wait for request to be forwarded
+		<-requestDone
+		s.logger.Info("[PROXY DEBUG] Starting response handling")
+
+		// Read response line
+		responseLine, err := tunnelReader.ReadString('\n')
+		if err != nil {
+			if err != io.EOF {
+				s.logger.Error("[PROXY DEBUG] Error reading response line: %v", err)
+				errChan <- fmt.Errorf("error reading response line: %w", err)
+			}
+			return
+		}
+		s.logger.Info("[PROXY DEBUG] Response line: %s", strings.TrimSpace(responseLine))
+
+		// Write response line
+		if _, err := clientWriter.WriteString(responseLine); err != nil {
+			s.logger.Error("[PROXY DEBUG] Error writing response line: %v", err)
+			errChan <- fmt.Errorf("error writing response line: %w", err)
+			return
+		}
+
+		// Read and forward headers
+		var contentLength int64
 		for {
-			select {
-			case <-done:
+			line, err := tunnelReader.ReadString('\n')
+			if err != nil {
+				if err != io.EOF {
+					s.logger.Error("[PROXY DEBUG] Error reading response header: %v", err)
+					errChan <- fmt.Errorf("error reading response header: %w", err)
+				}
 				return
-			default:
-				// Read response line
-				responseLine, err := tunnelReader.ReadString('\n')
-				if err != nil {
-					if err != io.EOF {
-						s.logger.Error("[PROXY DEBUG] Error reading response line: %v", err)
-						errChan <- err
-					}
-					return
-				}
-				s.logger.Info("[PROXY DEBUG] Response line: %s", strings.TrimSpace(responseLine))
+			}
 
-				// Write response line
-				if _, err := clientWriter.WriteString(responseLine); err != nil {
-					s.logger.Error("[PROXY DEBUG] Error writing response line: %v", err)
-					errChan <- err
-					return
-				}
+			// Write header line
+			if _, err := clientWriter.WriteString(line); err != nil {
+				s.logger.Error("[PROXY DEBUG] Error writing response header: %v", err)
+				errChan <- fmt.Errorf("error writing response header: %w", err)
+				return
+			}
 
-				// Read and forward headers
-				var contentLength int64
-				for {
-					line, err := tunnelReader.ReadString('\n')
-					if err != nil {
-						if err != io.EOF {
-							s.logger.Error("[PROXY DEBUG] Error reading response header: %v", err)
-							errChan <- err
-						}
-						return
-					}
+			// Parse Content-Length if present
+			if strings.HasPrefix(strings.ToLower(line), "content-length:") {
+				contentLength, _ = strconv.ParseInt(strings.TrimSpace(strings.TrimPrefix(line, "Content-Length:")), 10, 64)
+			}
 
-					// Write header line
-					if _, err := clientWriter.WriteString(line); err != nil {
-						s.logger.Error("[PROXY DEBUG] Error writing response header: %v", err)
-						errChan <- err
-						return
-					}
-
-					// Parse Content-Length if present
-					if strings.HasPrefix(strings.ToLower(line), "content-length:") {
-						contentLength, _ = strconv.ParseInt(strings.TrimSpace(strings.TrimPrefix(line, "Content-Length:")), 10, 64)
-					}
-
-					// Check for end of headers
-					if line == "\r\n" {
-						break
-					}
-				}
-
-				// Flush headers
-				if err := clientWriter.Flush(); err != nil {
-					s.logger.Error("[PROXY DEBUG] Error flushing response headers: %v", err)
-					errChan <- err
-					return
-				}
-
-				// Forward response body if present
-				if contentLength > 0 {
-					s.logger.Info("[PROXY DEBUG] Forwarding response body of length: %d", contentLength)
-					written, err := io.CopyN(clientWriter, tunnelReader, contentLength)
-					if err != nil {
-						s.logger.Error("[PROXY DEBUG] Error forwarding response body: %v", err)
-						errChan <- err
-						return
-					}
-					s.logger.Info("[PROXY DEBUG] Wrote %d bytes of response body", written)
-
-					// Flush body
-					if err := clientWriter.Flush(); err != nil {
-						s.logger.Error("[PROXY DEBUG] Error flushing response body: %v", err)
-						errChan <- err
-						return
-					}
-				}
+			// Check for end of headers
+			if line == "\r\n" {
+				break
 			}
 		}
+
+		// Flush headers
+		if err := clientWriter.Flush(); err != nil {
+			s.logger.Error("[PROXY DEBUG] Error flushing response headers: %v", err)
+			errChan <- fmt.Errorf("error flushing response headers: %w", err)
+			return
+		}
+
+		// Forward response body if present
+		if contentLength > 0 {
+			s.logger.Info("[PROXY DEBUG] Forwarding response body of length: %d", contentLength)
+			written, err := io.CopyN(clientWriter, tunnelReader, contentLength)
+			if err != nil {
+				s.logger.Error("[PROXY DEBUG] Error forwarding response body: %v", err)
+				errChan <- fmt.Errorf("error forwarding response body: %w", err)
+				return
+			}
+			s.logger.Info("[PROXY DEBUG] Wrote %d bytes of response body", written)
+
+			// Flush body
+			if err := clientWriter.Flush(); err != nil {
+				s.logger.Error("[PROXY DEBUG] Error flushing response body: %v", err)
+				errChan <- fmt.Errorf("error flushing response body: %w", err)
+				return
+			}
+		}
+
+		s.logger.Info("[PROXY DEBUG] Response forwarding completed")
 	}()
 
 	// Wait for completion or error
 	select {
 	case err := <-errChan:
 		s.logger.Error("[PROXY DEBUG] Proxy connection error: %v", err)
-	case <-done:
-		s.logger.Info("[PROXY DEBUG] Proxy connection completed normally")
+	case <-responseDone:
+		s.logger.Info("[PROXY DEBUG] Proxy connection completed successfully")
+	case <-time.After(30 * time.Second):
+		s.logger.Error("[PROXY DEBUG] Proxy connection timed out")
 	}
 }

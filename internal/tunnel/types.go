@@ -2,6 +2,7 @@ package tunnel
 
 import (
 	"net"
+	"time"
 )
 
 // TunnelHandshakeRequest represents the initial handshake message
@@ -17,10 +18,24 @@ type TunnelHandshakeResponse struct {
 	TargetPort int    `json:"target_port,omitempty"`
 }
 
+// PingMessage represents a ping request
+type PingMessage struct {
+	Type      string `json:"type"`
+	Timestamp int64  `json:"timestamp"`
+}
+
+// PongMessage represents a pong response
+type PongMessage struct {
+	Type      string `json:"type"`
+	Timestamp int64  `json:"timestamp"`
+	RTT       int64  `json:"rtt"`
+}
+
 // TunnelConnection represents an active tunnel connection
 type TunnelConnection struct {
 	conn       net.Conn
 	domain     string
 	targetPort int
 	stopChan   chan struct{}
+	lastPing   time.Time
 }
