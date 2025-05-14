@@ -65,40 +65,158 @@ func (t *Tunnel) Connect(serverAddr, token, domain string, localPort int, tlsCon
 	}
 	localConn.Close()
 
-	// Wait for initial ping
-	t.logger.Info("Waiting for initial ping...")
-	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-	var pingMsg PingMessage
-	if err := json.NewDecoder(conn).Decode(&pingMsg); err != nil {
-		conn.Close()
-		return fmt.Errorf("failed to receive initial ping: %w", err)
+	// Create channels for different message types
+	dataChan := make(chan *TunnelMessage, 100)    // Buffer for data messages
+	controlChan := make(chan *TunnelMessage, 100) // Buffer for control messages
+	errChan := make(chan error, 2)                // Error channel
+	t.stopChan = make(chan struct{})              // Stop channel
+
+	// Create JSON encoder/decoder
+	decoder := json.NewDecoder(conn)
+	encoder := json.NewEncoder(conn)
+
+	// Start message reader goroutine
+	go func() {
+		defer close(dataChan)
+		defer close(controlChan)
+
+		for {
+			select {
+			case <-t.stopChan:
+				return
+			default:
+				var msg TunnelMessage
+				if err := decoder.Decode(&msg); err != nil {
+					if err != io.EOF {
+						errChan <- fmt.Errorf("error reading message: %w", err)
+					}
+					return
+				}
+
+				// Route message based on type
+				switch msg.Type {
+				case MessageTypePing, MessageTypePong:
+					select {
+					case controlChan <- &msg:
+					default:
+						t.logger.Warn("Control channel buffer full, dropping message")
+					}
+				case MessageTypeData:
+					select {
+					case dataChan <- &msg:
+					default:
+						t.logger.Warn("Data channel buffer full, dropping message")
+					}
+				default:
+					t.logger.Error("Unknown message type: %s", msg.Type)
+				}
+			}
+		}
+	}()
+
+	// Start ping handler goroutine
+	go func() {
+		for {
+			select {
+			case <-t.stopChan:
+				return
+			case msg := <-controlChan:
+				if msg.Type == MessageTypePing {
+					// Handle ping message
+					var pingMsg PingMessage
+					if err := json.Unmarshal(msg.Payload, &pingMsg); err != nil {
+						t.logger.Error("Error unmarshaling ping: %v", err)
+						continue
+					}
+
+					// Send pong response
+					pongPayload, _ := json.Marshal(PongMessage{
+						Timestamp: pingMsg.Timestamp,
+						RTT:       time.Now().UnixNano() - pingMsg.Timestamp,
+					})
+					pongMsg := TunnelMessage{
+						Type:    MessageTypePong,
+						ID:      msg.ID, // Use same ID for correlation
+						Payload: pongPayload,
+					}
+
+					// Set write deadline for pong
+					conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+					if err := encoder.Encode(pongMsg); err != nil {
+						errChan <- fmt.Errorf("error sending pong: %w", err)
+						return
+					}
+					conn.SetWriteDeadline(time.Time{})
+				}
+			}
+		}
+	}()
+
+	// Start data handler goroutine
+	go func() {
+		for {
+			select {
+			case <-t.stopChan:
+				return
+			case msg := <-dataChan:
+				var dataPayload DataMessage
+				if err := json.Unmarshal(msg.Payload, &dataPayload); err != nil {
+					t.logger.Error("Error unmarshaling data message: %v", err)
+					continue
+				}
+
+				// Connect to local service
+				localConn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", t.localPort), 5*time.Second)
+				if err != nil {
+					t.logger.Error("Failed to connect to local service: %v", err)
+					continue
+				}
+
+				// Write data to local service
+				if _, err := localConn.Write(dataPayload.Data); err != nil {
+					t.logger.Error("Error writing to local service: %v", err)
+					localConn.Close()
+					continue
+				}
+
+				// Read response from local service
+				response := make([]byte, 32*1024) // 32KB buffer
+				n, err := localConn.Read(response)
+				if err != nil && err != io.EOF {
+					t.logger.Error("Error reading from local service: %v", err)
+					localConn.Close()
+					continue
+				}
+
+				// Send response back through tunnel
+				responsePayload, _ := json.Marshal(DataMessage{
+					Data: response[:n],
+				})
+				responseMsg := TunnelMessage{
+					Type:    MessageTypeData,
+					ID:      msg.ID, // Use same ID for correlation
+					Payload: responsePayload,
+				}
+
+				// Set write deadline for response
+				conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+				if err := encoder.Encode(responseMsg); err != nil {
+					t.logger.Error("Error sending response: %v", err)
+					localConn.Close()
+					continue
+				}
+				conn.SetWriteDeadline(time.Time{})
+
+				localConn.Close()
+			}
+		}
+	}()
+
+	// Wait for any error
+	if err := <-errChan; err != nil {
+		t.logger.Error("Connection error: %v", err)
+		return err
 	}
-	conn.SetReadDeadline(time.Time{}) // Reset deadline
-
-	// Verify ping message
-	if pingMsg.Type != "ping" {
-		conn.Close()
-		return fmt.Errorf("invalid ping message type: %s", pingMsg.Type)
-	}
-
-	// Send pong response
-	pongMsg := PongMessage{
-		Type:      "pong",
-		Timestamp: pingMsg.Timestamp,
-		RTT:       time.Now().UnixNano() - pingMsg.Timestamp,
-	}
-	if err := json.NewEncoder(conn).Encode(pongMsg); err != nil {
-		conn.Close()
-		return fmt.Errorf("failed to send pong response: %w", err)
-	}
-
-	t.logger.Info("Initial ping/pong successful")
-
-	// Start ping/pong handler
-	go t.handlePingPong()
-
-	// Start handling incoming connections
-	go t.handleIncomingConnections()
 
 	return nil
 }

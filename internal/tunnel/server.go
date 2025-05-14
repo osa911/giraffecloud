@@ -2,6 +2,7 @@ package tunnel
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -11,8 +12,6 @@ import (
 	"giraffecloud/internal/repository"
 	"io"
 	"net"
-	"strconv"
-	"strings"
 	"time"
 )
 
@@ -100,12 +99,17 @@ func (s *TunnelServer) acceptConnections() {
 	}
 }
 
+// handleConnection handles a new tunnel connection
 func (s *TunnelServer) handleConnection(conn net.Conn) {
 	defer conn.Close()
 
+	// Create JSON encoder/decoder
+	decoder := json.NewDecoder(conn)
+	encoder := json.NewEncoder(conn)
+
 	// Read handshake request
 	var req TunnelHandshakeRequest
-	if err := json.NewDecoder(conn).Decode(&req); err != nil {
+	if err := decoder.Decode(&req); err != nil {
 		s.logger.Error("Failed to decode handshake: %v", err)
 		return
 	}
@@ -114,7 +118,7 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 	token, err := s.tokenRepo.GetByToken(context.Background(), req.Token)
 	if err != nil {
 		s.logger.Error("Failed to authenticate: %v", err)
-		json.NewEncoder(conn).Encode(TunnelHandshakeResponse{
+		encoder.Encode(TunnelHandshakeResponse{
 			Status:  "error",
 			Message: "Invalid token. Please login first.",
 		})
@@ -125,7 +129,7 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 	tunnels, err := s.tunnelRepo.GetByUserID(context.Background(), token.UserID)
 	if err != nil || len(tunnels) == 0 {
 		s.logger.Error("No tunnels found for user: %v", err)
-		json.NewEncoder(conn).Encode(TunnelHandshakeResponse{
+		encoder.Encode(TunnelHandshakeResponse{
 			Status:  "error",
 			Message: "No tunnels found. Please create a tunnel first.",
 		})
@@ -140,7 +144,7 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 	clientIP, _, err := net.SplitHostPort(conn.RemoteAddr().String())
 	if err != nil {
 		s.logger.Error("Failed to get client IP: %v", err)
-		json.NewEncoder(conn).Encode(TunnelHandshakeResponse{
+		encoder.Encode(TunnelHandshakeResponse{
 			Status:  "error",
 			Message: "Failed to get client IP",
 		})
@@ -150,7 +154,7 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 	// Update client IP using tunnel service
 	if err := s.tunnelService.UpdateClientIP(context.Background(), uint32(tunnel.ID), clientIP); err != nil {
 		s.logger.Error("Failed to update client IP: %v", err)
-		json.NewEncoder(conn).Encode(TunnelHandshakeResponse{
+		encoder.Encode(TunnelHandshakeResponse{
 			Status:  "error",
 			Message: "Failed to update client IP",
 		})
@@ -158,7 +162,7 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 	}
 
 	// Send success response with domain and port
-	if err := json.NewEncoder(conn).Encode(TunnelHandshakeResponse{
+	if err := encoder.Encode(TunnelHandshakeResponse{
 		Status:     "success",
 		Message:    "Connected successfully",
 		Domain:     tunnel.Domain,
@@ -168,86 +172,144 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 		return
 	}
 
-	// Send initial ping to verify connection
-	pingMsg := PingMessage{
-		Type:      "ping",
-		Timestamp: time.Now().UnixNano(),
-	}
-	if err := json.NewEncoder(conn).Encode(pingMsg); err != nil {
-		s.logger.Error("Failed to send initial ping: %v", err)
-		return
-	}
-
-	// Wait for pong response with timeout
-	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-	var pongMsg PongMessage
-	if err := json.NewDecoder(conn).Decode(&pongMsg); err != nil {
-		s.logger.Error("Failed to receive pong response: %v", err)
-		return
-	}
-	conn.SetReadDeadline(time.Time{}) // Reset deadline
-
-	// Verify pong response
-	if pongMsg.Type != "pong" || pongMsg.Timestamp != pingMsg.Timestamp {
-		s.logger.Error("Invalid pong response")
-		return
-	}
-
-	rtt := time.Duration(pongMsg.RTT) * time.Nanosecond
-	s.logger.Info("Connection verified with RTT: %v", rtt)
-
-	// Store connection with last ping time
+	// Create connection object
 	connection := s.connections.AddConnection(tunnel.Domain, conn, tunnel.TargetPort)
-	connection.lastPing = time.Now()
+	connection.reader = decoder
+	connection.writer = encoder
 	defer s.connections.RemoveConnection(tunnel.Domain)
 
-	// Start ping/pong goroutine
-	pingTicker := time.NewTicker(30 * time.Second)
-	defer pingTicker.Stop()
+	// Create channels for different message types
+	dataChan := make(chan *TunnelMessage, 100)    // Buffer for data messages
+	controlChan := make(chan *TunnelMessage, 100) // Buffer for control messages
+	errChan := make(chan error, 2)                // Error channel
+	stopChan := make(chan struct{})               // Stop channel
+	defer close(stopChan)
 
+	// Start message reader goroutine
 	go func() {
+		defer close(dataChan)
+		defer close(controlChan)
+
 		for {
 			select {
-			case <-connection.stopChan:
+			case <-stopChan:
 				return
-			case <-pingTicker.C:
-				// Send ping
-				pingMsg := PingMessage{
-					Type:      "ping",
-					Timestamp: time.Now().UnixNano(),
-				}
-				if err := json.NewEncoder(conn).Encode(pingMsg); err != nil {
-					s.logger.Error("Failed to send ping: %v", err)
-					close(connection.stopChan)
+			default:
+				var msg TunnelMessage
+				if err := decoder.Decode(&msg); err != nil {
+					if err != io.EOF {
+						errChan <- fmt.Errorf("error reading message: %w", err)
+					}
 					return
 				}
 
-				// Wait for pong with timeout
-				conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-				var pongMsg PongMessage
-				if err := json.NewDecoder(conn).Decode(&pongMsg); err != nil {
-					s.logger.Error("Failed to receive pong: %v", err)
-					close(connection.stopChan)
-					return
+				// Route message based on type
+				switch msg.Type {
+				case MessageTypePing, MessageTypePong:
+					select {
+					case controlChan <- &msg:
+					default:
+						s.logger.Warn("Control channel buffer full, dropping message")
+					}
+				case MessageTypeData:
+					select {
+					case dataChan <- &msg:
+					default:
+						s.logger.Warn("Data channel buffer full, dropping message")
+					}
+				default:
+					s.logger.Error("Unknown message type: %s", msg.Type)
 				}
-				conn.SetReadDeadline(time.Time{}) // Reset deadline
-
-				// Verify pong
-				if pongMsg.Type != "pong" || pongMsg.Timestamp != pingMsg.Timestamp {
-					s.logger.Error("Invalid pong response")
-					close(connection.stopChan)
-					return
-				}
-
-				rtt := time.Duration(pongMsg.RTT) * time.Nanosecond
-				s.logger.Debug("Ping successful, RTT: %v", rtt)
-				connection.lastPing = time.Now()
 			}
 		}
 	}()
 
-	// Wait for connection to close
-	<-connection.stopChan
+	// Start ping handler goroutine
+	go func() {
+		pingTicker := time.NewTicker(30 * time.Second)
+		defer pingTicker.Stop()
+
+		for {
+			select {
+			case <-stopChan:
+				return
+			case <-pingTicker.C:
+				// Generate unique message ID for correlation
+				msgID := fmt.Sprintf("ping-%d", time.Now().UnixNano())
+
+				// Send ping
+				pingPayload, _ := json.Marshal(PingMessage{
+					Timestamp: time.Now().UnixNano(),
+				})
+				pingMsg := TunnelMessage{
+					Type:    MessageTypePing,
+					ID:      msgID,
+					Payload: pingPayload,
+				}
+
+				// Set write deadline for ping
+				conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+				if err := encoder.Encode(pingMsg); err != nil {
+					errChan <- fmt.Errorf("error sending ping: %w", err)
+					return
+				}
+				conn.SetWriteDeadline(time.Time{})
+
+				// Wait for matching pong
+				pongTimer := time.NewTimer(5 * time.Second)
+				defer pongTimer.Stop()
+				pongReceived := false
+
+				for !pongReceived {
+					select {
+					case msg := <-controlChan:
+						if msg.Type == MessageTypePong && msg.ID == msgID {
+							var pongResp PongMessage
+							if err := json.Unmarshal(msg.Payload, &pongResp); err != nil {
+								s.logger.Error("Error unmarshaling pong: %v", err)
+								continue
+							}
+							rtt := time.Duration(pongResp.RTT) * time.Nanosecond
+							s.logger.Debug("Ping successful, RTT: %v", rtt)
+							connection.lastPing = time.Now()
+							pongReceived = true
+						}
+					case <-pongTimer.C:
+						errChan <- fmt.Errorf("ping timeout")
+						return
+					case <-stopChan:
+						return
+					}
+				}
+			}
+		}
+	}()
+
+	// Start data handler goroutine
+	go func() {
+		for {
+			select {
+			case <-stopChan:
+				return
+			case msg := <-dataChan:
+				var dataPayload DataMessage
+				if err := json.Unmarshal(msg.Payload, &dataPayload); err != nil {
+					s.logger.Error("Error unmarshaling data message: %v", err)
+					continue
+				}
+
+				// Process data message
+				// This is where you would handle the actual tunnel data
+				// For now, we'll just log it
+				s.logger.Debug("Received data message of length: %d", len(dataPayload.Data))
+			}
+		}
+	}()
+
+	// Wait for any error
+	if err := <-errChan; err != nil {
+		s.logger.Error("Connection error: %v", err)
+	}
 }
 
 // GetConnection returns the tunnel connection for a domain
@@ -280,197 +342,53 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 		tcpConn.SetWriteBuffer(32 * 1024) // 32KB write buffer
 	}
 
-	if tcpConn, ok := tunnelConn.conn.(*net.TCPConn); ok {
-		tcpConn.SetKeepAlive(true)
-		tcpConn.SetKeepAlivePeriod(30 * time.Second)
-		tcpConn.SetReadBuffer(32 * 1024)  // 32KB read buffer
-		tcpConn.SetWriteBuffer(32 * 1024) // 32KB write buffer
-	}
-
-	// Create buffered readers and writers
+	// Create buffered reader for the client connection
 	clientReader := bufio.NewReaderSize(conn, 32*1024)
-	clientWriter := bufio.NewWriterSize(conn, 32*1024)
-	tunnelReader := bufio.NewReaderSize(tunnelConn.conn, 32*1024)
-	tunnelWriter := bufio.NewWriterSize(tunnelConn.conn, 32*1024)
 
-	// Create channels for synchronization
-	errChan := make(chan error, 2)
-	requestDone := make(chan struct{})
-	responseDone := make(chan struct{})
-
-	// Forward request from client to tunnel
-	go func() {
-		defer close(requestDone)
-
-		// Read request line
-		requestLine, err := clientReader.ReadString('\n')
-		if err != nil {
-			if err != io.EOF {
-				s.logger.Error("[PROXY DEBUG] Error reading request line: %v", err)
-				errChan <- fmt.Errorf("error reading request line: %w", err)
-			}
-			return
-		}
-		s.logger.Info("[PROXY DEBUG] Request line: %s", strings.TrimSpace(requestLine))
-
-		// Write request line
-		if _, err := tunnelWriter.WriteString(requestLine); err != nil {
-			s.logger.Error("[PROXY DEBUG] Error writing request line: %v", err)
-			errChan <- fmt.Errorf("error writing request line: %w", err)
-			return
-		}
-
-		// Read and forward headers
-		var contentLength int64
-		for {
-			line, err := clientReader.ReadString('\n')
-			if err != nil {
-				if err != io.EOF {
-					s.logger.Error("[PROXY DEBUG] Error reading header: %v", err)
-					errChan <- fmt.Errorf("error reading header: %w", err)
-				}
-				return
-			}
-
-			// Write header line
-			if _, err := tunnelWriter.WriteString(line); err != nil {
-				s.logger.Error("[PROXY DEBUG] Error writing header: %v", err)
-				errChan <- fmt.Errorf("error writing header: %w", err)
-				return
-			}
-
-			// Parse Content-Length if present
-			if strings.HasPrefix(strings.ToLower(line), "content-length:") {
-				contentLength, _ = strconv.ParseInt(strings.TrimSpace(strings.TrimPrefix(line, "Content-Length:")), 10, 64)
-			}
-
-			// Check for end of headers
-			if line == "\r\n" {
-				break
-			}
-		}
-
-		// Flush headers
-		if err := tunnelWriter.Flush(); err != nil {
-			s.logger.Error("[PROXY DEBUG] Error flushing headers: %v", err)
-			errChan <- fmt.Errorf("error flushing headers: %w", err)
-			return
-		}
-
-		// Forward request body if present
-		if contentLength > 0 {
-			s.logger.Info("[PROXY DEBUG] Forwarding request body of length: %d", contentLength)
-			written, err := io.CopyN(tunnelWriter, clientReader, contentLength)
-			if err != nil {
-				s.logger.Error("[PROXY DEBUG] Error forwarding request body: %v", err)
-				errChan <- fmt.Errorf("error forwarding request body: %w", err)
-				return
-			}
-			s.logger.Info("[PROXY DEBUG] Wrote %d bytes of request body", written)
-
-			// Flush body
-			if err := tunnelWriter.Flush(); err != nil {
-				s.logger.Error("[PROXY DEBUG] Error flushing body: %v", err)
-				errChan <- fmt.Errorf("error flushing body: %w", err)
-				return
-			}
-		}
-
-		s.logger.Info("[PROXY DEBUG] Request forwarding completed")
-	}()
-
-	// Forward response from tunnel to client
-	go func() {
-		defer close(responseDone)
-
-		// Wait for request to be forwarded
-		<-requestDone
-		s.logger.Info("[PROXY DEBUG] Starting response handling")
-
-		// Read response line
-		responseLine, err := tunnelReader.ReadString('\n')
-		if err != nil {
-			if err != io.EOF {
-				s.logger.Error("[PROXY DEBUG] Error reading response line: %v", err)
-				errChan <- fmt.Errorf("error reading response line: %w", err)
-			}
-			return
-		}
-		s.logger.Info("[PROXY DEBUG] Response line: %s", strings.TrimSpace(responseLine))
-
-		// Write response line
-		if _, err := clientWriter.WriteString(responseLine); err != nil {
-			s.logger.Error("[PROXY DEBUG] Error writing response line: %v", err)
-			errChan <- fmt.Errorf("error writing response line: %w", err)
-			return
-		}
-
-		// Read and forward headers
-		var contentLength int64
-		for {
-			line, err := tunnelReader.ReadString('\n')
-			if err != nil {
-				if err != io.EOF {
-					s.logger.Error("[PROXY DEBUG] Error reading response header: %v", err)
-					errChan <- fmt.Errorf("error reading response header: %w", err)
-				}
-				return
-			}
-
-			// Write header line
-			if _, err := clientWriter.WriteString(line); err != nil {
-				s.logger.Error("[PROXY DEBUG] Error writing response header: %v", err)
-				errChan <- fmt.Errorf("error writing response header: %w", err)
-				return
-			}
-
-			// Parse Content-Length if present
-			if strings.HasPrefix(strings.ToLower(line), "content-length:") {
-				contentLength, _ = strconv.ParseInt(strings.TrimSpace(strings.TrimPrefix(line, "Content-Length:")), 10, 64)
-			}
-
-			// Check for end of headers
-			if line == "\r\n" {
-				break
-			}
-		}
-
-		// Flush headers
-		if err := clientWriter.Flush(); err != nil {
-			s.logger.Error("[PROXY DEBUG] Error flushing response headers: %v", err)
-			errChan <- fmt.Errorf("error flushing response headers: %w", err)
-			return
-		}
-
-		// Forward response body if present
-		if contentLength > 0 {
-			s.logger.Info("[PROXY DEBUG] Forwarding response body of length: %d", contentLength)
-			written, err := io.CopyN(clientWriter, tunnelReader, contentLength)
-			if err != nil {
-				s.logger.Error("[PROXY DEBUG] Error forwarding response body: %v", err)
-				errChan <- fmt.Errorf("error forwarding response body: %w", err)
-				return
-			}
-			s.logger.Info("[PROXY DEBUG] Wrote %d bytes of response body", written)
-
-			// Flush body
-			if err := clientWriter.Flush(); err != nil {
-				s.logger.Error("[PROXY DEBUG] Error flushing response body: %v", err)
-				errChan <- fmt.Errorf("error flushing response body: %w", err)
-				return
-			}
-		}
-
-		s.logger.Info("[PROXY DEBUG] Response forwarding completed")
-	}()
-
-	// Wait for completion or error
-	select {
-	case err := <-errChan:
-		s.logger.Error("[PROXY DEBUG] Proxy connection error: %v", err)
-	case <-responseDone:
-		s.logger.Info("[PROXY DEBUG] Proxy connection completed successfully")
-	case <-time.After(30 * time.Second):
-		s.logger.Error("[PROXY DEBUG] Proxy connection timed out")
+	// Read the entire request into a buffer
+	var requestData bytes.Buffer
+	if _, err := io.Copy(&requestData, clientReader); err != nil {
+		s.logger.Error("[PROXY DEBUG] Error reading request: %v", err)
+		return
 	}
+
+	// Send the request data through the tunnel
+	dataMsg := DataMessage{
+		Data: requestData.Bytes(),
+	}
+	payload, _ := json.Marshal(dataMsg)
+	msg := TunnelMessage{
+		Type:    MessageTypeData,
+		Payload: payload,
+	}
+	if err := tunnelConn.writer.Encode(msg); err != nil {
+		s.logger.Error("[PROXY DEBUG] Error sending request data: %v", err)
+		return
+	}
+
+	// Wait for response data
+	var responseMsg TunnelMessage
+	if err := tunnelConn.reader.Decode(&responseMsg); err != nil {
+		s.logger.Error("[PROXY DEBUG] Error reading response data: %v", err)
+		return
+	}
+
+	if responseMsg.Type != MessageTypeData {
+		s.logger.Error("[PROXY DEBUG] Unexpected message type in response: %s", responseMsg.Type)
+		return
+	}
+
+	var dataMsg DataMessage
+	if err := json.Unmarshal(responseMsg.Payload, &dataMsg); err != nil {
+		s.logger.Error("[PROXY DEBUG] Error unmarshaling response data: %v", err)
+		return
+	}
+
+	// Write response back to client
+	if _, err := conn.Write(dataMsg.Data); err != nil {
+		s.logger.Error("[PROXY DEBUG] Error writing response to client: %v", err)
+		return
+	}
+
+	s.logger.Info("[PROXY DEBUG] Request/response cycle completed successfully")
 }
