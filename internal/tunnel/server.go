@@ -110,16 +110,29 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 		return
 	}
 
-	// Get tunnel by token
-	tunnel, err := s.tunnelRepo.GetByToken(context.Background(), req.Token)
+	// Find user by API token
+	token, err := s.tokenRepo.GetByToken(context.Background(), req.Token)
 	if err != nil {
-		s.logger.Error("Failed to get tunnel: %v", err)
+		s.logger.Error("Failed to authenticate: %v", err)
 		json.NewEncoder(conn).Encode(TunnelHandshakeResponse{
 			Status:  "error",
-			Message: "Invalid token",
+			Message: "Invalid token. Please login first.",
 		})
 		return
 	}
+
+	// Get user's first tunnel
+	tunnels, err := s.tunnelRepo.GetByUserID(context.Background(), token.UserID)
+	if err != nil || len(tunnels) == 0 {
+		s.logger.Error("No tunnels found for user: %v", err)
+		json.NewEncoder(conn).Encode(TunnelHandshakeResponse{
+			Status:  "error",
+			Message: "No tunnels found. Please create a tunnel first.",
+		})
+		return
+	}
+
+	tunnel := tunnels[0] // Use the first tunnel
 
 	s.logger.Info("User %d connected with token %s", tunnel.UserID, tunnel.Token)
 
