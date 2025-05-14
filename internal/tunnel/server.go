@@ -11,6 +11,7 @@ import (
 	"giraffecloud/internal/repository"
 	"io"
 	"net"
+	"time"
 )
 
 /**
@@ -194,6 +195,12 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 
 	s.logger.Info("[PROXY DEBUG] Starting proxy connection for domain: %s", domain)
 
+	// Set timeouts for the connections
+	conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+	conn.SetWriteDeadline(time.Now().Add(30 * time.Second))
+	tunnelConn.conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+	tunnelConn.conn.SetWriteDeadline(time.Now().Add(30 * time.Second))
+
 	// Create buffered readers and writers with larger buffer sizes
 	clientReader := bufio.NewReaderSize(conn, 32*1024) // 32KB buffer
 	clientWriter := bufio.NewWriterSize(conn, 32*1024)
@@ -203,6 +210,7 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 	// Create error channels for both directions
 	clientToTunnelErr := make(chan error, 1)
 	tunnelToClientErr := make(chan error, 1)
+	done := make(chan struct{})
 
 	// Forward data in both directions concurrently
 	go func() {
@@ -221,19 +229,42 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 		tunnelToClientErr <- err
 	}()
 
+	// Set up a timeout for the entire proxy operation
+	go func() {
+		select {
+		case <-time.After(60 * time.Second):
+			s.logger.Info("[PROXY DEBUG] Connection timeout for domain: %s", domain)
+			close(done)
+		case <-done:
+			return
+		}
+	}()
+
 	// Wait for either direction to complete or error
+	cleanup := func() {
+		conn.Close()
+		// Reset deadlines to prevent any lingering operations
+		conn.SetReadDeadline(time.Time{})
+		conn.SetWriteDeadline(time.Time{})
+		tunnelConn.conn.SetReadDeadline(time.Time{})
+		tunnelConn.conn.SetWriteDeadline(time.Time{})
+		close(done)
+	}
+
 	select {
 	case err := <-clientToTunnelErr:
 		if err != nil && err != io.EOF {
 			s.logger.Error("[PROXY DEBUG] Error forwarding client to tunnel: %v", err)
 		}
+		cleanup()
 	case err := <-tunnelToClientErr:
 		if err != nil && err != io.EOF {
 			s.logger.Error("[PROXY DEBUG] Error forwarding tunnel to client: %v", err)
 		}
+		cleanup()
+	case <-done:
+		cleanup()
 	}
 
-	// Clean up
-	conn.Close()
 	s.logger.Info("[PROXY DEBUG] Proxy connection completed for domain: %s", domain)
 }
