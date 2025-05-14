@@ -311,29 +311,42 @@ func (s *Server) Start(cfg *Config) error {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
+			defer conn.Close()
 			logger.Info("[HIJACK DEBUG] Successfully hijacked connection for domain: %s", domain)
 
-			// Reconstruct the request
+			// Build the request string
 			var requestData strings.Builder
-			requestData.WriteString(fmt.Sprintf("%s %s %s\r\n", r.Method, r.URL.RequestURI(), r.Proto))
+
+			// Add request line
+			requestData.WriteString(fmt.Sprintf("%s %s HTTP/1.1\r\n", r.Method, r.URL.RequestURI()))
 
 			// Add Host header first
 			requestData.WriteString(fmt.Sprintf("Host: %s\r\n", r.Host))
 
-			// Add remaining headers
+			// Add Content-Length if body exists
+			if r.ContentLength > 0 {
+				requestData.WriteString(fmt.Sprintf("Content-Length: %d\r\n", r.ContentLength))
+			}
+
+			// Add remaining headers, skipping those we've already handled
 			for key, values := range r.Header {
-				for _, value := range values {
-					requestData.WriteString(fmt.Sprintf("%s: %s\r\n", key, value))
+				if key != "Host" && key != "Content-Length" { // Skip headers we've already added
+					for _, value := range values {
+						requestData.WriteString(fmt.Sprintf("%s: %s\r\n", key, value))
+					}
 				}
 			}
-			requestData.WriteString("\r\n") // Empty line to separate headers from body
 
+			// Add empty line to separate headers from body
+			requestData.WriteString("\r\n")
+
+			// Get the request as bytes
+			requestBytes := []byte(requestData.String())
 			logger.Info("[HIJACK DEBUG] Forwarding HTTP request:\n%s", requestData.String())
 
-			// Write the request line and headers
-			if _, err := conn.Write([]byte(requestData.String())); err != nil {
+			// Write the request headers
+			if _, err := conn.Write(requestBytes); err != nil {
 				logger.Error("[HIJACK DEBUG] Failed to write request headers: %v", err)
-				conn.Close()
 				return
 			}
 
@@ -343,17 +356,16 @@ func (s *Server) Start(cfg *Config) error {
 				written, err := io.Copy(conn, r.Body)
 				if err != nil {
 					logger.Error("[HIJACK DEBUG] Failed to copy request body: %v", err)
-					conn.Close()
 					return
 				}
 				logger.Info("[HIJACK DEBUG] Wrote %d bytes of request body", written)
+				r.Body.Close()
 			}
 
 			// Ensure any buffered data is written
 			if bufrw.Writer.Buffered() > 0 {
 				if err := bufrw.Writer.Flush(); err != nil {
 					logger.Error("[HIJACK DEBUG] Failed to flush buffered data: %v", err)
-					conn.Close()
 					return
 				}
 			}
