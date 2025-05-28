@@ -20,12 +20,7 @@ func NewConnectionManager() *ConnectionManager {
 
 // AddConnection adds a new connection for a domain
 func (m *ConnectionManager) AddConnection(domain string, conn net.Conn, targetPort int) *TunnelConnection {
-	connection := &TunnelConnection{
-		conn:       conn,
-		domain:     domain,
-		targetPort: targetPort,
-		stopChan:   make(chan struct{}),
-	}
+	connection := NewTunnelConnection(domain, conn, targetPort)
 
 	m.mu.Lock()
 	m.connections[domain] = connection
@@ -37,6 +32,9 @@ func (m *ConnectionManager) AddConnection(domain string, conn net.Conn, targetPo
 // RemoveConnection removes a connection for a domain
 func (m *ConnectionManager) RemoveConnection(domain string) {
 	m.mu.Lock()
+	if conn := m.connections[domain]; conn != nil {
+		conn.Close() // Close connection and cleanup resources
+	}
 	delete(m.connections, domain)
 	m.mu.Unlock()
 }
@@ -54,4 +52,15 @@ func (m *ConnectionManager) HasDomain(domain string) bool {
 	defer m.mu.RUnlock()
 	_, exists := m.connections[domain]
 	return exists
+}
+
+// Close closes all connections and cleans up resources
+func (m *ConnectionManager) Close() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for domain, conn := range m.connections {
+		conn.Close()
+		delete(m.connections, domain)
+	}
 }

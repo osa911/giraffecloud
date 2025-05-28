@@ -60,15 +60,54 @@ type MessageCorrelation struct {
 
 // TunnelConnection represents an active tunnel connection
 type TunnelConnection struct {
-	conn           net.Conn          // The underlying network connection
-	domain         string            // The domain this tunnel serves
-	targetPort     int              // The target port on the client side
-	stopChan       chan struct{}     // Channel to signal connection stop
-	lastPing       time.Time         // Time of last successful ping
-	reader         *json.Decoder     // JSON decoder for reading messages
-	writer         *json.Encoder     // JSON encoder for writing messages
-	readerMu       sync.Mutex        // Mutex for synchronizing reader access
-	writerMu       sync.Mutex        // Mutex for synchronizing writer access
-	correlationMap sync.Map          // Thread-safe map for message correlation
-	cleanupTicker  *time.Ticker     // Ticker for cleaning up stale correlations
+	conn           net.Conn               // The underlying network connection
+	domain         string                 // The domain this tunnel serves
+	targetPort     int                    // The target port on the client side
+	stopChan       chan struct{}          // Channel to signal connection stop
+	lastPing       time.Time              // Time of last successful ping
+	reader         *json.Decoder          // JSON decoder for reading messages
+	writer         *json.Encoder          // JSON encoder for writing messages
+	readerMu       sync.Mutex             // Mutex for synchronizing reader access
+	writerMu       sync.Mutex             // Mutex for synchronizing writer access
+	correlationMap sync.Map               // Thread-safe map for message correlation
+	cleanupTicker  *time.Ticker          // Ticker for cleaning up stale correlations
+	healthChecker  *HealthChecker         // Health checker for monitoring connection status
+	stateManager   *ConnectionStateManager // Manager for connection state and statistics
+	rateLimiter    *RateLimiter          // Rate limiter for request throttling
+	stickyManager  *StickyManager         // Sticky session manager for client affinity
+	l7Handler      *L7Handler             // Layer 7 (HTTP) request handler
+	aclMatcher     *ACLMatcher            // Layer 7 access control rules
+}
+
+// NewTunnelConnection creates a new tunnel connection
+func NewTunnelConnection(domain string, conn net.Conn, targetPort int) *TunnelConnection {
+	return &TunnelConnection{
+		conn:          conn,
+		domain:        domain,
+		targetPort:    targetPort,
+		stopChan:      make(chan struct{}),
+		healthChecker: NewHealthChecker(DefaultHealthCheckConfig()),
+		stateManager:  NewConnectionStateManager(),
+		rateLimiter:   NewRateLimiter(DefaultRateLimiterConfig()),
+		stickyManager: NewStickyManager(DefaultStickyConfig()),
+		l7Handler:     NewL7Handler(DefaultL7Config()),
+		aclMatcher:    NewACLMatcher(),
+	}
+}
+
+// Close closes the tunnel connection and cleans up resources
+func (c *TunnelConnection) Close() error {
+	if c.healthChecker != nil {
+		c.healthChecker.Stop()
+	}
+	if c.cleanupTicker != nil {
+		c.cleanupTicker.Stop()
+	}
+	if c.stopChan != nil {
+		close(c.stopChan)
+	}
+	if c.conn != nil {
+		return c.conn.Close()
+	}
+	return nil
 }

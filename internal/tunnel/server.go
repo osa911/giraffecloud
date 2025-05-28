@@ -36,6 +36,8 @@ type TunnelServer struct {
 	tunnelRepo    repository.TunnelRepository
 	tunnelService interfaces.TunnelService
 	connections   *ConnectionManager
+	bufferPool    *BufferPool
+	healthChecker *HealthChecker
 }
 
 // NewServer creates a new tunnel server instance
@@ -43,8 +45,20 @@ func NewServer(tokenRepo repository.TokenRepository, tunnelRepo repository.Tunne
 	return &TunnelServer{
 		logger:        logging.GetGlobalLogger(),
 		connections:   NewConnectionManager(),
+		bufferPool:    NewBufferPool(),
+		healthChecker: NewHealthChecker(DefaultHealthCheckConfig()),
 		tlsConfig: &tls.Config{
 			MinVersion: tls.VersionTLS12,
+			MaxVersion: tls.VersionTLS13,
+			CipherSuites: []uint16{
+				tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+				tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+				tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+				tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+				tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
+				tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
+			},
+			PreferServerCipherSuites: true,
 			GetCertificate: func(info *tls.ClientHelloInfo) (*tls.Certificate, error) {
 				cert, err := tls.LoadX509KeyPair("/app/certs/tunnel.crt", "/app/certs/tunnel.key")
 				if err != nil {
@@ -366,6 +380,13 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 		return
 	}
 
+	// Check tunnel health before proceeding
+	if tunnelConn.healthChecker.GetStatus() == StatusUnhealthy {
+		s.logger.Error("Tunnel is unhealthy for domain: %s", domain)
+		s.writeHTTPError(conn, 503, "Service Unavailable - Tunnel is unhealthy")
+		return
+	}
+
 	s.logger.Info("[PROXY DEBUG] Starting proxy connection for domain: %s", domain)
 
 	// Set TCP keep-alive to prevent connection from being closed prematurely
@@ -376,6 +397,10 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 		tcpConn.SetWriteBuffer(32 * 1024) // 32KB write buffer
 	}
 
+	// Get buffer from pool for request data
+	requestBuffer := s.bufferPool.Get()
+	defer s.bufferPool.Put(requestBuffer)
+
 	// Create buffered reader for the client connection
 	clientReader := bufio.NewReaderSize(conn, 32*1024)
 
@@ -383,7 +408,7 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 	var requestData bytes.Buffer
 	readDone := make(chan error, 1)
 	go func() {
-		_, err := io.Copy(&requestData, clientReader)
+		_, err := io.CopyBuffer(&requestData, clientReader, requestBuffer)
 		readDone <- err
 	}()
 
@@ -394,11 +419,15 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 			s.writeHTTPError(conn, 502, "Bad Gateway - Error reading request")
 			return
 		}
-	case <-time.After(10 * time.Second):
+	case <-time.After(60 * time.Second):
 		s.logger.Error("[PROXY DEBUG] Timeout reading request")
 		s.writeHTTPError(conn, 504, "Gateway Timeout - Request read timeout")
 		return
 	}
+
+	// Update connection stats
+	tunnelConn.stateManager.AddBytes(uint64(requestData.Len()), 0)
+	tunnelConn.stateManager.IncrementRequests()
 
 	// Generate unique message ID for correlation
 	msgID := fmt.Sprintf("proxy-%d", time.Now().UnixNano())
@@ -414,15 +443,37 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 		Payload: payload,
 	}
 
-	// Lock the writer mutex
-	tunnelConn.writerMu.Lock()
+	// Lock the writer mutex with timeout
+	writerLock := make(chan struct{}, 1)
+	go func() {
+		tunnelConn.writerMu.Lock()
+		writerLock <- struct{}{}
+	}()
+
+	select {
+	case <-writerLock:
+		// Got the lock, proceed
+	case <-time.After(10 * time.Second):
+		s.logger.Error("[PROXY DEBUG] Timeout acquiring writer lock")
+		s.writeHTTPError(conn, 504, "Gateway Timeout - Internal lock timeout")
+		return
+	}
+
+	// Ensure we unlock the writer mutex
+	defer tunnelConn.writerMu.Unlock()
+
+	// Set write deadline for the tunnel connection
+	tunnelConn.conn.SetWriteDeadline(time.Now().Add(30 * time.Second))
 	if err := tunnelConn.writer.Encode(msg); err != nil {
-		tunnelConn.writerMu.Unlock()
 		s.logger.Error("[PROXY DEBUG] Error sending request data: %v", err)
 		s.writeHTTPError(conn, 502, "Bad Gateway - Error sending request to tunnel")
 		return
 	}
-	tunnelConn.writerMu.Unlock()
+	tunnelConn.conn.SetWriteDeadline(time.Time{})
+
+	// Get buffer from pool for response data
+	responseBuffer := s.bufferPool.Get()
+	defer s.bufferPool.Put(responseBuffer)
 
 	// Wait for response data with timeout
 	responseChan := make(chan *TunnelMessage, 1)
@@ -451,7 +502,7 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 		responseChan <- &responseMsg
 	}()
 
-	// Wait for response with timeout
+	// Wait for response with increased timeout
 	select {
 	case responseMsg := <-responseChan:
 		var responseDataMsg DataMessage
@@ -461,7 +512,11 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 			return
 		}
 
-		// Write response back to client
+		// Update connection stats
+		tunnelConn.stateManager.AddBytes(0, uint64(len(responseDataMsg.Data)))
+
+		// Write response back to client with timeout
+		conn.SetWriteDeadline(time.Now().Add(60 * time.Second))
 		if _, err := conn.Write(responseDataMsg.Data); err != nil {
 			s.logger.Error("[PROXY DEBUG] Error writing response to client: %v", err)
 			return
@@ -474,7 +529,7 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 		s.writeHTTPError(conn, 502, "Bad Gateway - Error receiving response from tunnel")
 		return
 
-	case <-time.After(30 * time.Second):
+	case <-time.After(120 * time.Second):
 		s.logger.Error("[PROXY DEBUG] Timeout waiting for response")
 		s.writeHTTPError(conn, 504, "Gateway Timeout - Response timeout")
 		return

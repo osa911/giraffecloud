@@ -39,6 +39,41 @@ func (t *Tunnel) Connect(serverAddr, token, domain string, localPort int, tlsCon
 	t.domain = domain
 	t.localPort = localPort
 
+	// Update TLS config with supported versions and cipher suites
+	if tlsConfig == nil {
+		tlsConfig = &tls.Config{
+			MinVersion: tls.VersionTLS12,
+			MaxVersion: tls.VersionTLS13,
+			CipherSuites: []uint16{
+				tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+				tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+				tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+				tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+				tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
+				tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
+			},
+			InsecureSkipVerify: true, // Only for development, remove in production
+		}
+	} else {
+		// Ensure minimum TLS version and cipher suites are set
+		if tlsConfig.MinVersion == 0 {
+			tlsConfig.MinVersion = tls.VersionTLS12
+		}
+		if tlsConfig.MaxVersion == 0 {
+			tlsConfig.MaxVersion = tls.VersionTLS13
+		}
+		if len(tlsConfig.CipherSuites) == 0 {
+			tlsConfig.CipherSuites = []uint16{
+				tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+				tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+				tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+				tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+				tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
+				tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
+			}
+		}
+	}
+
 	// Connect to server with TLS
 	conn, err := tls.Dial("tcp", serverAddr, tlsConfig)
 	if err != nil {
