@@ -179,22 +179,20 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 
 	s.logger.Info("Tunnel connection established for domain: %s", tunnel.Domain)
 
-	// Wait for the connection to close
-	// The connection will be used by ProxyConnection for HTTP forwarding
-	buffer := make([]byte, 1)
+	// Just wait for the connection to close without interfering with it
+	// ProxyConnection will handle all communication with the tunnel
+	// We'll detect closure by trying to write a 0-byte message periodically
 	for {
-		// Set a very long read timeout to keep connection alive
-		conn.SetReadDeadline(time.Now().Add(3600 * time.Second)) // 1 hour
+		time.Sleep(30 * time.Second) // Check every 30 seconds
 
-		// Try to read from connection - this will block until data or error
-		_, err := conn.Read(buffer)
+		// Try to write 0 bytes to detect if connection is closed
+		conn.SetWriteDeadline(time.Now().Add(1 * time.Second))
+		_, err := conn.Write([]byte{})
 		if err != nil {
-			// Connection closed or error
 			s.logger.Info("Tunnel connection closed for domain: %s", tunnel.Domain)
 			break
 		}
-		// If we get any data, just continue - this shouldn't happen in normal operation
-		// as ProxyConnection will handle all HTTP data
+		conn.SetWriteDeadline(time.Time{}) // Reset deadline
 	}
 }
 
