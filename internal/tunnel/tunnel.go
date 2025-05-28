@@ -8,6 +8,7 @@ import (
 	"giraffecloud/internal/logging"
 	"io"
 	"net"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -93,7 +94,7 @@ func (t *Tunnel) handleConnection() {
 
 	t.logger.Info("Starting HTTP forwarding for tunnel connection")
 
-	// Create buffered readers for parsing HTTP
+	// Create buffered reader for parsing HTTP
 	tunnelReader := bufio.NewReader(t.conn)
 
 	// Handle incoming HTTP requests from the tunnel
@@ -105,8 +106,8 @@ func (t *Tunnel) handleConnection() {
 			// Set read timeout for incoming requests
 			t.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 
-			// Read HTTP request line
-			requestLine, _, err := tunnelReader.ReadLine()
+			// Parse the HTTP request using Go's built-in HTTP parser
+			request, err := http.ReadRequest(tunnelReader)
 			if err != nil {
 				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 					// Timeout is normal, continue
@@ -120,7 +121,7 @@ func (t *Tunnel) handleConnection() {
 			// We have an HTTP request, reset deadline
 			t.conn.SetReadDeadline(time.Time{})
 
-			t.logger.Info("Received HTTP request: %s", string(requestLine))
+			t.logger.Info("Received HTTP request: %s %s", request.Method, request.URL.Path)
 
 			// Connect to local service for this request
 			localConn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", t.localPort), 5*time.Second)
@@ -132,114 +133,29 @@ func (t *Tunnel) handleConnection() {
 				continue
 			}
 
-			// Create buffered writer for local connection
-			localWriter := bufio.NewWriter(localConn)
-			localReader := bufio.NewReader(localConn)
-
-			// Write request line to local service
-			localWriter.Write(requestLine)
-			localWriter.WriteString("\r\n")
-
-			// Read and forward headers
-			var contentLength int64 = 0
-			for {
-				headerLine, _, err := tunnelReader.ReadLine()
-				if err != nil {
-					t.logger.Error("Error reading header: %v", err)
-					localConn.Close()
-					break
-				}
-
-				// Write header to local service
-				localWriter.Write(headerLine)
-				localWriter.WriteString("\r\n")
-
-				// Parse Content-Length if present
-				headerStr := string(headerLine)
-				if strings.HasPrefix(strings.ToLower(headerStr), "content-length:") {
-					parts := strings.SplitN(headerStr, ":", 2)
-					if len(parts) == 2 {
-						contentLength, _ = strconv.ParseInt(strings.TrimSpace(parts[1]), 10, 64)
-					}
-				}
-
-				// Check for end of headers (empty line)
-				if len(headerLine) == 0 {
-					break
-				}
-			}
-
-			// Flush headers to local service
-			if err := localWriter.Flush(); err != nil {
-				t.logger.Error("Error flushing headers to local: %v", err)
+			// Forward the request to local service
+			if err := request.Write(localConn); err != nil {
+				t.logger.Error("Failed to write request to local service: %v", err)
 				localConn.Close()
 				continue
-			}
-
-			// Forward request body if present
-			if contentLength > 0 {
-				t.logger.Info("Forwarding request body of %d bytes", contentLength)
-				written, err := io.CopyN(localWriter, tunnelReader, contentLength)
-				if err != nil {
-					t.logger.Error("Error forwarding request body: %v", err)
-					localConn.Close()
-					continue
-				}
-				t.logger.Info("Forwarded %d bytes of request body", written)
-				localWriter.Flush()
 			}
 
 			t.logger.Info("Request forwarded to local service, reading response")
 
 			// Read response from local service
-			responseLine, _, err := localReader.ReadLine()
+			localReader := bufio.NewReader(localConn)
+			response, err := http.ReadResponse(localReader, request)
 			if err != nil {
-				t.logger.Error("Error reading response line: %v", err)
+				t.logger.Error("Error reading response from local service: %v", err)
 				localConn.Close()
 				continue
 			}
 
-			// Write response line to tunnel
-			t.conn.Write(responseLine)
-			t.conn.Write([]byte("\r\n"))
-
-			// Read and forward response headers
-			var responseContentLength int64 = 0
-			for {
-				headerLine, _, err := localReader.ReadLine()
-				if err != nil {
-					t.logger.Error("Error reading response header: %v", err)
-					break
-				}
-
-				// Write header to tunnel
-				t.conn.Write(headerLine)
-				t.conn.Write([]byte("\r\n"))
-
-				// Parse Content-Length if present
-				headerStr := string(headerLine)
-				if strings.HasPrefix(strings.ToLower(headerStr), "content-length:") {
-					parts := strings.SplitN(headerStr, ":", 2)
-					if len(parts) == 2 {
-						responseContentLength, _ = strconv.ParseInt(strings.TrimSpace(parts[1]), 10, 64)
-					}
-				}
-
-				// Check for end of headers (empty line)
-				if len(headerLine) == 0 {
-					break
-				}
-			}
-
-			// Forward response body if present
-			if responseContentLength > 0 {
-				t.logger.Info("Forwarding response body of %d bytes", responseContentLength)
-				written, err := io.CopyN(t.conn, localReader, responseContentLength)
-				if err != nil {
-					t.logger.Error("Error forwarding response body: %v", err)
-				} else {
-					t.logger.Info("Forwarded %d bytes of response body", written)
-				}
+			// Write response back to tunnel
+			if err := response.Write(t.conn); err != nil {
+				t.logger.Error("Error writing response to tunnel: %v", err)
+				localConn.Close()
+				continue
 			}
 
 			localConn.Close()
