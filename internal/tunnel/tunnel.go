@@ -91,26 +91,52 @@ func (t *Tunnel) handleConnection() {
 		t.logger.Info("Tunnel connection closed")
 	}()
 
-	// Simple loop to keep connection alive
+	t.logger.Info("Starting simple HTTP forwarding for tunnel connection")
+
+	// Handle incoming HTTP requests from the tunnel
 	for {
 		select {
 		case <-t.stopChan:
 			return
 		default:
-			// Just keep the connection alive with a simple ping
-			time.Sleep(30 * time.Second)
+			// Set read timeout for incoming requests
+			t.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 
-			// Send a simple ping to keep connection alive
-			if t.conn != nil {
-				t.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
-				_, err := t.conn.Write([]byte("ping\n"))
-				t.conn.SetWriteDeadline(time.Time{})
-
-				if err != nil {
-					t.logger.Error("Connection lost: %v", err)
-					return
-				}
+			// Connect to local service for each request
+			localConn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", t.localPort), 5*time.Second)
+			if err != nil {
+				t.logger.Error("Failed to connect to local service: %v", err)
+				time.Sleep(1 * time.Second)
+				continue
 			}
+
+			t.logger.Info("Forwarding HTTP request to localhost:%d", t.localPort)
+
+			// Simple bidirectional copy between tunnel and local service
+			go func() {
+				defer localConn.Close()
+				defer t.conn.Close()
+
+				// Copy from tunnel to local service
+				written, err := io.Copy(localConn, t.conn)
+				if err != nil {
+					t.logger.Error("Error copying tunnel->local: %v", err)
+				} else {
+					t.logger.Info("Copied %d bytes tunnel->local", written)
+				}
+			}()
+
+			// Copy from local service back to tunnel
+			written, err := io.Copy(t.conn, localConn)
+			if err != nil {
+				t.logger.Error("Error copying local->tunnel: %v", err)
+				return // Exit on error
+			} else {
+				t.logger.Info("Copied %d bytes local->tunnel", written)
+			}
+
+			localConn.Close()
+			t.logger.Info("HTTP request forwarding completed")
 		}
 	}
 }

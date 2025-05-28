@@ -1,8 +1,6 @@
 package tunnel
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -228,160 +226,33 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 		return
 	}
 
-	// Check tunnel health before proceeding
-	if tunnelConn.healthChecker.GetStatus() == StatusUnhealthy {
-		s.logger.Error("Tunnel is unhealthy for domain: %s", domain)
-		s.writeHTTPError(conn, 503, "Service Unavailable - Tunnel is unhealthy")
-		return
-	}
+	s.logger.Info("[PROXY DEBUG] Starting simple proxy connection for domain: %s", domain)
 
-	s.logger.Info("[PROXY DEBUG] Starting proxy connection for domain: %s", domain)
+	// Simple bidirectional copy between client and tunnel
+	// This bypasses the complex JSON protocol and just forwards raw HTTP
 
-	// Set TCP keep-alive to prevent connection from being closed prematurely
-	if tcpConn, ok := conn.(*net.TCPConn); ok {
-		tcpConn.SetKeepAlive(true)
-		tcpConn.SetKeepAlivePeriod(30 * time.Second)
-		tcpConn.SetReadBuffer(32 * 1024)  // 32KB read buffer
-		tcpConn.SetWriteBuffer(32 * 1024) // 32KB write buffer
-	}
-
-	// Get buffer from pool for request data
-	requestBuffer := s.bufferPool.Get()
-	defer s.bufferPool.Put(requestBuffer)
-
-	// Create buffered reader for the client connection
-	clientReader := bufio.NewReaderSize(conn, 32*1024)
-
-	// Read the entire request into a buffer with timeout
-	var requestData bytes.Buffer
-	readDone := make(chan error, 1)
+	// Copy from client to tunnel
 	go func() {
-		_, err := io.CopyBuffer(&requestData, clientReader, requestBuffer)
-		readDone <- err
-	}()
+		defer tunnelConn.conn.Close()
+		defer conn.Close()
 
-	select {
-	case err := <-readDone:
+		written, err := io.Copy(tunnelConn.conn, conn)
 		if err != nil {
-			s.logger.Error("[PROXY DEBUG] Error reading request: %v", err)
-			s.writeHTTPError(conn, 502, "Bad Gateway - Error reading request")
-			return
+			s.logger.Error("[PROXY DEBUG] Error copying client->tunnel: %v", err)
+		} else {
+			s.logger.Info("[PROXY DEBUG] Copied %d bytes client->tunnel", written)
 		}
-	case <-time.After(60 * time.Second):
-		s.logger.Error("[PROXY DEBUG] Timeout reading request")
-		s.writeHTTPError(conn, 504, "Gateway Timeout - Request read timeout")
-		return
-	}
-
-	// Update connection stats
-	tunnelConn.stateManager.AddBytes(uint64(requestData.Len()), 0)
-	tunnelConn.stateManager.IncrementRequests()
-
-	// Generate unique message ID for correlation
-	msgID := fmt.Sprintf("proxy-%d", time.Now().UnixNano())
-
-	// Send the request data through the tunnel
-	requestDataMsg := DataMessage{
-		Data: requestData.Bytes(),
-	}
-	payload, _ := json.Marshal(requestDataMsg)
-	msg := TunnelMessage{
-		Type:    MessageTypeData,
-		ID:      msgID,
-		Payload: payload,
-	}
-
-	// Lock the writer mutex with timeout
-	writerLock := make(chan struct{}, 1)
-	go func() {
-		tunnelConn.writerMu.Lock()
-		writerLock <- struct{}{}
 	}()
 
-	select {
-	case <-writerLock:
-		// Got the lock, proceed
-	case <-time.After(10 * time.Second):
-		s.logger.Error("[PROXY DEBUG] Timeout acquiring writer lock")
-		s.writeHTTPError(conn, 504, "Gateway Timeout - Internal lock timeout")
-		return
+	// Copy from tunnel to client
+	written, err := io.Copy(conn, tunnelConn.conn)
+	if err != nil {
+		s.logger.Error("[PROXY DEBUG] Error copying tunnel->client: %v", err)
+	} else {
+		s.logger.Info("[PROXY DEBUG] Copied %d bytes tunnel->client", written)
 	}
 
-	// Ensure we unlock the writer mutex
-	defer tunnelConn.writerMu.Unlock()
-
-	// Set write deadline for the tunnel connection
-	tunnelConn.conn.SetWriteDeadline(time.Now().Add(30 * time.Second))
-	if err := tunnelConn.writer.Encode(msg); err != nil {
-		s.logger.Error("[PROXY DEBUG] Error sending request data: %v", err)
-		s.writeHTTPError(conn, 502, "Bad Gateway - Error sending request to tunnel")
-		return
-	}
-	tunnelConn.conn.SetWriteDeadline(time.Time{})
-
-	// Get buffer from pool for response data
-	responseBuffer := s.bufferPool.Get()
-	defer s.bufferPool.Put(responseBuffer)
-
-	// Wait for response data with timeout
-	responseChan := make(chan *TunnelMessage, 1)
-	errorChan := make(chan error, 1)
-
-	go func() {
-		tunnelConn.readerMu.Lock()
-		defer tunnelConn.readerMu.Unlock()
-
-		var responseMsg TunnelMessage
-		if err := tunnelConn.reader.Decode(&responseMsg); err != nil {
-			errorChan <- fmt.Errorf("error reading response data: %w", err)
-			return
-		}
-
-		if responseMsg.Type != MessageTypeData {
-			errorChan <- fmt.Errorf("unexpected message type in response: %s", responseMsg.Type)
-			return
-		}
-
-		if responseMsg.ID != msgID {
-			errorChan <- fmt.Errorf("response message ID mismatch: got %s, want %s", responseMsg.ID, msgID)
-			return
-		}
-
-		responseChan <- &responseMsg
-	}()
-
-	// Wait for response with increased timeout
-	select {
-	case responseMsg := <-responseChan:
-		var responseDataMsg DataMessage
-		if err := json.Unmarshal(responseMsg.Payload, &responseDataMsg); err != nil {
-			s.logger.Error("[PROXY DEBUG] Error unmarshaling response data: %v", err)
-			s.writeHTTPError(conn, 502, "Bad Gateway - Error processing response")
-			return
-		}
-
-		// Update connection stats
-		tunnelConn.stateManager.AddBytes(0, uint64(len(responseDataMsg.Data)))
-
-		// Write response back to client with timeout
-		conn.SetWriteDeadline(time.Now().Add(60 * time.Second))
-		if _, err := conn.Write(responseDataMsg.Data); err != nil {
-			s.logger.Error("[PROXY DEBUG] Error writing response to client: %v", err)
-			return
-		}
-
-		s.logger.Info("[PROXY DEBUG] Request/response cycle completed successfully")
-
-	case err := <-errorChan:
-		s.logger.Error("[PROXY DEBUG] Error in response handling: %v", err)
-		s.writeHTTPError(conn, 502, "Bad Gateway - Error receiving response from tunnel")
-		return
-
-	case <-time.After(120 * time.Second):
-		s.logger.Error("[PROXY DEBUG] Timeout waiting for response")
-		s.writeHTTPError(conn, 504, "Gateway Timeout - Response timeout")
-		return
-	}
+	s.logger.Info("[PROXY DEBUG] Proxy connection completed")
 }
 
 // writeHTTPError writes a proper HTTP error response
