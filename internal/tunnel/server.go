@@ -48,17 +48,7 @@ func NewServer(tokenRepo repository.TokenRepository, tunnelRepo repository.Tunne
 		bufferPool:    NewBufferPool(),
 		healthChecker: NewHealthChecker(DefaultHealthCheckConfig()),
 		tlsConfig: &tls.Config{
-			MinVersion: tls.VersionTLS12,
-			MaxVersion: tls.VersionTLS13,
-			CipherSuites: []uint16{
-				tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
-				tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-				tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
-				tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
-				tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
-				tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
-			},
-			PreferServerCipherSuites: true,
+			InsecureSkipVerify: true, // Simplified for development
 			GetCertificate: func(info *tls.ClientHelloInfo) (*tls.Certificate, error) {
 				cert, err := tls.LoadX509KeyPair("/app/certs/tunnel.crt", "/app/certs/tunnel.key")
 				if err != nil {
@@ -185,177 +175,35 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 		return
 	}
 
-	// Create connection object with synchronized reader/writer
+	// Create connection object and add to manager
 	connection := s.connections.AddConnection(tunnel.Domain, conn, tunnel.TargetPort)
-	connection.reader = decoder
-	connection.writer = encoder
 	defer s.connections.RemoveConnection(tunnel.Domain)
 
-	// Create channels for different message types
-	dataChan := make(chan *TunnelMessage, 100)    // Buffer for data messages
-	controlChan := make(chan *TunnelMessage, 100) // Buffer for control messages
-	errChan := make(chan error, 2)                // Error channel
-	stopChan := make(chan struct{})               // Stop channel
-	defer close(stopChan)
+	s.logger.Info("Tunnel connection established for domain: %s", tunnel.Domain)
 
-	// Start message reader goroutine
-	go func() {
-		defer func() {
-			close(dataChan)
-			close(controlChan)
-			s.logger.Info("[TUNNEL DEBUG] Message reader stopped")
-		}()
+	// Simple connection keeper - just read simple pings and stay alive
+	buffer := make([]byte, 1024)
+	for {
+		// Set read timeout
+		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 
-		for {
-			select {
-			case <-stopChan:
-				return
-			default:
-				connection.readerMu.Lock()
-				var msg TunnelMessage
-				err := connection.reader.Decode(&msg)
-				connection.readerMu.Unlock()
-
-				if err != nil {
-					if err != io.EOF {
-						errChan <- fmt.Errorf("error reading message: %w", err)
-					}
-					return
-				}
-
-				// Route message based on type
-				switch msg.Type {
-				case MessageTypePing, MessageTypePong:
-					select {
-					case controlChan <- &msg:
-					default:
-						s.logger.Warn("Control channel buffer full, dropping message")
-					}
-				case MessageTypeData:
-					select {
-					case dataChan <- &msg:
-					default:
-						s.logger.Warn("Data channel buffer full, dropping message")
-					}
-				default:
-					s.logger.Error("Unknown message type: %s", msg.Type)
-				}
+		// Try to read from connection
+		_, err := conn.Read(buffer)
+		if err != nil {
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				// Timeout is normal, continue
+				continue
 			}
+			// Connection closed or error
+			s.logger.Info("Tunnel connection closed for domain: %s", tunnel.Domain)
+			break
 		}
-	}()
 
-	// Start ping handler goroutine
-	go func() {
-		pingTicker := time.NewTicker(30 * time.Second)
-		defer pingTicker.Stop()
+		// Update last ping time
+		connection.lastPing = time.Now()
 
-		for {
-			select {
-			case <-stopChan:
-				return
-			case <-pingTicker.C:
-				// Generate unique message ID for correlation
-				msgID := fmt.Sprintf("ping-%d", time.Now().UnixNano())
-
-				// Send ping
-				pingPayload, _ := json.Marshal(PingMessage{
-					Timestamp: time.Now().UnixNano(),
-				})
-				pingMsg := TunnelMessage{
-					Type:    MessageTypePing,
-					ID:      msgID,
-					Payload: pingPayload,
-				}
-
-				// Set write deadline for ping
-				conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
-				connection.writerMu.Lock()
-				err := connection.writer.Encode(pingMsg)
-				connection.writerMu.Unlock()
-				if err != nil {
-					errChan <- fmt.Errorf("error sending ping: %w", err)
-					return
-				}
-				conn.SetWriteDeadline(time.Time{})
-
-				// Wait for matching pong
-				pongTimer := time.NewTimer(5 * time.Second)
-				defer pongTimer.Stop()
-				pongReceived := false
-
-				for !pongReceived {
-					select {
-					case msg := <-controlChan:
-						if msg.Type == MessageTypePong && msg.ID == msgID {
-							var pongResp PongMessage
-							if err := json.Unmarshal(msg.Payload, &pongResp); err != nil {
-								s.logger.Error("Error unmarshaling pong: %v", err)
-								continue
-							}
-							rtt := time.Duration(pongResp.RTT) * time.Nanosecond
-							s.logger.Debug("Ping successful, RTT: %v", rtt)
-							connection.lastPing = time.Now()
-							pongReceived = true
-						}
-					case <-pongTimer.C:
-						errChan <- fmt.Errorf("ping timeout")
-						return
-					case <-stopChan:
-						return
-					}
-				}
-			}
-		}
-	}()
-
-	// Start data handler goroutine
-	go func() {
-		for {
-			select {
-			case <-stopChan:
-				return
-			case msg := <-dataChan:
-				if msg == nil {
-					s.logger.Error("Received nil data message")
-					continue
-				}
-
-				var dataPayload DataMessage
-				if err := json.Unmarshal(msg.Payload, &dataPayload); err != nil {
-					s.logger.Error("Error unmarshaling data message: %v", err)
-					continue
-				}
-
-				// Process data message
-				s.logger.Debug("Received data message of length: %d", len(dataPayload.Data))
-
-				// Send response back through tunnel
-				responsePayload, _ := json.Marshal(DataMessage{
-					Data: dataPayload.Data, // Echo back for now
-				})
-				responseMsg := TunnelMessage{
-					Type:    MessageTypeData,
-					ID:      msg.ID, // Use same ID for correlation
-					Payload: responsePayload,
-				}
-
-				// Set write deadline for response
-				conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
-				connection.writerMu.Lock()
-				err := connection.writer.Encode(responseMsg)
-				connection.writerMu.Unlock()
-				if err != nil {
-					s.logger.Error("Error sending response: %v", err)
-					continue
-				}
-				conn.SetWriteDeadline(time.Time{})
-			}
-		}
-	}()
-
-	// Wait for any error
-	if err := <-errChan; err != nil {
-		s.logger.Error("Connection error: %v", err)
+		// Reset deadline
+		conn.SetReadDeadline(time.Time{})
 	}
 }
 
