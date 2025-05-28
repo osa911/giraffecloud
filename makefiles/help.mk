@@ -1,4 +1,4 @@
-.PHONY: help setup-dev setup-prod validate-env db-init db-migrate db-migrate-create db-migrate-revert db-reset db-backup db-restore db-init-prod db-migrate-prod db-recreate-prod db-backup-prod db-restore-prod dev dev-hot prod build test db-gen db-migrate-status db-hash release release-dry-run snapshot caddy-start caddy-stop caddy-reload
+.PHONY: help setup-dev setup-prod validate-env db-init db-migrate db-migrate-create db-migrate-revert db-reset db-backup db-restore db-init-prod db-migrate-prod db-recreate-prod db-backup-prod db-restore-prod dev dev-hot prod build build-client test db-gen db-migrate-status db-hash release release-dry-run snapshot caddy-start caddy-stop caddy-reload
 
 help:
 	@echo "GiraffeCloud Makefile Commands"
@@ -37,6 +37,7 @@ help:
 	@echo "  dev-hot      - Run development server with hot-reload and Caddy"
 	@echo "  prod         - Run production server"
 	@echo "  build        - Build application binary"
+	@echo "  build-client - Build CLI client for all platforms (macOS, Linux, Windows)"
 	@echo "  test         - Run tests"
 	@echo ""
 	@echo "Caddy:"
