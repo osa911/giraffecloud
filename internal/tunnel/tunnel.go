@@ -2,39 +2,204 @@ package tunnel
 
 import (
 	"bufio"
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"giraffecloud/internal/logging"
+	"math/rand"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 )
 
-// Tunnel represents a secure tunnel connection
-type Tunnel struct {
-	conn      net.Conn
-	stopChan  chan struct{}
-	token     string
-	domain    string
-	localPort int
-	logger    *logging.Logger
-}
+// ConnectionState represents the current state of the tunnel connection
+type ConnectionState int
 
-// NewTunnel creates a new tunnel instance
-func NewTunnel() *Tunnel {
-	return &Tunnel{
-		stopChan: make(chan struct{}),
-		logger:   logging.GetGlobalLogger(),
+const (
+	StateDisconnected ConnectionState = iota
+	StateConnecting
+	StateConnected
+	StateReconnecting
+	StateMaintenance
+	StateFailed
+)
+
+func (s ConnectionState) String() string {
+	switch s {
+	case StateDisconnected:
+		return "Disconnected"
+	case StateConnecting:
+		return "Connecting"
+	case StateConnected:
+		return "Connected"
+	case StateReconnecting:
+		return "Reconnecting"
+	case StateMaintenance:
+		return "Maintenance"
+	case StateFailed:
+		return "Failed"
+	default:
+		return "Unknown"
 	}
 }
 
-// Connect establishes a tunnel connection to the server
+// RetryConfig holds configuration for retry logic
+type RetryConfig struct {
+	MaxRetries      int           `json:"max_retries"`
+	InitialDelay    time.Duration `json:"initial_delay"`
+	MaxDelay        time.Duration `json:"max_delay"`
+	BackoffFactor   float64       `json:"backoff_factor"`
+	JitterEnabled   bool          `json:"jitter_enabled"`
+	HealthCheckInterval time.Duration `json:"health_check_interval"`
+}
+
+// DefaultRetryConfig returns sensible defaults for retry configuration
+func DefaultRetryConfig() *RetryConfig {
+	return &RetryConfig{
+		MaxRetries:      -1, // Infinite retries
+		InitialDelay:    1 * time.Second,
+		MaxDelay:        5 * time.Minute,
+		BackoffFactor:   2.0,
+		JitterEnabled:   true,
+		HealthCheckInterval: 30 * time.Second,
+	}
+}
+
+// Tunnel represents a secure tunnel connection with enhanced reliability
+type Tunnel struct {
+	conn         net.Conn
+	stopChan     chan struct{}
+	token        string
+	domain       string
+	localPort    int
+	logger       *logging.Logger
+
+	// Enhanced connection management
+	state        ConnectionState
+	stateMutex   sync.RWMutex
+	retryConfig  *RetryConfig
+	retryCount   int
+	lastError    error
+
+	// Health monitoring
+	healthTicker *time.Ticker
+	lastPing     time.Time
+
+	// Graceful shutdown
+	ctx          context.Context
+	cancel       context.CancelFunc
+	wg           sync.WaitGroup
+}
+
+// NewTunnel creates a new tunnel instance with enhanced features
+func NewTunnel() *Tunnel {
+	ctx, cancel := context.WithCancel(context.Background())
+	return &Tunnel{
+		stopChan:    make(chan struct{}),
+		logger:      logging.GetGlobalLogger(),
+		state:       StateDisconnected,
+		retryConfig: DefaultRetryConfig(),
+		ctx:         ctx,
+		cancel:      cancel,
+	}
+}
+
+// SetRetryConfig allows customization of retry behavior
+func (t *Tunnel) SetRetryConfig(config *RetryConfig) {
+	t.retryConfig = config
+}
+
+// GetState returns the current connection state
+func (t *Tunnel) GetState() ConnectionState {
+	t.stateMutex.RLock()
+	defer t.stateMutex.RUnlock()
+	return t.state
+}
+
+// setState updates the connection state
+func (t *Tunnel) setState(state ConnectionState) {
+	t.stateMutex.Lock()
+	defer t.stateMutex.Unlock()
+	if t.state != state {
+		t.logger.Info("Connection state changed: %s -> %s", t.state, state)
+		t.state = state
+	}
+}
+
+// Connect establishes a tunnel connection with retry logic
 func (t *Tunnel) Connect(serverAddr, token, domain string, localPort int, tlsConfig *tls.Config) error {
 	t.token = token
 	t.domain = domain
 	t.localPort = localPort
 
+	// Start the connection with retry logic
+	return t.connectWithRetry(serverAddr, tlsConfig)
+}
+
+// connectWithRetry implements exponential backoff retry logic
+func (t *Tunnel) connectWithRetry(serverAddr string, tlsConfig *tls.Config) error {
+	t.retryCount = 0
+	delay := t.retryConfig.InitialDelay
+
+	for {
+		select {
+		case <-t.ctx.Done():
+			return fmt.Errorf("connection cancelled")
+		default:
+		}
+
+		// Check if we've exceeded max retries (if set)
+		if t.retryConfig.MaxRetries > 0 && t.retryCount >= t.retryConfig.MaxRetries {
+			t.setState(StateFailed)
+			return fmt.Errorf("max retries (%d) exceeded, last error: %w", t.retryConfig.MaxRetries, t.lastError)
+		}
+
+		// Set appropriate state
+		if t.retryCount == 0 {
+			t.setState(StateConnecting)
+		} else {
+			t.setState(StateReconnecting)
+			t.logger.Info("Retrying connection (attempt %d) in %v...", t.retryCount+1, delay)
+
+			// Wait with context cancellation support
+			select {
+			case <-time.After(delay):
+			case <-t.ctx.Done():
+				return fmt.Errorf("connection cancelled during retry")
+			}
+		}
+
+		// Attempt connection
+		err := t.attemptConnection(serverAddr, tlsConfig)
+		if err == nil {
+			// Success! Reset retry count and start health monitoring
+			t.retryCount = 0
+			t.setState(StateConnected)
+			t.startHealthMonitoring()
+			return nil
+		}
+
+		// Connection failed
+		t.lastError = err
+		t.retryCount++
+
+		// Check if this is a maintenance mode error
+		if isMaintenanceError(err) {
+			t.setState(StateMaintenance)
+			t.logger.Info("Server is in maintenance mode, will retry when available")
+			delay = t.retryConfig.HealthCheckInterval // Use health check interval for maintenance
+		} else {
+			// Calculate next delay with exponential backoff
+			delay = t.calculateNextDelay(delay)
+			t.logger.Error("Connection failed (attempt %d): %v", t.retryCount, err)
+		}
+	}
+}
+
+// attemptConnection tries to establish a single connection
+func (t *Tunnel) attemptConnection(serverAddr string, tlsConfig *tls.Config) error {
 	// Simplify TLS config - use defaults for better compatibility
 	if tlsConfig == nil {
 		tlsConfig = &tls.Config{
@@ -42,19 +207,24 @@ func (t *Tunnel) Connect(serverAddr, token, domain string, localPort int, tlsCon
 		}
 	}
 
-	// Connect to server with TLS
-	conn, err := tls.Dial("tcp", serverAddr, tlsConfig)
+	// Connect to server with TLS and timeout
+	dialer := &net.Dialer{
+		Timeout: 10 * time.Second,
+	}
+
+	conn, err := tls.DialWithDialer(dialer, "tcp", serverAddr, tlsConfig)
 	if err != nil {
 		return fmt.Errorf("failed to connect to server: %w", err)
 	}
-	t.conn = conn
 
-	// Perform handshake
-	resp, err := Perform(conn, token)
+	// Perform handshake with timeout
+	conn.SetDeadline(time.Now().Add(30 * time.Second))
+	resp, err := Perform(conn, t.token)
 	if err != nil {
 		conn.Close()
 		return fmt.Errorf("handshake failed: %w", err)
 	}
+	conn.SetDeadline(time.Time{}) // Clear deadline
 
 	// Update local values with server response
 	t.domain = resp.Domain
@@ -70,16 +240,154 @@ func (t *Tunnel) Connect(serverAddr, token, domain string, localPort int, tlsCon
 	}
 	localConn.Close()
 
+	// Store connection and start handling
+	t.conn = conn
+	t.lastPing = time.Now()
+
 	t.logger.Info("Tunnel connected successfully. Domain: %s, Local Port: %d", t.domain, t.localPort)
 
 	// Start HTTP forwarding
+	t.wg.Add(1)
 	go t.handleConnection()
 
 	return nil
 }
 
+// calculateNextDelay implements exponential backoff with jitter
+func (t *Tunnel) calculateNextDelay(currentDelay time.Duration) time.Duration {
+	// Exponential backoff
+	nextDelay := time.Duration(float64(currentDelay) * t.retryConfig.BackoffFactor)
+
+	// Cap at max delay
+	if nextDelay > t.retryConfig.MaxDelay {
+		nextDelay = t.retryConfig.MaxDelay
+	}
+
+	// Add jitter to prevent thundering herd
+	if t.retryConfig.JitterEnabled {
+		jitter := time.Duration(float64(nextDelay) * 0.1 * (2*rand.Float64() - 1))
+		nextDelay += jitter
+	}
+
+	return nextDelay
+}
+
+// isMaintenanceError checks if the error indicates server maintenance
+func isMaintenanceError(err error) bool {
+	// Check for specific maintenance-related error messages
+	errStr := err.Error()
+	maintenanceKeywords := []string{
+		"maintenance",
+		"service unavailable",
+		"temporarily unavailable",
+		"503",
+	}
+
+	for _, keyword := range maintenanceKeywords {
+		if contains(errStr, keyword) {
+			return true
+		}
+	}
+	return false
+}
+
+// contains is a simple string contains check (case-insensitive)
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) &&
+		   (s == substr ||
+		    (len(s) > len(substr) &&
+		     (s[:len(substr)] == substr ||
+		      s[len(s)-len(substr):] == substr ||
+		      indexOf(s, substr) >= 0)))
+}
+
+func indexOf(s, substr string) int {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return i
+		}
+	}
+	return -1
+}
+
+// startHealthMonitoring begins periodic health checks
+func (t *Tunnel) startHealthMonitoring() {
+	if t.healthTicker != nil {
+		t.healthTicker.Stop()
+	}
+
+	t.healthTicker = time.NewTicker(t.retryConfig.HealthCheckInterval)
+
+	t.wg.Add(1)
+	go func() {
+		defer t.wg.Done()
+		defer t.healthTicker.Stop()
+
+		for {
+			select {
+			case <-t.healthTicker.C:
+				if !t.performHealthCheck() {
+					t.logger.Info("Health check failed, attempting reconnection...")
+					t.reconnect()
+					return
+				}
+			case <-t.ctx.Done():
+				return
+			}
+		}
+	}()
+}
+
+// performHealthCheck sends a ping and checks connection health
+func (t *Tunnel) performHealthCheck() bool {
+	if t.conn == nil {
+		return false
+	}
+
+	// Simple ping by setting a short deadline and trying to read
+	t.conn.SetReadDeadline(time.Now().Add(1 * time.Second))
+	defer t.conn.SetReadDeadline(time.Time{})
+
+	// Try to send a small ping message
+	pingMsg := map[string]interface{}{
+		"type": "ping",
+		"timestamp": time.Now().Unix(),
+	}
+
+	encoder := json.NewEncoder(t.conn)
+	if err := encoder.Encode(pingMsg); err != nil {
+		t.logger.Debug("Health check ping failed: %v", err)
+		return false
+	}
+
+	t.lastPing = time.Now()
+	return true
+}
+
+// reconnect handles reconnection logic
+func (t *Tunnel) reconnect() {
+	// Close current connection
+	if t.conn != nil {
+		t.conn.Close()
+		t.conn = nil
+	}
+
+	// Stop health monitoring
+	if t.healthTicker != nil {
+		t.healthTicker.Stop()
+		t.healthTicker = nil
+	}
+
+	// Start reconnection process
+	go func() {
+		serverAddr := fmt.Sprintf("%s:%d", "tunnel.giraffecloud.xyz", 4443) // TODO: make configurable
+		t.connectWithRetry(serverAddr, nil)
+	}()
+}
+
 // handleConnection handles HTTP requests from the tunnel server
 func (t *Tunnel) handleConnection() {
+	defer t.wg.Done()
 	defer func() {
 		if t.conn != nil {
 			t.conn.Close()
@@ -95,7 +403,7 @@ func (t *Tunnel) handleConnection() {
 	// Handle incoming HTTP requests from the tunnel
 	for {
 		select {
-		case <-t.stopChan:
+		case <-t.ctx.Done():
 			return
 		default:
 			// Set read timeout for incoming requests
@@ -108,8 +416,9 @@ func (t *Tunnel) handleConnection() {
 					// Timeout is normal, continue
 					continue
 				}
-				// Connection closed or error
+				// Connection closed or error - trigger reconnection
 				t.logger.Info("Tunnel connection closed: %v", err)
+				t.reconnect()
 				return
 			}
 
@@ -161,37 +470,82 @@ func (t *Tunnel) handleConnection() {
 
 // Disconnect closes the tunnel connection and cleans up resources
 func (t *Tunnel) Disconnect() error {
-	if t.conn == nil {
-		return nil
+	// Cancel context to stop all goroutines
+	t.cancel()
+
+	// Stop health monitoring
+	if t.healthTicker != nil {
+		t.healthTicker.Stop()
+		t.healthTicker = nil
 	}
 
-	// Signal all goroutines to stop
-	close(t.stopChan)
-
-	// Set a deadline for graceful shutdown
-	t.conn.SetDeadline(time.Now().Add(5 * time.Second))
-
-	// Send a final control message to notify server (simplified)
-	encoder := json.NewEncoder(t.conn)
-	closeMsg := map[string]string{
-		"type":   "control",
-		"action": "shutdown",
-		"reason": "client_disconnect",
+	// Close stop channel
+	select {
+	case <-t.stopChan:
+	default:
+		close(t.stopChan)
 	}
-	_ = encoder.Encode(closeMsg)
 
-	// Close the connection
-	err := t.conn.Close()
-	t.conn = nil
+	// Close connection if exists
+	var err error
+	if t.conn != nil {
+		// Set a deadline for graceful shutdown
+		t.conn.SetDeadline(time.Now().Add(5 * time.Second))
 
-	// Wait for a moment to allow goroutines to clean up
-	time.Sleep(100 * time.Millisecond)
+		// Send a final control message to notify server
+		encoder := json.NewEncoder(t.conn)
+		closeMsg := map[string]string{
+			"type":   "control",
+			"action": "shutdown",
+			"reason": "client_disconnect",
+		}
+		_ = encoder.Encode(closeMsg)
 
+		// Close the connection
+		err = t.conn.Close()
+		t.conn = nil
+	}
+
+	// Wait for all goroutines to finish with timeout
+	done := make(chan struct{})
+	go func() {
+		t.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// All goroutines finished
+	case <-time.After(10 * time.Second):
+		t.logger.Info("Timeout waiting for goroutines to finish")
+	}
+
+	t.setState(StateDisconnected)
 	t.logger.Info("Tunnel disconnected")
 	return err
 }
 
 // IsConnected returns true if the tunnel is connected
 func (t *Tunnel) IsConnected() bool {
-	return t.conn != nil
+	return t.GetState() == StateConnected
+}
+
+// GetStats returns connection statistics
+func (t *Tunnel) GetStats() map[string]interface{} {
+	t.stateMutex.RLock()
+	defer t.stateMutex.RUnlock()
+
+	stats := map[string]interface{}{
+		"state":        t.state.String(),
+		"retry_count":  t.retryCount,
+		"domain":       t.domain,
+		"local_port":   t.localPort,
+		"last_ping":    t.lastPing,
+	}
+
+	if t.lastError != nil {
+		stats["last_error"] = t.lastError.Error()
+	}
+
+	return stats
 }

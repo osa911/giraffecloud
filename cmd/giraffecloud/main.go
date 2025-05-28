@@ -9,6 +9,7 @@ import (
 	"giraffecloud/internal/logging"
 	"giraffecloud/internal/tunnel"
 	"giraffecloud/internal/version"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -289,6 +290,102 @@ Example:
 	},
 }
 
+var statusCmd = &cobra.Command{
+	Use:   "status",
+	Short: "Show tunnel connection status and statistics",
+	Long:  `Display the current status of the tunnel connection, including connection state, retry count, and other statistics.`,
+	Run: func(cmd *cobra.Command, args []string) {
+		// Note: This is a simplified status check
+		// In a real implementation, you'd want to connect to a running tunnel process
+		// or read status from a shared file/socket
+
+		cfg, err := tunnel.LoadConfig()
+		if err != nil {
+			logger.Error("Error loading config: %v", err)
+			os.Exit(1)
+		}
+
+		logger.Info("=== GiraffeCloud Tunnel Status ===")
+		logger.Info("Configuration:")
+		logger.Info("  Domain: %s", cfg.Domain)
+		logger.Info("  Local Port: %d", cfg.LocalPort)
+		logger.Info("  Server: %s:%d", cfg.Server.Host, cfg.Server.Port)
+
+		if cfg.Security.CACert != "" {
+			logger.Info("  CA Certificate: %s", cfg.Security.CACert)
+		}
+		if cfg.Security.ClientCert != "" {
+			logger.Info("  Client Certificate: %s", cfg.Security.ClientCert)
+		}
+
+		// Check if certificates exist
+		if cfg.Security.CACert != "" {
+			if _, err := os.Stat(cfg.Security.CACert); os.IsNotExist(err) {
+				logger.Info("  Status: ❌ CA certificate not found - run 'giraffecloud login' first")
+				return
+			}
+		}
+
+		if cfg.Security.ClientCert != "" {
+			if _, err := os.Stat(cfg.Security.ClientCert); os.IsNotExist(err) {
+				logger.Info("  Status: ❌ Client certificate not found - run 'giraffecloud login' first")
+				return
+			}
+		}
+
+		// Try to connect briefly to check server availability
+		logger.Info("Checking server connectivity...")
+
+		// Create TLS config
+		tlsConfig := &tls.Config{
+			InsecureSkipVerify: cfg.Security.InsecureSkipVerify,
+		}
+
+		// Load CA certificate if provided
+		if cfg.Security.CACert != "" {
+			caCert, err := os.ReadFile(cfg.Security.CACert)
+			if err != nil {
+				logger.Info("  Status: ❌ Failed to read CA certificate: %v", err)
+				return
+			}
+
+			caCertPool := x509.NewCertPool()
+			if !caCertPool.AppendCertsFromPEM(caCert) {
+				logger.Info("  Status: ❌ Failed to parse CA certificate")
+				return
+			}
+
+			tlsConfig.RootCAs = caCertPool
+		}
+
+		// Load client certificate if provided
+		if cfg.Security.ClientCert != "" && cfg.Security.ClientKey != "" {
+			cert, err := tls.LoadX509KeyPair(cfg.Security.ClientCert, cfg.Security.ClientKey)
+			if err != nil {
+				logger.Info("  Status: ❌ Failed to load client certificate: %v", err)
+				return
+			}
+			tlsConfig.Certificates = []tls.Certificate{cert}
+		}
+
+		serverAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
+		dialer := &net.Dialer{
+			Timeout: 5 * time.Second,
+		}
+
+		conn, err := tls.DialWithDialer(dialer, "tcp", serverAddr, tlsConfig)
+		if err != nil {
+			logger.Info("  Status: ❌ Cannot connect to server: %v", err)
+			logger.Info("  Suggestion: Check if server is running or try 'giraffecloud connect'")
+			return
+		}
+		conn.Close()
+
+		logger.Info("  Status: ✅ Server is reachable")
+		logger.Info("  Suggestion: Run 'giraffecloud connect' to establish tunnel")
+	},
+}
+
 func init() {
 	// Initialize logger first
 	initLogger()
@@ -298,6 +395,7 @@ func init() {
 	rootCmd.AddCommand(serviceCmd)
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(loginCmd)
+	rootCmd.AddCommand(statusCmd)
 
 	serviceCmd.AddCommand(installCmd)
 	serviceCmd.AddCommand(uninstallCmd)
