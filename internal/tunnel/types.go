@@ -86,6 +86,8 @@ func NewTunnelConnection(domain string, conn net.Conn, targetPort int) *TunnelCo
 		domain:        domain,
 		targetPort:    targetPort,
 		stopChan:      make(chan struct{}),
+		reader:        json.NewDecoder(conn),  // Initialize JSON decoder
+		writer:        json.NewEncoder(conn),  // Initialize JSON encoder
 		healthChecker: NewHealthChecker(DefaultHealthCheckConfig()),
 		stateManager:  NewConnectionStateManager(),
 		rateLimiter:   NewRateLimiter(DefaultRateLimiterConfig()),
@@ -96,18 +98,24 @@ func NewTunnelConnection(domain string, conn net.Conn, targetPort int) *TunnelCo
 }
 
 // Close closes the tunnel connection and cleans up resources
-func (c *TunnelConnection) Close() error {
-	if c.healthChecker != nil {
-		c.healthChecker.Stop()
+func (tc *TunnelConnection) Close() error {
+	// Signal stop to any goroutines
+	select {
+	case <-tc.stopChan:
+		// Already closed
+	default:
+		close(tc.stopChan)
 	}
-	if c.cleanupTicker != nil {
-		c.cleanupTicker.Stop()
+
+	// Stop cleanup ticker if it exists
+	if tc.cleanupTicker != nil {
+		tc.cleanupTicker.Stop()
 	}
-	if c.stopChan != nil {
-		close(c.stopChan)
+
+	// Close the underlying connection
+	if tc.conn != nil {
+		return tc.conn.Close()
 	}
-	if c.conn != nil {
-		return c.conn.Close()
-	}
+
 	return nil
 }
