@@ -33,6 +33,10 @@ build:
 	@echo "Building application..."
 	@go build -o bin/giraffecloud cmd/server/main.go
 
+build-client:
+	@echo "Building CLI client..."
+	@./scripts/build-cli.sh
+
 # Test commands
 test:
 	@echo "Running tests..."
