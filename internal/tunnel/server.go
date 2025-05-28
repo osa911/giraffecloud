@@ -174,34 +174,27 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 	}
 
 	// Create connection object and add to manager
-	connection := s.connections.AddConnection(tunnel.Domain, conn, tunnel.TargetPort)
+	s.connections.AddConnection(tunnel.Domain, conn, tunnel.TargetPort)
 	defer s.connections.RemoveConnection(tunnel.Domain)
 
 	s.logger.Info("Tunnel connection established for domain: %s", tunnel.Domain)
 
-	// Simple connection keeper - just read simple pings and stay alive
-	buffer := make([]byte, 1024)
+	// Wait for the connection to close
+	// The connection will be used by ProxyConnection for HTTP forwarding
+	buffer := make([]byte, 1)
 	for {
-		// Set read timeout
-		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		// Set a very long read timeout to keep connection alive
+		conn.SetReadDeadline(time.Now().Add(3600 * time.Second)) // 1 hour
 
-		// Try to read from connection
+		// Try to read from connection - this will block until data or error
 		_, err := conn.Read(buffer)
 		if err != nil {
-			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-				// Timeout is normal, continue
-				continue
-			}
 			// Connection closed or error
 			s.logger.Info("Tunnel connection closed for domain: %s", tunnel.Domain)
 			break
 		}
-
-		// Update last ping time
-		connection.lastPing = time.Now()
-
-		// Reset deadline
-		conn.SetReadDeadline(time.Time{})
+		// If we get any data, just continue - this shouldn't happen in normal operation
+		// as ProxyConnection will handle all HTTP data
 	}
 }
 
