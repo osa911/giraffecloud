@@ -36,17 +36,13 @@ type TunnelServer struct {
 	tunnelRepo    repository.TunnelRepository
 	tunnelService interfaces.TunnelService
 	connections   *ConnectionManager
-	bufferPool    *BufferPool
-	healthChecker *HealthChecker
 }
 
 // NewServer creates a new tunnel server instance
 func NewServer(tokenRepo repository.TokenRepository, tunnelRepo repository.TunnelRepository, tunnelService interfaces.TunnelService) *TunnelServer {
 	return &TunnelServer{
-		logger:        logging.GetGlobalLogger(),
-		connections:   NewConnectionManager(),
-		bufferPool:    NewBufferPool(),
-		healthChecker: NewHealthChecker(DefaultHealthCheckConfig()),
+		logger:      logging.GetGlobalLogger(),
+		connections: NewConnectionManager(),
 		tlsConfig: &tls.Config{
 			InsecureSkipVerify: true, // Simplified for development
 			GetCertificate: func(info *tls.ClientHelloInfo) (*tls.Certificate, error) {
