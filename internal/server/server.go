@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -344,25 +343,7 @@ func (s *Server) Start(cfg *Config) error {
 			requestBytes := []byte(requestData.String())
 			logger.Info("[HIJACK DEBUG] Forwarding HTTP request:\n%s", requestData.String())
 
-			// Write the request headers
-			if _, err := conn.Write(requestBytes); err != nil {
-				logger.Error("[HIJACK DEBUG] Failed to write request headers: %v", err)
-				return
-			}
-
-			// Copy request body if present
-			if r.Body != nil {
-				logger.Info("[HIJACK DEBUG] Copying request body")
-				written, err := io.Copy(conn, r.Body)
-				if err != nil {
-					logger.Error("[HIJACK DEBUG] Failed to copy request body: %v", err)
-					return
-				}
-				logger.Info("[HIJACK DEBUG] Wrote %d bytes of request body", written)
-				r.Body.Close()
-			}
-
-			// Ensure any buffered data is written
+			// Ensure any buffered data is flushed before proxying
 			if bufrw.Writer.Buffered() > 0 {
 				if err := bufrw.Writer.Flush(); err != nil {
 					logger.Error("[HIJACK DEBUG] Failed to flush buffered data: %v", err)
@@ -371,7 +352,7 @@ func (s *Server) Start(cfg *Config) error {
 			}
 
 			logger.Info("[HIJACK DEBUG] Proxying connection for domain: %s", domain)
-			s.tunnelServer.ProxyConnection(domain, conn)
+			s.tunnelServer.ProxyConnection(domain, conn, requestBytes, r.Body)
 		} else {
 			http.Error(w, "Not Found", http.StatusNotFound)
 		}

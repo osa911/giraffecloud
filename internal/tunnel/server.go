@@ -1,6 +1,7 @@
 package tunnel
 
 import (
+	"bufio"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -10,6 +11,7 @@ import (
 	"giraffecloud/internal/repository"
 	"io"
 	"net"
+	"net/http"
 	"time"
 )
 
@@ -207,7 +209,7 @@ func (s *TunnelServer) IsTunnelDomain(domain string) bool {
 }
 
 // ProxyConnection handles proxying an HTTP connection to the appropriate tunnel
-func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
+func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData []byte, requestBody io.Reader) {
 	defer conn.Close()
 
 	tunnelConn := s.connections.GetConnection(domain)
@@ -217,33 +219,54 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn) {
 		return
 	}
 
-	s.logger.Info("[PROXY DEBUG] Starting simple proxy connection for domain: %s", domain)
+	s.logger.Info("[PROXY DEBUG] Starting HTTP proxy for domain: %s", domain)
 
-	// Simple bidirectional copy between client and tunnel
-	// This bypasses the complex JSON protocol and just forwards raw HTTP
-
-	// Copy from client to tunnel
-	go func() {
-		defer tunnelConn.conn.Close()
-		defer conn.Close()
-
-		written, err := io.Copy(tunnelConn.conn, conn)
-		if err != nil {
-			s.logger.Error("[PROXY DEBUG] Error copying client->tunnel: %v", err)
-		} else {
-			s.logger.Info("[PROXY DEBUG] Copied %d bytes client->tunnel", written)
-		}
-	}()
-
-	// Copy from tunnel to client
-	written, err := io.Copy(conn, tunnelConn.conn)
-	if err != nil {
-		s.logger.Error("[PROXY DEBUG] Error copying tunnel->client: %v", err)
-	} else {
-		s.logger.Info("[PROXY DEBUG] Copied %d bytes tunnel->client", written)
+	// Write the HTTP request headers to the tunnel connection
+	if _, err := tunnelConn.conn.Write(requestData); err != nil {
+		s.logger.Error("[PROXY DEBUG] Error writing request headers to tunnel: %v", err)
+		s.writeHTTPError(conn, 502, "Bad Gateway")
+		return
 	}
 
-	s.logger.Info("[PROXY DEBUG] Proxy connection completed")
+	s.logger.Info("[PROXY DEBUG] Sent HTTP request headers to tunnel")
+
+	// Copy request body if present
+	if requestBody != nil {
+		written, err := io.Copy(tunnelConn.conn, requestBody)
+		if err != nil {
+			s.logger.Error("[PROXY DEBUG] Error writing request body to tunnel: %v", err)
+			s.writeHTTPError(conn, 502, "Bad Gateway")
+			return
+		}
+		s.logger.Info("[PROXY DEBUG] Sent %d bytes of request body to tunnel", written)
+	}
+
+	// Read the HTTP response from the tunnel
+	tunnelReader := bufio.NewReader(tunnelConn.conn)
+
+	// Parse the response
+	response, err := http.ReadResponse(tunnelReader, nil)
+	if err != nil {
+		s.logger.Error("[PROXY DEBUG] Error reading response from tunnel: %v", err)
+		s.writeHTTPError(conn, 502, "Bad Gateway")
+		return
+	}
+
+	s.logger.Info("[PROXY DEBUG] Received HTTP response: %s", response.Status)
+
+	// Write the response back to the client
+	clientWriter := bufio.NewWriter(conn)
+	if err := response.Write(clientWriter); err != nil {
+		s.logger.Error("[PROXY DEBUG] Error writing response to client: %v", err)
+		return
+	}
+
+	if err := clientWriter.Flush(); err != nil {
+		s.logger.Error("[PROXY DEBUG] Error flushing response: %v", err)
+		return
+	}
+
+	s.logger.Info("[PROXY DEBUG] HTTP proxy completed successfully")
 }
 
 // writeHTTPError writes a proper HTTP error response
