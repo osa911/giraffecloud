@@ -137,7 +137,7 @@ Example:
 		s := spinner.New(spinner.CharSets[14], 120*time.Millisecond)
 		s.Suffix = " Connecting to GiraffeCloud..."
 		s.Start()
-		err = t.Connect(serverAddr, cfg.Token, cfg.Domain, cfg.LocalPort, tlsConfig)
+		err = t.Connect(ctx, serverAddr, cfg.Token, cfg.Domain, cfg.LocalPort, tlsConfig)
 		s.Stop()
 
 		if err != nil {

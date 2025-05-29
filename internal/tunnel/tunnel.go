@@ -95,14 +95,11 @@ type Tunnel struct {
 
 // NewTunnel creates a new tunnel instance with enhanced features
 func NewTunnel() *Tunnel {
-	ctx, cancel := context.WithCancel(context.Background())
 	return &Tunnel{
 		stopChan:    make(chan struct{}),
 		logger:      logging.GetGlobalLogger(),
 		state:       StateDisconnected,
 		retryConfig: DefaultRetryConfig(),
-		ctx:         ctx,
-		cancel:      cancel,
 	}
 }
 
@@ -129,7 +126,10 @@ func (t *Tunnel) setState(state ConnectionState) {
 }
 
 // Connect establishes a tunnel connection with retry logic
-func (t *Tunnel) Connect(serverAddr, token, domain string, localPort int, tlsConfig *tls.Config) error {
+func (t *Tunnel) Connect(ctx context.Context, serverAddr, token, domain string, localPort int, tlsConfig *tls.Config) error {
+	// Use the provided context instead of creating our own
+	t.ctx, t.cancel = context.WithCancel(ctx)
+
 	t.token = token
 	t.domain = domain
 	t.localPort = localPort
