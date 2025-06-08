@@ -100,6 +100,7 @@ type Tunnel struct {
 	// Reconnection coordination
 	reconnectMutex sync.Mutex
 	isReconnecting bool
+	isIntentionalReconnect bool // Flag to prevent race conditions during WebSocket recycling
 }
 
 // NewTunnel creates a new tunnel instance with enhanced features
@@ -550,6 +551,11 @@ func (t *Tunnel) startHealthMonitoring() {
 
 // coordinatedReconnect handles reconnection logic with coordination between HTTP and WebSocket handlers
 func (t *Tunnel) coordinatedReconnect() {
+	t.coordinatedReconnectWithContext(false)
+}
+
+// coordinatedReconnectWithContext handles reconnection with context about whether it's intentional
+func (t *Tunnel) coordinatedReconnectWithContext(isIntentional bool) {
 	// Use mutex to prevent multiple reconnection attempts
 	t.reconnectMutex.Lock()
 	defer t.reconnectMutex.Unlock()
@@ -560,12 +566,24 @@ func (t *Tunnel) coordinatedReconnect() {
 		return
 	}
 
+	// If this is an automatic reconnection but we're doing an intentional reconnection, skip
+	if !isIntentional && t.isIntentionalReconnect {
+		t.logger.Info("Intentional reconnection in progress, skipping automatic reconnection")
+		return
+	}
+
 	t.isReconnecting = true
+	t.isIntentionalReconnect = isIntentional
 	defer func() {
 		t.isReconnecting = false
+		t.isIntentionalReconnect = false
 	}()
 
-	t.logger.Info("Starting coordinated reconnection...")
+	if isIntentional {
+		t.logger.Info("Starting intentional reconnection (WebSocket recycling)...")
+	} else {
+		t.logger.Info("Starting automatic reconnection (connection lost)...")
+	}
 
 	// Close both connections
 	if t.conn != nil {
