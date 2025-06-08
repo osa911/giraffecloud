@@ -12,6 +12,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
 )
 
 /**
@@ -274,4 +275,120 @@ func (s *TunnelServer) writeHTTPError(conn net.Conn, code int, message string) {
 		"%s", code, statusText, message)
 
 	conn.Write([]byte(response))
+}
+
+// ProxyWebSocketConnection handles WebSocket upgrade and bidirectional forwarding
+func (s *TunnelServer) ProxyWebSocketConnection(domain string, clientConn net.Conn, r *http.Request) {
+	defer clientConn.Close()
+
+	tunnelConn := s.connections.GetConnection(domain)
+	if tunnelConn == nil {
+		s.logger.Error("No tunnel connection found for domain: %s", domain)
+		s.writeHTTPError(clientConn, 502, "Bad Gateway - Tunnel not connected")
+		return
+	}
+
+	s.logger.Info("[WEBSOCKET DEBUG] Starting WebSocket proxy for domain: %s", domain)
+
+	// Build the WebSocket upgrade request
+	var requestData strings.Builder
+
+	// Add request line
+	requestData.WriteString(fmt.Sprintf("%s %s HTTP/1.1\r\n", r.Method, r.URL.RequestURI()))
+
+	// Add Host header first
+	requestData.WriteString(fmt.Sprintf("Host: %s\r\n", r.Host))
+
+	// Add all headers (WebSocket upgrade headers are critical)
+	for key, values := range r.Header {
+		if key != "Host" { // Skip Host as we already added it
+			for _, value := range values {
+				requestData.WriteString(fmt.Sprintf("%s: %s\r\n", key, value))
+			}
+		}
+	}
+
+	// Add empty line to separate headers from body
+	requestData.WriteString("\r\n")
+
+	// Get the request as bytes
+	requestBytes := []byte(requestData.String())
+	s.logger.Info("[WEBSOCKET DEBUG] Forwarding WebSocket upgrade request:\n%s", requestData.String())
+
+	// Lock the tunnel connection only for the upgrade handshake
+	tunnelConn.Lock()
+
+	// Send the upgrade request to the tunnel
+	if _, err := tunnelConn.conn.Write(requestBytes); err != nil {
+		s.logger.Error("[WEBSOCKET DEBUG] Error writing upgrade request to tunnel: %v", err)
+		tunnelConn.Unlock()
+		s.writeHTTPError(clientConn, 502, "Bad Gateway")
+		return
+	}
+
+	s.logger.Info("[WEBSOCKET DEBUG] Sent WebSocket upgrade request to tunnel")
+
+	// Read the upgrade response from the tunnel
+	tunnelReader := bufio.NewReader(tunnelConn.conn)
+	response, err := http.ReadResponse(tunnelReader, nil)
+	if err != nil {
+		s.logger.Error("[WEBSOCKET DEBUG] Error reading upgrade response from tunnel: %v", err)
+		tunnelConn.Unlock()
+		s.writeHTTPError(clientConn, 502, "Bad Gateway")
+		return
+	}
+
+	s.logger.Info("[WEBSOCKET DEBUG] Received upgrade response: %s", response.Status)
+
+	// Write the upgrade response back to the client
+	clientWriter := bufio.NewWriter(clientConn)
+	if err := response.Write(clientWriter); err != nil {
+		s.logger.Error("[WEBSOCKET DEBUG] Error writing upgrade response to client: %v", err)
+		tunnelConn.Unlock()
+		return
+	}
+
+	if err := clientWriter.Flush(); err != nil {
+		s.logger.Error("[WEBSOCKET DEBUG] Error flushing upgrade response: %v", err)
+		tunnelConn.Unlock()
+		return
+	}
+
+	// Check if the upgrade was successful (101 Switching Protocols)
+	if response.StatusCode != 101 {
+		s.logger.Error("[WEBSOCKET DEBUG] WebSocket upgrade failed with status: %d", response.StatusCode)
+		tunnelConn.Unlock()
+		return
+	}
+
+	s.logger.Info("[WEBSOCKET DEBUG] WebSocket upgrade successful, starting bidirectional forwarding")
+
+	// Unlock the tunnel connection after successful upgrade
+	// We don't need serialization for WebSocket data forwarding
+	tunnelConn.Unlock()
+
+	// Start bidirectional copying
+	errChan := make(chan error, 2)
+
+	// Copy from client to tunnel
+	go func() {
+		_, err := io.Copy(tunnelConn.conn, clientConn)
+		errChan <- err
+	}()
+
+	// Copy from tunnel to client
+	go func() {
+		_, err := io.Copy(clientConn, tunnelConn.conn)
+		errChan <- err
+	}()
+
+	// Wait for either direction to close or error
+	err = <-errChan
+	if err != nil {
+		s.logger.Info("[WEBSOCKET DEBUG] WebSocket connection closed: %v", err)
+	} else {
+		s.logger.Info("[WEBSOCKET DEBUG] WebSocket connection closed normally")
+	}
+
+	s.logger.Info("[WEBSOCKET DEBUG] WebSocket proxy completed")
 }

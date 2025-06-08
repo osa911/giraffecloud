@@ -6,9 +6,11 @@ import (
 	"crypto/tls"
 	"fmt"
 	"giraffecloud/internal/logging"
+	"io"
 	"math/rand"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -377,45 +379,164 @@ func (t *Tunnel) handleConnection() {
 
 			t.logger.Info("Received HTTP request: %s %s", request.Method, request.URL.Path)
 
-			// Connect to local service for this request
-			localConn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", t.localPort), 5*time.Second)
-			if err != nil {
-				t.logger.Error("Failed to connect to local service: %v", err)
-				// Send error response back through tunnel
-				errorResponse := "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-				t.conn.Write([]byte(errorResponse))
-				continue
+			// Check if this is a WebSocket upgrade request
+			isWebSocket := t.isWebSocketUpgrade(request)
+			if isWebSocket {
+				t.logger.Info("[WEBSOCKET DEBUG] Detected WebSocket upgrade request")
+				t.handleWebSocketUpgrade(request)
+				return // WebSocket connections don't continue the HTTP loop
 			}
 
-			// Forward the request to local service
-			if err := request.Write(localConn); err != nil {
-				t.logger.Error("Failed to write request to local service: %v", err)
-				localConn.Close()
-				continue
-			}
-
-			t.logger.Info("Request forwarded to local service, reading response")
-
-			// Read response from local service
-			localReader := bufio.NewReader(localConn)
-			response, err := http.ReadResponse(localReader, request)
-			if err != nil {
-				t.logger.Error("Error reading response from local service: %v", err)
-				localConn.Close()
-				continue
-			}
-
-			// Write response back to tunnel
-			if err := response.Write(t.conn); err != nil {
-				t.logger.Error("Error writing response to tunnel: %v", err)
-				localConn.Close()
-				continue
-			}
-
-			localConn.Close()
-			t.logger.Info("HTTP request/response cycle completed")
+			// Handle regular HTTP request
+			t.handleHTTPRequest(request)
 		}
 	}
+}
+
+// isWebSocketUpgrade checks if the HTTP request is a WebSocket upgrade request
+func (t *Tunnel) isWebSocketUpgrade(r *http.Request) bool {
+	connection := r.Header.Get("Connection")
+	upgrade := r.Header.Get("Upgrade")
+	webSocketKey := r.Header.Get("Sec-WebSocket-Key")
+
+	// Connection header should contain "upgrade" (case-insensitive)
+	connectionUpgrade := false
+	for _, part := range strings.Split(strings.ToLower(connection), ",") {
+		if strings.TrimSpace(part) == "upgrade" {
+			connectionUpgrade = true
+			break
+		}
+	}
+
+	// Upgrade header should be "websocket" (case-insensitive)
+	upgradeWebSocket := strings.ToLower(strings.TrimSpace(upgrade)) == "websocket"
+
+	// Must have Sec-WebSocket-Key header
+	hasWebSocketKey := webSocketKey != ""
+
+	return connectionUpgrade && upgradeWebSocket && hasWebSocketKey
+}
+
+// handleWebSocketUpgrade handles the WebSocket upgrade process
+func (t *Tunnel) handleWebSocketUpgrade(request *http.Request) {
+	t.logger.Info("[WEBSOCKET DEBUG] Handling WebSocket upgrade to local service on port %d", t.localPort)
+
+	// Connect to local service for WebSocket upgrade
+	localConn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", t.localPort), 5*time.Second)
+	if err != nil {
+		t.logger.Error("[WEBSOCKET DEBUG] Failed to connect to local service: %v", err)
+		// Send error response back through tunnel
+		errorResponse := "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+		t.conn.Write([]byte(errorResponse))
+		return
+	}
+
+	// Forward the WebSocket upgrade request to local service
+	if err := request.Write(localConn); err != nil {
+		t.logger.Error("[WEBSOCKET DEBUG] Failed to write upgrade request to local service: %v", err)
+		localConn.Close()
+		errorResponse := "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+		t.conn.Write([]byte(errorResponse))
+		return
+	}
+
+	t.logger.Info("[WEBSOCKET DEBUG] Upgrade request forwarded to local service, reading response")
+
+	// Read the upgrade response from local service
+	localReader := bufio.NewReader(localConn)
+	response, err := http.ReadResponse(localReader, request)
+	if err != nil {
+		t.logger.Error("[WEBSOCKET DEBUG] Error reading upgrade response from local service: %v", err)
+		localConn.Close()
+		errorResponse := "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+		t.conn.Write([]byte(errorResponse))
+		return
+	}
+
+	t.logger.Info("[WEBSOCKET DEBUG] Received upgrade response: %s", response.Status)
+
+	// Write the upgrade response back to tunnel
+	if err := response.Write(t.conn); err != nil {
+		t.logger.Error("[WEBSOCKET DEBUG] Error writing upgrade response to tunnel: %v", err)
+		localConn.Close()
+		return
+	}
+
+	// Check if the upgrade was successful (101 Switching Protocols)
+	if response.StatusCode != 101 {
+		t.logger.Error("[WEBSOCKET DEBUG] WebSocket upgrade failed with status: %d", response.StatusCode)
+		localConn.Close()
+		return
+	}
+
+	t.logger.Info("[WEBSOCKET DEBUG] WebSocket upgrade successful, starting bidirectional forwarding")
+
+	// Start bidirectional copying between tunnel and local service
+	errChan := make(chan error, 2)
+
+	// Copy from tunnel to local service
+	go func() {
+		_, err := io.Copy(localConn, t.conn)
+		errChan <- err
+	}()
+
+	// Copy from local service to tunnel
+	go func() {
+		_, err := io.Copy(t.conn, localConn)
+		errChan <- err
+	}()
+
+	// Wait for either direction to close or error
+	err = <-errChan
+	if err != nil {
+		t.logger.Info("[WEBSOCKET DEBUG] WebSocket connection closed: %v", err)
+	} else {
+		t.logger.Info("[WEBSOCKET DEBUG] WebSocket connection closed normally")
+	}
+
+	localConn.Close()
+	t.logger.Info("[WEBSOCKET DEBUG] WebSocket forwarding completed")
+}
+
+// handleHTTPRequest handles regular HTTP requests (non-WebSocket)
+func (t *Tunnel) handleHTTPRequest(request *http.Request) {
+	// Connect to local service for this request
+	localConn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", t.localPort), 5*time.Second)
+	if err != nil {
+		t.logger.Error("Failed to connect to local service: %v", err)
+		// Send error response back through tunnel
+		errorResponse := "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+		t.conn.Write([]byte(errorResponse))
+		return
+	}
+
+	// Forward the request to local service
+	if err := request.Write(localConn); err != nil {
+		t.logger.Error("Failed to write request to local service: %v", err)
+		localConn.Close()
+		return
+	}
+
+	t.logger.Info("Request forwarded to local service, reading response")
+
+	// Read response from local service
+	localReader := bufio.NewReader(localConn)
+	response, err := http.ReadResponse(localReader, request)
+	if err != nil {
+		t.logger.Error("Error reading response from local service: %v", err)
+		localConn.Close()
+		return
+	}
+
+	// Write response back to tunnel
+	if err := response.Write(t.conn); err != nil {
+		t.logger.Error("Error writing response to tunnel: %v", err)
+		localConn.Close()
+		return
+	}
+
+	localConn.Close()
+	t.logger.Info("HTTP request/response cycle completed")
 }
 
 // Disconnect closes the tunnel connection and cleans up resources

@@ -296,6 +296,10 @@ func (s *Server) Start(cfg *Config) error {
 		logger.Info("[HIJACK DEBUG] HTTP request for domain: %s, isTunnel: %v", domain, isTunnel)
 
 		if isTunnel {
+			// Check if this is a WebSocket upgrade request
+			isWebSocket := isWebSocketUpgrade(r)
+			logger.Info("[HIJACK DEBUG] WebSocket upgrade request: %v", isWebSocket)
+
 			logger.Info("[HIJACK DEBUG] Attempting to hijack connection for domain: %s", domain)
 			hj, ok := w.(http.Hijacker)
 			if !ok {
@@ -313,36 +317,6 @@ func (s *Server) Start(cfg *Config) error {
 			defer conn.Close()
 			logger.Info("[HIJACK DEBUG] Successfully hijacked connection for domain: %s", domain)
 
-			// Build the request string
-			var requestData strings.Builder
-
-			// Add request line
-			requestData.WriteString(fmt.Sprintf("%s %s HTTP/1.1\r\n", r.Method, r.URL.RequestURI()))
-
-			// Add Host header first
-			requestData.WriteString(fmt.Sprintf("Host: %s\r\n", r.Host))
-
-			// Add Content-Length if body exists
-			if r.ContentLength > 0 {
-				requestData.WriteString(fmt.Sprintf("Content-Length: %d\r\n", r.ContentLength))
-			}
-
-			// Add remaining headers, skipping those we've already handled
-			for key, values := range r.Header {
-				if key != "Host" && key != "Content-Length" { // Skip headers we've already added
-					for _, value := range values {
-						requestData.WriteString(fmt.Sprintf("%s: %s\r\n", key, value))
-					}
-				}
-			}
-
-			// Add empty line to separate headers from body
-			requestData.WriteString("\r\n")
-
-			// Get the request as bytes
-			requestBytes := []byte(requestData.String())
-			logger.Info("[HIJACK DEBUG] Forwarding HTTP request:\n%s", requestData.String())
-
 			// Ensure any buffered data is flushed before proxying
 			if bufrw.Writer.Buffered() > 0 {
 				if err := bufrw.Writer.Flush(); err != nil {
@@ -351,8 +325,45 @@ func (s *Server) Start(cfg *Config) error {
 				}
 			}
 
-			logger.Info("[HIJACK DEBUG] Proxying connection for domain: %s", domain)
-			s.tunnelServer.ProxyConnection(domain, conn, requestBytes, r.Body)
+			if isWebSocket {
+				// Handle WebSocket upgrade
+				logger.Info("[WEBSOCKET DEBUG] Handling WebSocket upgrade for domain: %s", domain)
+				s.tunnelServer.ProxyWebSocketConnection(domain, conn, r)
+			} else {
+				// Handle regular HTTP request
+				// Build the request string
+				var requestData strings.Builder
+
+				// Add request line
+				requestData.WriteString(fmt.Sprintf("%s %s HTTP/1.1\r\n", r.Method, r.URL.RequestURI()))
+
+				// Add Host header first
+				requestData.WriteString(fmt.Sprintf("Host: %s\r\n", r.Host))
+
+				// Add Content-Length if body exists
+				if r.ContentLength > 0 {
+					requestData.WriteString(fmt.Sprintf("Content-Length: %d\r\n", r.ContentLength))
+				}
+
+				// Add remaining headers, skipping those we've already handled
+				for key, values := range r.Header {
+					if key != "Host" && key != "Content-Length" { // Skip headers we've already added
+						for _, value := range values {
+							requestData.WriteString(fmt.Sprintf("%s: %s\r\n", key, value))
+						}
+					}
+				}
+
+				// Add empty line to separate headers from body
+				requestData.WriteString("\r\n")
+
+				// Get the request as bytes
+				requestBytes := []byte(requestData.String())
+				logger.Info("[HIJACK DEBUG] Forwarding HTTP request:\n%s", requestData.String())
+
+				logger.Info("[HIJACK DEBUG] Proxying connection for domain: %s", domain)
+				s.tunnelServer.ProxyConnection(domain, conn, requestBytes, r.Body)
+			}
 		} else {
 			http.Error(w, "Not Found", http.StatusNotFound)
 		}
@@ -410,4 +421,29 @@ func (s *Server) generateDevCertificate(certFile, keyFile string) error {
 
 	logger.Info("Generated development certificates successfully")
 	return nil
+}
+
+// isWebSocketUpgrade checks if the HTTP request is a WebSocket upgrade request
+func isWebSocketUpgrade(r *http.Request) bool {
+	// Check for WebSocket upgrade headers
+	connection := r.Header.Get("Connection")
+	upgrade := r.Header.Get("Upgrade")
+	webSocketKey := r.Header.Get("Sec-WebSocket-Key")
+
+	// Connection header should contain "upgrade" (case-insensitive)
+	connectionUpgrade := false
+	for _, part := range strings.Split(strings.ToLower(connection), ",") {
+		if strings.TrimSpace(part) == "upgrade" {
+			connectionUpgrade = true
+			break
+		}
+	}
+
+	// Upgrade header should be "websocket" (case-insensitive)
+	upgradeWebSocket := strings.ToLower(strings.TrimSpace(upgrade)) == "websocket"
+
+	// Must have Sec-WebSocket-Key header
+	hasWebSocketKey := webSocketKey != ""
+
+	return connectionUpgrade && upgradeWebSocket && hasWebSocketKey
 }
