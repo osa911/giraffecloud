@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"crypto/tls"
-	"encoding/json"
 	"fmt"
 	"giraffecloud/internal/logging"
 	"math/rand"
@@ -310,58 +309,9 @@ func indexOf(s, substr string) int {
 	return -1
 }
 
-// startHealthMonitoring begins periodic health checks
+// startHealthMonitoring starts the health monitoring goroutine
 func (t *Tunnel) startHealthMonitoring() {
-	if t.healthTicker != nil {
-		t.healthTicker.Stop()
-	}
-
-	t.healthTicker = time.NewTicker(t.retryConfig.HealthCheckInterval)
-
-	t.wg.Add(1)
-	go func() {
-		defer t.wg.Done()
-		defer t.healthTicker.Stop()
-
-		for {
-			select {
-			case <-t.healthTicker.C:
-				if !t.performHealthCheck() {
-					t.logger.Info("Health check failed, attempting reconnection...")
-					t.reconnect()
-					return
-				}
-			case <-t.ctx.Done():
-				return
-			}
-		}
-	}()
-}
-
-// performHealthCheck sends a ping and checks connection health
-func (t *Tunnel) performHealthCheck() bool {
-	if t.conn == nil {
-		return false
-	}
-
-	// Simple ping by setting a short deadline and trying to read
-	t.conn.SetReadDeadline(time.Now().Add(1 * time.Second))
-	defer t.conn.SetReadDeadline(time.Time{})
-
-	// Try to send a small ping message
-	pingMsg := map[string]interface{}{
-		"type": "ping",
-		"timestamp": time.Now().Unix(),
-	}
-
-	encoder := json.NewEncoder(t.conn)
-	if err := encoder.Encode(pingMsg); err != nil {
-		t.logger.Debug("Health check ping failed: %v", err)
-		return false
-	}
-
-	t.lastPing = time.Now()
-	return true
+	t.logger.Info("Health monitoring disabled - relying on HTTP traffic for connection health")
 }
 
 // reconnect handles reconnection logic
@@ -492,14 +442,8 @@ func (t *Tunnel) Disconnect() error {
 		// Set a deadline for graceful shutdown
 		t.conn.SetDeadline(time.Now().Add(5 * time.Second))
 
-		// Send a final control message to notify server
-		encoder := json.NewEncoder(t.conn)
-		closeMsg := map[string]string{
-			"type":   "control",
-			"action": "shutdown",
-			"reason": "client_disconnect",
-		}
-		_ = encoder.Encode(closeMsg)
+		// Don't send JSON control messages over HTTP connection
+		// as they interfere with HTTP traffic
 
 		// Close the connection
 		err = t.conn.Close()
