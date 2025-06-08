@@ -384,7 +384,10 @@ func (t *Tunnel) handleConnection() {
 			if isWebSocket {
 				t.logger.Info("[WEBSOCKET DEBUG] Detected WebSocket upgrade request")
 				t.handleWebSocketUpgrade(request)
-				return // WebSocket connections don't continue the HTTP loop
+				// After WebSocket closes, this connection is done - trigger reconnection for new HTTP traffic
+				t.logger.Info("[WEBSOCKET DEBUG] WebSocket session ended, triggering tunnel reconnection")
+				t.reconnect()
+				return
 			}
 
 			// Handle regular HTTP request
