@@ -12,7 +12,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"time"
 )
 
 /**
@@ -177,21 +176,10 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 
 	s.logger.Info("Tunnel connection established for domain: %s", tunnel.Domain)
 
-	// Just wait for the connection to close without interfering with it
-	// ProxyConnection will handle all communication with the tunnel
-	// We'll detect closure by trying to write a 0-byte message periodically
-	for {
-		time.Sleep(30 * time.Second) // Check every 30 seconds
-
-		// Try to write 0 bytes to detect if connection is closed
-		conn.SetWriteDeadline(time.Now().Add(1 * time.Second))
-		_, err := conn.Write([]byte{})
-		if err != nil {
-			s.logger.Info("Tunnel connection closed for domain: %s", tunnel.Domain)
-			break
-		}
-		conn.SetWriteDeadline(time.Time{}) // Reset deadline
-	}
+	// Keep the connection alive without interfering with HTTP traffic
+	// The connection will be closed when the client disconnects or an error occurs
+	// ProxyConnection will handle all HTTP communication
+	select {}
 }
 
 // GetConnection returns the tunnel connection for a domain
