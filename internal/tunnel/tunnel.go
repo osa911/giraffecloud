@@ -414,9 +414,14 @@ func (t *Tunnel) handleWebSocketConnection(conn net.Conn) {
 
 			t.logger.Info("Received WebSocket upgrade request: %s %s", request.Method, request.URL.Path)
 
-			// Handle WebSocket upgrade
+			// Handle WebSocket upgrade - this will consume the entire connection
 			t.handleWebSocketUpgradeOnDedicatedConnection(request, conn)
-			// After handling one WebSocket session, this connection can handle another
+
+			// After a WebSocket session completes, the tunnel connection is no longer usable
+			// for HTTP parsing due to the bidirectional copying. We need to reconnect.
+			t.logger.Info("[WEBSOCKET DEBUG] WebSocket session completed, triggering tunnel reconnection")
+			t.coordinatedReconnect()
+			return
 		}
 	}
 }
@@ -478,12 +483,14 @@ func (t *Tunnel) handleWebSocketUpgradeOnDedicatedConnection(request *http.Reque
 	// Copy from tunnel to local service
 	go func() {
 		_, err := io.Copy(localConn, tunnelConn)
+		t.logger.Info("[WEBSOCKET DEBUG] Tunnel->Local copy finished: %v", err)
 		errChan <- err
 	}()
 
 	// Copy from local service to tunnel
 	go func() {
 		_, err := io.Copy(tunnelConn, localConn)
+		t.logger.Info("[WEBSOCKET DEBUG] Local->Tunnel copy finished: %v", err)
 		errChan <- err
 	}()
 
@@ -495,7 +502,7 @@ func (t *Tunnel) handleWebSocketUpgradeOnDedicatedConnection(request *http.Reque
 		t.logger.Info("[WEBSOCKET DEBUG] WebSocket connection closed normally")
 	}
 
-	t.logger.Info("[WEBSOCKET DEBUG] WebSocket forwarding completed")
+	t.logger.Info("[WEBSOCKET DEBUG] WebSocket forwarding completed - tunnel connection is now unusable")
 }
 
 // handleHTTPRequest handles regular HTTP requests (non-WebSocket) on the HTTP tunnel
