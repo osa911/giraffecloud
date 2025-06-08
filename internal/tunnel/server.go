@@ -203,6 +203,11 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData
 		return
 	}
 
+	// Lock the tunnel connection to prevent concurrent access
+	// This ensures only one HTTP request/response cycle happens at a time
+	tunnelConn.Lock()
+	defer tunnelConn.Unlock()
+
 	s.logger.Info("[PROXY DEBUG] Starting HTTP proxy for domain: %s", domain)
 
 	// Write the HTTP request headers to the tunnel connection
@@ -223,6 +228,8 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData
 			return
 		}
 		s.logger.Info("[PROXY DEBUG] Sent %d bytes of request body to tunnel", written)
+	} else {
+		s.logger.Info("[PROXY DEBUG] Sent 0 bytes of request body to tunnel")
 	}
 
 	// Read the HTTP response from the tunnel

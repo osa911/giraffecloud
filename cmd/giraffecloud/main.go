@@ -306,6 +306,7 @@ This helps diagnose issues with the system service.`,
 		}
 
 		// Try to get service logs if available
+		// example: giraffecloud service health-check --show-logs
 		showLogs, _ := cmd.Flags().GetBool("show-logs")
 		if showLogs {
 			logger.Info("🔍 Fetching recent service logs...")

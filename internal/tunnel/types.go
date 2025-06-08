@@ -2,6 +2,7 @@ package tunnel
 
 import (
 	"net"
+	"sync"
 )
 
 // TunnelHandshakeRequest represents the initial handshake message
@@ -17,11 +18,12 @@ type TunnelHandshakeResponse struct {
 	TargetPort int    `json:"target_port,omitempty"`
 }
 
-// TunnelConnection represents an active tunnel connection (simplified)
+// TunnelConnection represents an active tunnel connection with synchronization
 type TunnelConnection struct {
-	conn       net.Conn // The underlying network connection
-	domain     string   // The domain this tunnel serves
-	targetPort int      // The target port on the client side
+	conn       net.Conn    // The underlying network connection
+	domain     string      // The domain this tunnel serves
+	targetPort int         // The target port on the client side
+	mu         sync.Mutex  // Mutex to serialize HTTP request/response cycles
 }
 
 // NewTunnelConnection creates a new tunnel connection
@@ -39,4 +41,14 @@ func (tc *TunnelConnection) Close() error {
 		return tc.conn.Close()
 	}
 	return nil
+}
+
+// Lock locks the tunnel connection for exclusive access
+func (tc *TunnelConnection) Lock() {
+	tc.mu.Lock()
+}
+
+// Unlock unlocks the tunnel connection
+func (tc *TunnelConnection) Unlock() {
+	tc.mu.Unlock()
 }
