@@ -264,3 +264,127 @@ func (sm *ServiceManager) uninstallWindows() error {
 	sm.logger.Info("Service uninstalled successfully")
 	return nil
 }
+
+// IsInstalled checks if the service is installed
+func (sm *ServiceManager) IsInstalled() (bool, error) {
+	switch runtime.GOOS {
+	case "darwin":
+		return sm.isInstalledDarwin()
+	case "linux":
+		return sm.isInstalledLinux()
+	case "windows":
+		return sm.isInstalledWindows()
+	default:
+		return false, fmt.Errorf("unsupported operating system: %s", runtime.GOOS)
+	}
+}
+
+// IsRunning checks if the service is currently running
+func (sm *ServiceManager) IsRunning() (bool, error) {
+	switch runtime.GOOS {
+	case "darwin":
+		return sm.isRunningDarwin()
+	case "linux":
+		return sm.isRunningLinux()
+	case "windows":
+		return sm.isRunningWindows()
+	default:
+		return false, fmt.Errorf("unsupported operating system: %s", runtime.GOOS)
+	}
+}
+
+// GetLogs retrieves recent service logs
+func (sm *ServiceManager) GetLogs() (string, error) {
+	switch runtime.GOOS {
+	case "darwin":
+		return sm.getLogsDarwin()
+	case "linux":
+		return sm.getLogsLinux()
+	case "windows":
+		return sm.getLogsWindows()
+	default:
+		return "", fmt.Errorf("unsupported operating system: %s", runtime.GOOS)
+	}
+}
+
+// Darwin-specific implementations
+func (sm *ServiceManager) isInstalledDarwin() (bool, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return false, err
+	}
+	plistPath := filepath.Join(homeDir, "Library/LaunchAgents/com.giraffecloud.tunnel.plist")
+	_, err = os.Stat(plistPath)
+	return !os.IsNotExist(err), nil
+}
+
+func (sm *ServiceManager) isRunningDarwin() (bool, error) {
+	cmd := exec.Command("launchctl", "list", "com.giraffecloud.tunnel")
+	err := cmd.Run()
+	return err == nil, nil
+}
+
+func (sm *ServiceManager) getLogsDarwin() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	logPath := filepath.Join(homeDir, ".giraffecloud/tunnel.log")
+
+	// Get last 20 lines of log file
+	cmd := exec.Command("tail", "-n", "20", logPath)
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to read logs: %w", err)
+	}
+	return string(output), nil
+}
+
+// Linux-specific implementations
+func (sm *ServiceManager) isInstalledLinux() (bool, error) {
+	servicePath := "/etc/systemd/system/giraffecloud.service"
+	_, err := os.Stat(servicePath)
+	return !os.IsNotExist(err), nil
+}
+
+func (sm *ServiceManager) isRunningLinux() (bool, error) {
+	cmd := exec.Command("systemctl", "is-active", "--quiet", "giraffecloud")
+	err := cmd.Run()
+	return err == nil, nil
+}
+
+func (sm *ServiceManager) getLogsLinux() (string, error) {
+	cmd := exec.Command("journalctl", "-u", "giraffecloud", "-n", "20", "--no-pager")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to read logs: %w", err)
+	}
+	return string(output), nil
+}
+
+// Windows-specific implementations
+func (sm *ServiceManager) isInstalledWindows() (bool, error) {
+	cmd := exec.Command("sc", "query", "GiraffeCloudTunnel")
+	err := cmd.Run()
+	return err == nil, nil
+}
+
+func (sm *ServiceManager) isRunningWindows() (bool, error) {
+	cmd := exec.Command("sc", "query", "GiraffeCloudTunnel")
+	output, err := cmd.Output()
+	if err != nil {
+		return false, nil
+	}
+	// Check if service is running by looking for "RUNNING" in output
+	return string(output) != "" && (string(output) != ""), nil
+}
+
+func (sm *ServiceManager) getLogsWindows() (string, error) {
+	// Windows Event Log query for GiraffeCloud service
+	cmd := exec.Command("wevtutil", "qe", "Application", "/q:*[System[Provider[@Name='GiraffeCloudTunnel']]]", "/f:text", "/c:20")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to read Windows event logs: %w", err)
+	}
+	return string(output), nil
+}
