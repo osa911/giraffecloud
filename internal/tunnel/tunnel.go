@@ -209,18 +209,26 @@ func (t *Tunnel) attemptDualConnections(serverAddr string, tlsConfig *tls.Config
 		}
 	}
 
+	t.logger.Info("[DUAL TUNNEL DEBUG] Starting dual tunnel establishment...")
+
 	// First, establish the HTTP tunnel connection
+	t.logger.Info("[DUAL TUNNEL DEBUG] Establishing HTTP tunnel...")
 	httpConn, err := t.establishConnection(serverAddr, tlsConfig, "http")
 	if err != nil {
+		t.logger.Error("[DUAL TUNNEL DEBUG] Failed to establish HTTP tunnel: %v", err)
 		return fmt.Errorf("failed to establish HTTP tunnel: %w", err)
 	}
+	t.logger.Info("[DUAL TUNNEL DEBUG] HTTP tunnel established successfully")
 
 	// Then, establish the WebSocket tunnel connection
+	t.logger.Info("[DUAL TUNNEL DEBUG] Establishing WebSocket tunnel...")
 	wsConn, err := t.establishConnection(serverAddr, tlsConfig, "websocket")
 	if err != nil {
 		httpConn.Close() // Clean up HTTP connection if WebSocket fails
+		t.logger.Error("[DUAL TUNNEL DEBUG] Failed to establish WebSocket tunnel: %v", err)
 		return fmt.Errorf("failed to establish WebSocket tunnel: %w", err)
 	}
+	t.logger.Info("[DUAL TUNNEL DEBUG] WebSocket tunnel established successfully")
 
 	// Store both connections
 	t.conn = httpConn // Main connection for HTTP traffic
@@ -232,6 +240,7 @@ func (t *Tunnel) attemptDualConnections(serverAddr string, tlsConfig *tls.Config
 	go t.handleHTTPConnection(httpConn)
 	go t.handleWebSocketConnection(wsConn)
 
+	t.logger.Info("[DUAL TUNNEL DEBUG] Both tunnel handlers started")
 	return nil
 }
 

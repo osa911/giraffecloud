@@ -328,6 +328,15 @@ func (s *Server) Start(cfg *Config) error {
 			if isWebSocket {
 				// Handle WebSocket upgrade
 				logger.Info("[WEBSOCKET DEBUG] Handling WebSocket upgrade for domain: %s", domain)
+
+				// Check if WebSocket tunnel is available
+				hasWebSocketTunnel := s.tunnelServer.HasWebSocketConnection(domain)
+				logger.Info("[WEBSOCKET DEBUG] WebSocket tunnel available for domain %s: %v", domain, hasWebSocketTunnel)
+
+				if !hasWebSocketTunnel {
+					logger.Error("[WEBSOCKET DEBUG] No WebSocket tunnel available for domain: %s, falling back to HTTP proxy", domain)
+				}
+
 				s.tunnelServer.ProxyWebSocketConnection(domain, conn, r)
 			} else {
 				// Handle regular HTTP request

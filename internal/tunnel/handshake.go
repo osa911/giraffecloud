@@ -7,13 +7,27 @@ import (
 	"net"
 )
 
-// Perform performs the initial handshake with the server
+// Perform performs the initial handshake with the server (backward compatibility)
+// For new code, use the performHandshake method in the Tunnel struct
 func Perform(conn net.Conn, token string) (*TunnelHandshakeResponse, error) {
 	logger := logging.GetGlobalLogger()
 
-	// Create and send handshake request
+	// Default to HTTP connection type for backward compatibility
+	return performHandshakeWithType(conn, token, "http", logger)
+}
+
+// PerformWithType performs handshake with specified connection type
+func PerformWithType(conn net.Conn, token, connType string) (*TunnelHandshakeResponse, error) {
+	logger := logging.GetGlobalLogger()
+	return performHandshakeWithType(conn, token, connType, logger)
+}
+
+// performHandshakeWithType is the internal implementation
+func performHandshakeWithType(conn net.Conn, token, connType string, logger *logging.Logger) (*TunnelHandshakeResponse, error) {
+	// Create and send handshake request with connection type
 	req := TunnelHandshakeRequest{
-		Token: token,
+		Token:          token,
+		ConnectionType: connType,
 	}
 
 	if err := json.NewEncoder(conn).Encode(req); err != nil {
@@ -30,12 +44,12 @@ func Perform(conn net.Conn, token string) (*TunnelHandshakeResponse, error) {
 		return nil, fmt.Errorf("handshake failed: %s", resp.Message)
 	}
 
-	// Only update config if server provided new values
+	// Only update config if server provided new values (backward compatibility)
 	if resp.Domain != "" || resp.TargetPort != 0 {
 		cfg, err := LoadConfig()
 		if err != nil {
 			// Don't fail handshake if config update fails
-			logger.Info("Handshake completed successfully with domain %s and port %d", resp.Domain, resp.TargetPort)
+			logger.Info("Handshake completed successfully with domain %s and port %d (type: %s)", resp.Domain, resp.TargetPort, connType)
 			return &resp, nil
 		}
 
@@ -51,6 +65,6 @@ func Perform(conn net.Conn, token string) (*TunnelHandshakeResponse, error) {
 		_ = SaveConfig(cfg)
 	}
 
-	logger.Info("Handshake completed successfully with domain %s and port %d", resp.Domain, resp.TargetPort)
+	logger.Info("Handshake completed successfully with domain %s and port %d (type: %s)", resp.Domain, resp.TargetPort, connType)
 	return &resp, nil
 }

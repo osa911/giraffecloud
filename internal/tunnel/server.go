@@ -200,6 +200,11 @@ func (s *TunnelServer) IsTunnelDomain(domain string) bool {
 	return s.connections.HasDomain(domain)
 }
 
+// HasWebSocketConnection returns true if the domain has an active WebSocket tunnel
+func (s *TunnelServer) HasWebSocketConnection(domain string) bool {
+	return s.connections.HasWebSocketConnection(domain)
+}
+
 // ProxyConnection handles proxying an HTTP connection to the appropriate tunnel
 func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData []byte, requestBody io.Reader) {
 	defer conn.Close()
