@@ -300,6 +300,11 @@ func (s *Server) Start(cfg *Config) error {
 			isWebSocket := isWebSocketUpgrade(r)
 			logger.Info("[HIJACK DEBUG] WebSocket upgrade request: %v", isWebSocket)
 
+			// Debug: Show all available tunnel connections for this domain
+			hasHTTP := s.tunnelServer.GetConnection(domain) != nil
+			hasWebSocket := s.tunnelServer.HasWebSocketConnection(domain)
+			logger.Info("[TUNNEL DEBUG] Domain: %s, HTTP tunnel: %v, WebSocket tunnel: %v", domain, hasHTTP, hasWebSocket)
+
 			logger.Info("[HIJACK DEBUG] Attempting to hijack connection for domain: %s", domain)
 			hj, ok := w.(http.Hijacker)
 			if !ok {

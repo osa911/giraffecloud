@@ -93,6 +93,13 @@ type Tunnel struct {
 	ctx          context.Context
 	cancel       context.CancelFunc
 	wg           sync.WaitGroup
+
+	// WebSocket connection
+	wsConn net.Conn
+
+	// Reconnection coordination
+	reconnectMutex sync.Mutex
+	isReconnecting bool
 }
 
 // NewTunnel creates a new tunnel instance with enhanced features
@@ -232,6 +239,7 @@ func (t *Tunnel) attemptDualConnections(serverAddr string, tlsConfig *tls.Config
 
 	// Store both connections
 	t.conn = httpConn // Main connection for HTTP traffic
+	t.wsConn = wsConn // Store WebSocket connection separately
 
 	t.logger.Info("Dual tunnel connections established successfully. Domain: %s, Local Port: %d", t.domain, t.localPort)
 
@@ -347,9 +355,9 @@ func (t *Tunnel) handleHTTPConnection(conn net.Conn) {
 					// Timeout is normal, continue
 					continue
 				}
-				// Connection closed or error - trigger reconnection
+				// Connection closed or error - trigger coordinated reconnection
 				t.logger.Info("HTTP tunnel connection closed: %v", err)
-				t.reconnect()
+				t.coordinatedReconnect()
 				return
 			}
 
@@ -395,9 +403,9 @@ func (t *Tunnel) handleWebSocketConnection(conn net.Conn) {
 					// Timeout is normal, continue
 					continue
 				}
-				// Connection closed or error - trigger reconnection
+				// Connection closed or error - trigger coordinated reconnection
 				t.logger.Info("WebSocket tunnel connection closed: %v", err)
-				t.reconnect()
+				t.coordinatedReconnect()
 				return
 			}
 
@@ -533,12 +541,33 @@ func (t *Tunnel) startHealthMonitoring() {
 	t.logger.Info("Health monitoring disabled - relying on HTTP traffic for connection health")
 }
 
-// reconnect handles reconnection logic
-func (t *Tunnel) reconnect() {
-	// Close current connection
+// coordinatedReconnect handles reconnection logic with coordination between HTTP and WebSocket handlers
+func (t *Tunnel) coordinatedReconnect() {
+	// Use mutex to prevent multiple reconnection attempts
+	t.reconnectMutex.Lock()
+	defer t.reconnectMutex.Unlock()
+
+	// If already reconnecting, don't start another attempt
+	if t.isReconnecting {
+		t.logger.Info("Reconnection already in progress, skipping")
+		return
+	}
+
+	t.isReconnecting = true
+	defer func() {
+		t.isReconnecting = false
+	}()
+
+	t.logger.Info("Starting coordinated reconnection...")
+
+	// Close both connections
 	if t.conn != nil {
 		t.conn.Close()
 		t.conn = nil
+	}
+	if t.wsConn != nil {
+		t.wsConn.Close()
+		t.wsConn = nil
 	}
 
 	// Stop health monitoring
@@ -552,6 +581,12 @@ func (t *Tunnel) reconnect() {
 		serverAddr := fmt.Sprintf("%s:%d", "tunnel.giraffecloud.xyz", 4443) // TODO: make configurable
 		t.connectWithRetry(serverAddr, nil)
 	}()
+}
+
+// reconnect handles reconnection logic
+func (t *Tunnel) reconnect() {
+	// Delegate to coordinated reconnect for consistency
+	t.coordinatedReconnect()
 }
 
 // Disconnect closes the tunnel connection and cleans up resources
@@ -572,7 +607,7 @@ func (t *Tunnel) Disconnect() error {
 		close(t.stopChan)
 	}
 
-	// Close connection if exists
+	// Close both connections if they exist
 	var err error
 	if t.conn != nil {
 		// Set a deadline for graceful shutdown
@@ -581,9 +616,23 @@ func (t *Tunnel) Disconnect() error {
 		// Don't send JSON control messages over HTTP connection
 		// as they interfere with HTTP traffic
 
-		// Close the connection
+		// Close the HTTP connection
 		err = t.conn.Close()
 		t.conn = nil
+	}
+
+	if t.wsConn != nil {
+		// Set a deadline for graceful shutdown
+		t.wsConn.SetDeadline(time.Now().Add(5 * time.Second))
+
+		// Close the WebSocket connection
+		wsErr := t.wsConn.Close()
+		t.wsConn = nil
+
+		// Return the first error if any
+		if err == nil {
+			err = wsErr
+		}
 	}
 
 	// Wait for all goroutines to finish with timeout
