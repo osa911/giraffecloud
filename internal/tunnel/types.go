@@ -7,15 +7,17 @@ import (
 
 // TunnelHandshakeRequest represents the initial handshake message
 type TunnelHandshakeRequest struct {
-	Token string `json:"token"`
+	Token          string `json:"token"`
+	ConnectionType string `json:"connection_type,omitempty"` // "http" or "websocket"
 }
 
 // TunnelHandshakeResponse represents the server's response to a handshake
 type TunnelHandshakeResponse struct {
-	Status     string `json:"status"`
-	Message    string `json:"message"`
-	Domain     string `json:"domain,omitempty"`
-	TargetPort int    `json:"target_port,omitempty"`
+	Status         string `json:"status"`
+	Message        string `json:"message"`
+	Domain         string `json:"domain,omitempty"`
+	TargetPort     int    `json:"target_port,omitempty"`
+	ConnectionType string `json:"connection_type,omitempty"` // "http" or "websocket"
 }
 
 // TunnelConnection represents an active tunnel connection with synchronization

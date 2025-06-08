@@ -160,22 +160,29 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 		return
 	}
 
+	// Determine connection type based on request
+	connType := ConnectionTypeHTTP
+	if req.ConnectionType == "websocket" {
+		connType = ConnectionTypeWebSocket
+	}
+
 	// Send success response with domain and port
 	if err := encoder.Encode(TunnelHandshakeResponse{
 		Status:     "success",
 		Message:    "Connected successfully",
 		Domain:     tunnel.Domain,
 		TargetPort: tunnel.TargetPort,
+		ConnectionType: string(connType),
 	}); err != nil {
 		s.logger.Error("Failed to send response: %v", err)
 		return
 	}
 
-	// Create connection object and add to manager
-	s.connections.AddConnection(tunnel.Domain, conn, tunnel.TargetPort)
-	defer s.connections.RemoveConnection(tunnel.Domain)
+	// Create connection object and add to manager with type
+	s.connections.AddConnection(tunnel.Domain, conn, tunnel.TargetPort, connType)
+	defer s.connections.RemoveConnection(tunnel.Domain, connType)
 
-	s.logger.Info("Tunnel connection established for domain: %s", tunnel.Domain)
+	s.logger.Info("Tunnel connection established for domain: %s (type: %s)", tunnel.Domain, connType)
 
 	// Keep the connection alive without interfering with HTTP traffic
 	// The connection will be closed when the client disconnects or an error occurs
@@ -183,9 +190,9 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 	select {}
 }
 
-// GetConnection returns the tunnel connection for a domain
+// GetConnection returns the tunnel connection for a domain (backward compatibility for HTTP)
 func (s *TunnelServer) GetConnection(domain string) *TunnelConnection {
-	return s.connections.GetConnection(domain)
+	return s.connections.GetHTTPConnection(domain)
 }
 
 // IsTunnelDomain returns true if the domain has an active tunnel
@@ -197,10 +204,10 @@ func (s *TunnelServer) IsTunnelDomain(domain string) bool {
 func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData []byte, requestBody io.Reader) {
 	defer conn.Close()
 
-	tunnelConn := s.connections.GetConnection(domain)
+	tunnelConn := s.connections.GetHTTPConnection(domain)
 	if tunnelConn == nil {
-		s.logger.Error("No tunnel connection found for domain: %s", domain)
-		s.writeHTTPError(conn, 502, "Bad Gateway - Tunnel not connected")
+		s.logger.Error("No HTTP tunnel connection found for domain: %s", domain)
+		s.writeHTTPError(conn, 502, "Bad Gateway - HTTP tunnel not connected")
 		return
 	}
 
@@ -281,10 +288,10 @@ func (s *TunnelServer) writeHTTPError(conn net.Conn, code int, message string) {
 func (s *TunnelServer) ProxyWebSocketConnection(domain string, clientConn net.Conn, r *http.Request) {
 	defer clientConn.Close()
 
-	tunnelConn := s.connections.GetConnection(domain)
+	tunnelConn := s.connections.GetWebSocketConnection(domain)
 	if tunnelConn == nil {
-		s.logger.Error("No tunnel connection found for domain: %s", domain)
-		s.writeHTTPError(clientConn, 502, "Bad Gateway - Tunnel not connected")
+		s.logger.Error("No WebSocket tunnel connection found for domain: %s", domain)
+		s.writeHTTPError(clientConn, 502, "Bad Gateway - WebSocket tunnel not connected")
 		return
 	}
 

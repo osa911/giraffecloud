@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"giraffecloud/internal/logging"
 	"io"
@@ -126,7 +127,7 @@ func (t *Tunnel) setState(state ConnectionState) {
 	}
 }
 
-// Connect establishes a tunnel connection with retry logic
+// Connect establishes tunnel connections with retry logic
 func (t *Tunnel) Connect(ctx context.Context, serverAddr, token, domain string, localPort int, tlsConfig *tls.Config) error {
 	// Use the provided context instead of creating our own
 	t.ctx, t.cancel = context.WithCancel(ctx)
@@ -135,11 +136,11 @@ func (t *Tunnel) Connect(ctx context.Context, serverAddr, token, domain string, 
 	t.domain = domain
 	t.localPort = localPort
 
-	// Start the connection with retry logic
+	// Start the connections with retry logic
 	return t.connectWithRetry(serverAddr, tlsConfig)
 }
 
-// connectWithRetry implements exponential backoff retry logic
+// connectWithRetry implements exponential backoff retry logic for both connection types
 func (t *Tunnel) connectWithRetry(serverAddr string, tlsConfig *tls.Config) error {
 	t.retryCount = 0
 	delay := t.retryConfig.InitialDelay
@@ -172,8 +173,8 @@ func (t *Tunnel) connectWithRetry(serverAddr string, tlsConfig *tls.Config) erro
 			}
 		}
 
-		// Attempt connection
-		err := t.attemptConnection(serverAddr, tlsConfig)
+		// Attempt to establish both HTTP and WebSocket connections
+		err := t.attemptDualConnections(serverAddr, tlsConfig)
 		if err == nil {
 			// Success! Reset retry count and start health monitoring
 			t.retryCount = 0
@@ -199,8 +200,8 @@ func (t *Tunnel) connectWithRetry(serverAddr string, tlsConfig *tls.Config) erro
 	}
 }
 
-// attemptConnection tries to establish a single connection
-func (t *Tunnel) attemptConnection(serverAddr string, tlsConfig *tls.Config) error {
+// attemptDualConnections tries to establish both HTTP and WebSocket tunnel connections
+func (t *Tunnel) attemptDualConnections(serverAddr string, tlsConfig *tls.Config) error {
 	// Simplify TLS config - use defaults for better compatibility
 	if tlsConfig == nil {
 		tlsConfig = &tls.Config{
@@ -208,6 +209,34 @@ func (t *Tunnel) attemptConnection(serverAddr string, tlsConfig *tls.Config) err
 		}
 	}
 
+	// First, establish the HTTP tunnel connection
+	httpConn, err := t.establishConnection(serverAddr, tlsConfig, "http")
+	if err != nil {
+		return fmt.Errorf("failed to establish HTTP tunnel: %w", err)
+	}
+
+	// Then, establish the WebSocket tunnel connection
+	wsConn, err := t.establishConnection(serverAddr, tlsConfig, "websocket")
+	if err != nil {
+		httpConn.Close() // Clean up HTTP connection if WebSocket fails
+		return fmt.Errorf("failed to establish WebSocket tunnel: %w", err)
+	}
+
+	// Store both connections
+	t.conn = httpConn // Main connection for HTTP traffic
+
+	t.logger.Info("Dual tunnel connections established successfully. Domain: %s, Local Port: %d", t.domain, t.localPort)
+
+	// Start handling for both connections
+	t.wg.Add(2)
+	go t.handleHTTPConnection(httpConn)
+	go t.handleWebSocketConnection(wsConn)
+
+	return nil
+}
+
+// establishConnection establishes a single tunnel connection of specified type
+func (t *Tunnel) establishConnection(serverAddr string, tlsConfig *tls.Config, connType string) (net.Conn, error) {
 	// Connect to server with TLS and timeout
 	dialer := &net.Dialer{
 		Timeout: 10 * time.Second,
@@ -215,100 +244,279 @@ func (t *Tunnel) attemptConnection(serverAddr string, tlsConfig *tls.Config) err
 
 	conn, err := tls.DialWithDialer(dialer, "tcp", serverAddr, tlsConfig)
 	if err != nil {
-		return fmt.Errorf("failed to connect to server: %w", err)
+		return nil, fmt.Errorf("failed to connect to server: %w", err)
 	}
 
-	// Perform handshake with timeout
+	// Perform handshake with timeout and connection type
 	conn.SetDeadline(time.Now().Add(30 * time.Second))
-	resp, err := Perform(conn, t.token)
+	resp, err := t.performHandshake(conn, t.token, connType)
 	if err != nil {
 		conn.Close()
-		return fmt.Errorf("handshake failed: %w", err)
+		return nil, fmt.Errorf("handshake failed: %w", err)
 	}
 	conn.SetDeadline(time.Time{}) // Clear deadline
 
-	// Update local values with server response
-	t.domain = resp.Domain
+	// Update local values with server response (only on first successful connection)
+	if t.domain == "" {
+		t.domain = resp.Domain
+	}
 	if t.localPort <= 0 {
 		t.localPort = resp.TargetPort
 	}
 
-	// Check if the local port is actually listening
+	// Check if the local port is actually listening (only once)
+	if connType == "http" {
+		localConn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", t.localPort), 5*time.Second)
+		if err != nil {
+			conn.Close()
+			return nil, fmt.Errorf("no service found listening on port %d - make sure your service is running first", t.localPort)
+		}
+		localConn.Close()
+	}
+
+	t.logger.Info("%s tunnel connection established successfully", strings.Title(connType))
+	return conn, nil
+}
+
+// performHandshake performs the handshake for a specific connection type
+func (t *Tunnel) performHandshake(conn net.Conn, token, connType string) (*TunnelHandshakeResponse, error) {
+	// Create JSON encoder/decoder
+	encoder := json.NewEncoder(conn)
+	decoder := json.NewDecoder(conn)
+
+	// Send handshake request with connection type
+	req := TunnelHandshakeRequest{
+		Token:          token,
+		ConnectionType: connType,
+	}
+
+	if err := encoder.Encode(req); err != nil {
+		return nil, fmt.Errorf("failed to send handshake: %w", err)
+	}
+
+	// Read handshake response
+	var resp TunnelHandshakeResponse
+	if err := decoder.Decode(&resp); err != nil {
+		return nil, fmt.Errorf("failed to read handshake response: %w", err)
+	}
+
+	if resp.Status != "success" {
+		return nil, fmt.Errorf("handshake failed: %s", resp.Message)
+	}
+
+	return &resp, nil
+}
+
+// handleHTTPConnection handles HTTP requests from the tunnel server
+func (t *Tunnel) handleHTTPConnection(conn net.Conn) {
+	defer t.wg.Done()
+	defer func() {
+		if conn != nil {
+			conn.Close()
+		}
+		t.logger.Info("HTTP tunnel connection closed")
+	}()
+
+	t.logger.Info("Starting HTTP forwarding for tunnel connection")
+
+	// Create buffered reader for parsing HTTP
+	tunnelReader := bufio.NewReader(conn)
+
+	// Handle incoming HTTP requests from the tunnel
+	for {
+		select {
+		case <-t.ctx.Done():
+			return
+		default:
+			// Set read timeout for incoming requests
+			conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+
+			// Parse the HTTP request using Go's built-in HTTP parser
+			request, err := http.ReadRequest(tunnelReader)
+			if err != nil {
+				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+					// Timeout is normal, continue
+					continue
+				}
+				// Connection closed or error - trigger reconnection
+				t.logger.Info("HTTP tunnel connection closed: %v", err)
+				t.reconnect()
+				return
+			}
+
+			// We have an HTTP request, reset deadline
+			conn.SetReadDeadline(time.Time{})
+
+			t.logger.Info("Received HTTP request: %s %s", request.Method, request.URL.Path)
+
+			// Handle regular HTTP request
+			t.handleHTTPRequest(request, conn)
+		}
+	}
+}
+
+// handleWebSocketConnection handles WebSocket traffic from the tunnel server
+func (t *Tunnel) handleWebSocketConnection(conn net.Conn) {
+	defer t.wg.Done()
+	defer func() {
+		if conn != nil {
+			conn.Close()
+		}
+		t.logger.Info("WebSocket tunnel connection closed")
+	}()
+
+	t.logger.Info("Starting WebSocket forwarding for tunnel connection")
+
+	// Create buffered reader for parsing HTTP
+	tunnelReader := bufio.NewReader(conn)
+
+	// Handle incoming WebSocket upgrade requests from the tunnel
+	for {
+		select {
+		case <-t.ctx.Done():
+			return
+		default:
+			// Set read timeout for incoming requests
+			conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+
+			// Parse the HTTP request using Go's built-in HTTP parser
+			request, err := http.ReadRequest(tunnelReader)
+			if err != nil {
+				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+					// Timeout is normal, continue
+					continue
+				}
+				// Connection closed or error - trigger reconnection
+				t.logger.Info("WebSocket tunnel connection closed: %v", err)
+				t.reconnect()
+				return
+			}
+
+			// We have an HTTP request, reset deadline
+			conn.SetReadDeadline(time.Time{})
+
+			t.logger.Info("Received WebSocket upgrade request: %s %s", request.Method, request.URL.Path)
+
+			// Handle WebSocket upgrade
+			t.handleWebSocketUpgradeOnDedicatedConnection(request, conn)
+			// After handling one WebSocket session, this connection can handle another
+		}
+	}
+}
+
+// handleWebSocketUpgradeOnDedicatedConnection handles WebSocket upgrade on the dedicated WebSocket tunnel
+func (t *Tunnel) handleWebSocketUpgradeOnDedicatedConnection(request *http.Request, tunnelConn net.Conn) {
+	t.logger.Info("[WEBSOCKET DEBUG] Handling WebSocket upgrade to local service on port %d", t.localPort)
+
+	// Connect to local service for WebSocket upgrade
 	localConn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", t.localPort), 5*time.Second)
 	if err != nil {
-		conn.Close()
-		return fmt.Errorf("no service found listening on port %d - make sure your service is running first", t.localPort)
+		t.logger.Error("[WEBSOCKET DEBUG] Failed to connect to local service: %v", err)
+		// Send error response back through tunnel
+		errorResponse := "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+		tunnelConn.Write([]byte(errorResponse))
+		return
 	}
-	localConn.Close()
+	defer localConn.Close()
 
-	// Store connection and start handling
-	t.conn = conn
-	t.lastPing = time.Now()
+	// Forward the WebSocket upgrade request to local service
+	if err := request.Write(localConn); err != nil {
+		t.logger.Error("[WEBSOCKET DEBUG] Failed to write upgrade request to local service: %v", err)
+		errorResponse := "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+		tunnelConn.Write([]byte(errorResponse))
+		return
+	}
 
-	t.logger.Info("Tunnel connected successfully. Domain: %s, Local Port: %d", t.domain, t.localPort)
+	t.logger.Info("[WEBSOCKET DEBUG] Upgrade request forwarded to local service, reading response")
 
-	// Start HTTP forwarding
-	t.wg.Add(1)
-	go t.handleConnection()
+	// Read the upgrade response from local service
+	localReader := bufio.NewReader(localConn)
+	response, err := http.ReadResponse(localReader, request)
+	if err != nil {
+		t.logger.Error("[WEBSOCKET DEBUG] Error reading upgrade response from local service: %v", err)
+		errorResponse := "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+		tunnelConn.Write([]byte(errorResponse))
+		return
+	}
 
-	return nil
+	t.logger.Info("[WEBSOCKET DEBUG] Received upgrade response: %s", response.Status)
+
+	// Write the upgrade response back to tunnel
+	if err := response.Write(tunnelConn); err != nil {
+		t.logger.Error("[WEBSOCKET DEBUG] Error writing upgrade response to tunnel: %v", err)
+		return
+	}
+
+	// Check if the upgrade was successful (101 Switching Protocols)
+	if response.StatusCode != 101 {
+		t.logger.Error("[WEBSOCKET DEBUG] WebSocket upgrade failed with status: %d", response.StatusCode)
+		return
+	}
+
+	t.logger.Info("[WEBSOCKET DEBUG] WebSocket upgrade successful, starting bidirectional forwarding")
+
+	// Start bidirectional copying between tunnel and local service
+	errChan := make(chan error, 2)
+
+	// Copy from tunnel to local service
+	go func() {
+		_, err := io.Copy(localConn, tunnelConn)
+		errChan <- err
+	}()
+
+	// Copy from local service to tunnel
+	go func() {
+		_, err := io.Copy(tunnelConn, localConn)
+		errChan <- err
+	}()
+
+	// Wait for either direction to close or error
+	err = <-errChan
+	if err != nil {
+		t.logger.Info("[WEBSOCKET DEBUG] WebSocket connection closed: %v", err)
+	} else {
+		t.logger.Info("[WEBSOCKET DEBUG] WebSocket connection closed normally")
+	}
+
+	t.logger.Info("[WEBSOCKET DEBUG] WebSocket forwarding completed")
 }
 
-// calculateNextDelay implements exponential backoff with jitter
-func (t *Tunnel) calculateNextDelay(currentDelay time.Duration) time.Duration {
-	// Exponential backoff
-	nextDelay := time.Duration(float64(currentDelay) * t.retryConfig.BackoffFactor)
+// handleHTTPRequest handles regular HTTP requests (non-WebSocket) on the HTTP tunnel
+func (t *Tunnel) handleHTTPRequest(request *http.Request, tunnelConn net.Conn) {
+	// Connect to local service for this request
+	localConn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", t.localPort), 5*time.Second)
+	if err != nil {
+		t.logger.Error("Failed to connect to local service: %v", err)
+		// Send error response back through tunnel
+		errorResponse := "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+		tunnelConn.Write([]byte(errorResponse))
+		return
+	}
+	defer localConn.Close()
 
-	// Cap at max delay
-	if nextDelay > t.retryConfig.MaxDelay {
-		nextDelay = t.retryConfig.MaxDelay
+	// Forward the request to local service
+	if err := request.Write(localConn); err != nil {
+		t.logger.Error("Failed to write request to local service: %v", err)
+		return
 	}
 
-	// Add jitter to prevent thundering herd
-	if t.retryConfig.JitterEnabled {
-		jitter := time.Duration(float64(nextDelay) * 0.1 * (2*rand.Float64() - 1))
-		nextDelay += jitter
+	t.logger.Info("Request forwarded to local service, reading response")
+
+	// Read response from local service
+	localReader := bufio.NewReader(localConn)
+	response, err := http.ReadResponse(localReader, request)
+	if err != nil {
+		t.logger.Error("Error reading response from local service: %v", err)
+		return
 	}
 
-	return nextDelay
-}
-
-// isMaintenanceError checks if the error indicates server maintenance
-func isMaintenanceError(err error) bool {
-	// Check for specific maintenance-related error messages
-	errStr := err.Error()
-	maintenanceKeywords := []string{
-		"maintenance",
-		"service unavailable",
-		"temporarily unavailable",
-		"503",
+	// Write response back to tunnel
+	if err := response.Write(tunnelConn); err != nil {
+		t.logger.Error("Error writing response to tunnel: %v", err)
+		return
 	}
 
-	for _, keyword := range maintenanceKeywords {
-		if contains(errStr, keyword) {
-			return true
-		}
-	}
-	return false
-}
-
-// contains is a simple string contains check (case-insensitive)
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) &&
-		   (s == substr ||
-		    (len(s) > len(substr) &&
-		     (s[:len(substr)] == substr ||
-		      s[len(s)-len(substr):] == substr ||
-		      indexOf(s, substr) >= 0)))
-}
-
-func indexOf(s, substr string) int {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return i
-		}
-	}
-	return -1
+	t.logger.Info("HTTP request/response cycle completed")
 }
 
 // startHealthMonitoring starts the health monitoring goroutine
@@ -335,211 +543,6 @@ func (t *Tunnel) reconnect() {
 		serverAddr := fmt.Sprintf("%s:%d", "tunnel.giraffecloud.xyz", 4443) // TODO: make configurable
 		t.connectWithRetry(serverAddr, nil)
 	}()
-}
-
-// handleConnection handles HTTP requests from the tunnel server
-func (t *Tunnel) handleConnection() {
-	defer t.wg.Done()
-	defer func() {
-		if t.conn != nil {
-			t.conn.Close()
-		}
-		t.logger.Info("Tunnel connection closed")
-	}()
-
-	t.logger.Info("Starting HTTP forwarding for tunnel connection")
-
-	// Create buffered reader for parsing HTTP
-	tunnelReader := bufio.NewReader(t.conn)
-
-	// Handle incoming HTTP requests from the tunnel
-	for {
-		select {
-		case <-t.ctx.Done():
-			return
-		default:
-			// Set read timeout for incoming requests
-			t.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-
-			// Parse the HTTP request using Go's built-in HTTP parser
-			request, err := http.ReadRequest(tunnelReader)
-			if err != nil {
-				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-					// Timeout is normal, continue
-					continue
-				}
-				// Connection closed or error - trigger reconnection
-				t.logger.Info("Tunnel connection closed: %v", err)
-				t.reconnect()
-				return
-			}
-
-			// We have an HTTP request, reset deadline
-			t.conn.SetReadDeadline(time.Time{})
-
-			t.logger.Info("Received HTTP request: %s %s", request.Method, request.URL.Path)
-
-			// Check if this is a WebSocket upgrade request
-			isWebSocket := t.isWebSocketUpgrade(request)
-			if isWebSocket {
-				t.logger.Info("[WEBSOCKET DEBUG] Detected WebSocket upgrade request")
-				t.handleWebSocketUpgrade(request)
-				// After WebSocket closes, this connection is done - trigger reconnection for new HTTP traffic
-				t.logger.Info("[WEBSOCKET DEBUG] WebSocket session ended, triggering tunnel reconnection")
-				t.reconnect()
-				return
-			}
-
-			// Handle regular HTTP request
-			t.handleHTTPRequest(request)
-		}
-	}
-}
-
-// isWebSocketUpgrade checks if the HTTP request is a WebSocket upgrade request
-func (t *Tunnel) isWebSocketUpgrade(r *http.Request) bool {
-	connection := r.Header.Get("Connection")
-	upgrade := r.Header.Get("Upgrade")
-	webSocketKey := r.Header.Get("Sec-WebSocket-Key")
-
-	// Connection header should contain "upgrade" (case-insensitive)
-	connectionUpgrade := false
-	for _, part := range strings.Split(strings.ToLower(connection), ",") {
-		if strings.TrimSpace(part) == "upgrade" {
-			connectionUpgrade = true
-			break
-		}
-	}
-
-	// Upgrade header should be "websocket" (case-insensitive)
-	upgradeWebSocket := strings.ToLower(strings.TrimSpace(upgrade)) == "websocket"
-
-	// Must have Sec-WebSocket-Key header
-	hasWebSocketKey := webSocketKey != ""
-
-	return connectionUpgrade && upgradeWebSocket && hasWebSocketKey
-}
-
-// handleWebSocketUpgrade handles the WebSocket upgrade process
-func (t *Tunnel) handleWebSocketUpgrade(request *http.Request) {
-	t.logger.Info("[WEBSOCKET DEBUG] Handling WebSocket upgrade to local service on port %d", t.localPort)
-
-	// Connect to local service for WebSocket upgrade
-	localConn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", t.localPort), 5*time.Second)
-	if err != nil {
-		t.logger.Error("[WEBSOCKET DEBUG] Failed to connect to local service: %v", err)
-		// Send error response back through tunnel
-		errorResponse := "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-		t.conn.Write([]byte(errorResponse))
-		return
-	}
-
-	// Forward the WebSocket upgrade request to local service
-	if err := request.Write(localConn); err != nil {
-		t.logger.Error("[WEBSOCKET DEBUG] Failed to write upgrade request to local service: %v", err)
-		localConn.Close()
-		errorResponse := "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-		t.conn.Write([]byte(errorResponse))
-		return
-	}
-
-	t.logger.Info("[WEBSOCKET DEBUG] Upgrade request forwarded to local service, reading response")
-
-	// Read the upgrade response from local service
-	localReader := bufio.NewReader(localConn)
-	response, err := http.ReadResponse(localReader, request)
-	if err != nil {
-		t.logger.Error("[WEBSOCKET DEBUG] Error reading upgrade response from local service: %v", err)
-		localConn.Close()
-		errorResponse := "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-		t.conn.Write([]byte(errorResponse))
-		return
-	}
-
-	t.logger.Info("[WEBSOCKET DEBUG] Received upgrade response: %s", response.Status)
-
-	// Write the upgrade response back to tunnel
-	if err := response.Write(t.conn); err != nil {
-		t.logger.Error("[WEBSOCKET DEBUG] Error writing upgrade response to tunnel: %v", err)
-		localConn.Close()
-		return
-	}
-
-	// Check if the upgrade was successful (101 Switching Protocols)
-	if response.StatusCode != 101 {
-		t.logger.Error("[WEBSOCKET DEBUG] WebSocket upgrade failed with status: %d", response.StatusCode)
-		localConn.Close()
-		return
-	}
-
-	t.logger.Info("[WEBSOCKET DEBUG] WebSocket upgrade successful, starting bidirectional forwarding")
-
-	// Start bidirectional copying between tunnel and local service
-	errChan := make(chan error, 2)
-
-	// Copy from tunnel to local service
-	go func() {
-		_, err := io.Copy(localConn, t.conn)
-		errChan <- err
-	}()
-
-	// Copy from local service to tunnel
-	go func() {
-		_, err := io.Copy(t.conn, localConn)
-		errChan <- err
-	}()
-
-	// Wait for either direction to close or error
-	err = <-errChan
-	if err != nil {
-		t.logger.Info("[WEBSOCKET DEBUG] WebSocket connection closed: %v", err)
-	} else {
-		t.logger.Info("[WEBSOCKET DEBUG] WebSocket connection closed normally")
-	}
-
-	localConn.Close()
-	t.logger.Info("[WEBSOCKET DEBUG] WebSocket forwarding completed")
-}
-
-// handleHTTPRequest handles regular HTTP requests (non-WebSocket)
-func (t *Tunnel) handleHTTPRequest(request *http.Request) {
-	// Connect to local service for this request
-	localConn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", t.localPort), 5*time.Second)
-	if err != nil {
-		t.logger.Error("Failed to connect to local service: %v", err)
-		// Send error response back through tunnel
-		errorResponse := "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-		t.conn.Write([]byte(errorResponse))
-		return
-	}
-
-	// Forward the request to local service
-	if err := request.Write(localConn); err != nil {
-		t.logger.Error("Failed to write request to local service: %v", err)
-		localConn.Close()
-		return
-	}
-
-	t.logger.Info("Request forwarded to local service, reading response")
-
-	// Read response from local service
-	localReader := bufio.NewReader(localConn)
-	response, err := http.ReadResponse(localReader, request)
-	if err != nil {
-		t.logger.Error("Error reading response from local service: %v", err)
-		localConn.Close()
-		return
-	}
-
-	// Write response back to tunnel
-	if err := response.Write(t.conn); err != nil {
-		t.logger.Error("Error writing response to tunnel: %v", err)
-		localConn.Close()
-		return
-	}
-
-	localConn.Close()
-	t.logger.Info("HTTP request/response cycle completed")
 }
 
 // Disconnect closes the tunnel connection and cleans up resources
@@ -616,4 +619,61 @@ func (t *Tunnel) GetStats() map[string]interface{} {
 	}
 
 	return stats
+}
+
+// calculateNextDelay implements exponential backoff with jitter
+func (t *Tunnel) calculateNextDelay(currentDelay time.Duration) time.Duration {
+	// Exponential backoff
+	nextDelay := time.Duration(float64(currentDelay) * t.retryConfig.BackoffFactor)
+
+	// Cap at max delay
+	if nextDelay > t.retryConfig.MaxDelay {
+		nextDelay = t.retryConfig.MaxDelay
+	}
+
+	// Add jitter to prevent thundering herd
+	if t.retryConfig.JitterEnabled {
+		jitter := time.Duration(float64(nextDelay) * 0.1 * (2*rand.Float64() - 1))
+		nextDelay += jitter
+	}
+
+	return nextDelay
+}
+
+// isMaintenanceError checks if the error indicates server maintenance
+func isMaintenanceError(err error) bool {
+	// Check for specific maintenance-related error messages
+	errStr := err.Error()
+	maintenanceKeywords := []string{
+		"maintenance",
+		"service unavailable",
+		"temporarily unavailable",
+		"503",
+	}
+
+	for _, keyword := range maintenanceKeywords {
+		if contains(errStr, keyword) {
+			return true
+		}
+	}
+	return false
+}
+
+// contains is a simple string contains check (case-insensitive)
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) &&
+		   (s == substr ||
+		    (len(s) > len(substr) &&
+		     (s[:len(substr)] == substr ||
+		      s[len(s)-len(substr):] == substr ||
+		      indexOf(s, substr) >= 0)))
+}
+
+func indexOf(s, substr string) int {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return i
+		}
+	}
+	return -1
 }
