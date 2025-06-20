@@ -28,12 +28,55 @@ const (
 	colorReset   = "\033[0m"
 )
 
+// LogLevel represents the logging level
+type LogLevel int
+
+const (
+	LogLevelDebug LogLevel = iota
+	LogLevelInfo
+	LogLevelWarn
+	LogLevelError
+)
+
+// String returns the string representation of the log level
+func (l LogLevel) String() string {
+	switch l {
+	case LogLevelDebug:
+		return "debug"
+	case LogLevelInfo:
+		return "info"
+	case LogLevelWarn:
+		return "warn"
+	case LogLevelError:
+		return "error"
+	default:
+		return "unknown"
+	}
+}
+
+// ParseLogLevel parses a string into a LogLevel
+func ParseLogLevel(level string) (LogLevel, error) {
+	switch strings.ToLower(level) {
+	case "debug":
+		return LogLevelDebug, nil
+	case "info":
+		return LogLevelInfo, nil
+	case "warn":
+		return LogLevelWarn, nil
+	case "error":
+		return LogLevelError, nil
+	default:
+		return LogLevelInfo, fmt.Errorf("invalid log level: %s", level)
+	}
+}
+
 // LogConfig holds configuration for the logger
 type LogConfig struct {
 	File       string // Log file path
 	MaxSize    int    // Maximum size in megabytes before log rotation
 	MaxBackups int    // Maximum number of old log files to retain
 	MaxAge     int    // Maximum number of days to retain old log files
+	Level      string // Log level (debug, info, warn, error)
 }
 
 // colorStripper is a custom writer that strips ANSI color codes
@@ -61,6 +104,7 @@ type Logger struct {
 	stdoutWriter io.Writer
 	multiWriter  io.Writer
 	useColors    bool
+	level        LogLevel
 }
 
 // Singleton pattern variables
@@ -92,6 +136,16 @@ func GetGlobalLogger() *Logger {
 
 // newLogger creates a new logger instance (internal function)
 func newLogger(config *LogConfig) (*Logger, error) {
+	// Parse log level
+	level := LogLevelInfo // default
+	if config.Level != "" {
+		var err error
+		level, err = ParseLogLevel(config.Level)
+		if err != nil {
+			return nil, fmt.Errorf("invalid log level: %w", err)
+		}
+	}
+
 	// Expand home directory in log file path
 	logFile := config.File
 	if strings.HasPrefix(logFile, "~/") {
@@ -134,6 +188,7 @@ func newLogger(config *LogConfig) (*Logger, error) {
 		stdoutWriter: stdoutWriter,
 		multiWriter:  multiWriter,
 		useColors:    true, // Always enable colors since we strip them for file output
+		level:        level,
 	}, nil
 }
 
@@ -146,8 +201,26 @@ func (l *Logger) GetWriter() io.Writer {
 	return l.multiWriter
 }
 
-// Log methods with optional colors
+// shouldLog checks if a message should be logged based on the configured level
+func (l *Logger) shouldLog(msgLevel LogLevel) bool {
+	return msgLevel >= l.level
+}
+
+// SetLevel updates the log level
+func (l *Logger) SetLevel(level LogLevel) {
+	l.level = level
+}
+
+// GetLevel returns the current log level
+func (l *Logger) GetLevel() LogLevel {
+	return l.level
+}
+
+// Log methods with optional colors and level filtering
 func (l *Logger) Debug(format string, v ...interface{}) {
+	if !l.shouldLog(LogLevelDebug) {
+		return
+	}
 	prefix := "[DEBUG]"
 	if l.useColors {
 		prefix = colorBlue + prefix + colorReset
@@ -156,6 +229,9 @@ func (l *Logger) Debug(format string, v ...interface{}) {
 }
 
 func (l *Logger) Info(format string, v ...interface{}) {
+	if !l.shouldLog(LogLevelInfo) {
+		return
+	}
 	prefix := "[INFO]"
 	if l.useColors {
 		prefix = colorGreen + prefix + colorReset
@@ -164,6 +240,9 @@ func (l *Logger) Info(format string, v ...interface{}) {
 }
 
 func (l *Logger) Warn(format string, v ...interface{}) {
+	if !l.shouldLog(LogLevelWarn) {
+		return
+	}
 	prefix := "[WARN]"
 	if l.useColors {
 		prefix = colorYellow + prefix + colorReset
@@ -172,6 +251,9 @@ func (l *Logger) Warn(format string, v ...interface{}) {
 }
 
 func (l *Logger) Error(format string, v ...interface{}) {
+	if !l.shouldLog(LogLevelError) {
+		return
+	}
 	prefix := "[ERROR]"
 	if l.useColors {
 		prefix = colorRed + prefix + colorReset

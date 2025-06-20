@@ -29,6 +29,7 @@ func initLogger() {
 		MaxSize:    100,
 		MaxBackups: 3,
 		MaxAge:     7,
+		Level:      os.Getenv("LOG_LEVEL"), // Default to empty string, will use INFO level
 	}
 
 	// Initialize the global logger
