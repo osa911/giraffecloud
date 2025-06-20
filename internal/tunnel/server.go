@@ -13,7 +13,6 @@ import (
 	"net"
 	"net/http"
 	"strings"
-	"sync"
 )
 
 /**
@@ -37,8 +36,6 @@ type TunnelServer struct {
 	tunnelRepo    repository.TunnelRepository
 	tunnelService interfaces.TunnelService
 	connections   *ConnectionManager
-	pools         map[string]*ConnectionPool // Connection pools per domain
-	poolsMutex    sync.RWMutex
 	streamConfig  *StreamingConfig // Streaming configuration
 }
 
@@ -47,7 +44,6 @@ func NewServer(tokenRepo repository.TokenRepository, tunnelRepo repository.Tunne
 	return &TunnelServer{
 		logger:       logging.GetGlobalLogger(),
 		connections:  NewConnectionManager(),
-		pools:        make(map[string]*ConnectionPool),
 		streamConfig: DefaultStreamingConfig(), // Use default streaming config
 		tlsConfig: &tls.Config{
 			InsecureSkipVerify: true, // Simplified for development
@@ -85,15 +81,6 @@ func (s *TunnelServer) Stop() error {
 		return nil
 	}
 
-	// Close all connection pools
-	s.poolsMutex.Lock()
-	for domain, pool := range s.pools {
-		s.logger.Info("Closing connection pool for domain: %s", domain)
-		pool.Close()
-	}
-	s.pools = make(map[string]*ConnectionPool)
-	s.poolsMutex.Unlock()
-
 	if err := s.listener.Close(); err != nil {
 		return fmt.Errorf("failed to close listener: %w", err)
 	}
@@ -101,18 +88,7 @@ func (s *TunnelServer) Stop() error {
 	return nil
 }
 
-// GetPoolStats returns statistics for all connection pools
-func (s *TunnelServer) GetPoolStats() map[string]interface{} {
-	s.poolsMutex.RLock()
-	defer s.poolsMutex.RUnlock()
 
-	stats := make(map[string]interface{})
-	for domain, pool := range s.pools {
-		stats[domain] = pool.Stats()
-	}
-
-	return stats
-}
 
 // UpdateStreamingConfig updates the streaming configuration
 func (s *TunnelServer) UpdateStreamingConfig(config *StreamingConfig) {
@@ -353,35 +329,11 @@ func (s *TunnelServer) isMediaRequest(requestData []byte) bool {
 	return false
 }
 
-// getOrCreatePool gets or creates a connection pool for a domain
-func (s *TunnelServer) getOrCreatePool(domain string, targetPort int) *ConnectionPool {
-	s.poolsMutex.RLock()
-	pool, exists := s.pools[domain]
-	s.poolsMutex.RUnlock()
 
-	if exists {
-		return pool
-	}
 
-	s.poolsMutex.Lock()
-	defer s.poolsMutex.Unlock()
-
-	// Double-check after acquiring write lock
-	if pool, exists := s.pools[domain]; exists {
-		return pool
-	}
-
-	// Create new pool using config
-	pool = NewConnectionPool("127.0.0.1", targetPort, s.streamConfig.PoolSize)
-	s.pools[domain] = pool
-	s.logger.Info("[POOL] Created connection pool for domain %s (port %d) with size %d", domain, targetPort, s.streamConfig.PoolSize)
-
-	return pool
-}
-
-// proxyMediaRequest handles media requests with optimized streaming
+// proxyMediaRequest handles media requests with optimized streaming through the tunnel
 func (s *TunnelServer) proxyMediaRequest(domain string, clientConn net.Conn, requestData []byte, requestBody io.Reader) {
-	// Get the target port from the tunnel connection
+	// Get the tunnel connection
 	tunnelConn := s.connections.GetHTTPConnection(domain)
 	if tunnelConn == nil {
 		s.logger.Error("No tunnel connection found for media request to domain: %s", domain)
@@ -389,68 +341,59 @@ func (s *TunnelServer) proxyMediaRequest(domain string, clientConn net.Conn, req
 		return
 	}
 
-	targetPort := tunnelConn.targetPort
+	s.logger.Info("[MEDIA PROXY] Using tunnel connection for media streaming")
 
-	// Get connection from pool
-	pool := s.getOrCreatePool(domain, targetPort)
-	localConn, err := pool.Get()
-	if err != nil {
-		s.logger.Error("[MEDIA PROXY] Failed to get connection from pool: %v", err)
-		s.writeHTTPError(clientConn, 502, "Bad Gateway - Local service unavailable")
-		return
-	}
+	// For media requests, we don't lock the tunnel to allow concurrent media streaming
+	// This allows multiple video segments to be requested simultaneously
 
-	// Return connection to pool when done
-	defer func() {
-		// For media streaming, we don't return the connection to pool as it's likely consumed
-		// Close it instead to avoid issues with HTTP connection reuse
-		localConn.Close()
-	}()
-
-	s.logger.Info("[MEDIA PROXY] Using pooled connection for media streaming")
-
-	// Forward the request to local service
-	if _, err := localConn.Write(requestData); err != nil {
-		s.logger.Error("[MEDIA PROXY] Error writing request to local service: %v", err)
+	// Write the HTTP request headers to the tunnel connection
+	if _, err := tunnelConn.conn.Write(requestData); err != nil {
+		s.logger.Error("[MEDIA PROXY] Error writing request headers to tunnel: %v", err)
 		s.writeHTTPError(clientConn, 502, "Bad Gateway")
 		return
 	}
 
-	// Forward request body if present
+	s.logger.Info("[MEDIA PROXY] Sent HTTP request headers to tunnel")
+
+	// Copy request body if present
 	if requestBody != nil {
-		if _, err := io.Copy(localConn, requestBody); err != nil {
-			s.logger.Error("[MEDIA PROXY] Error copying request body: %v", err)
+		written, err := io.Copy(tunnelConn.conn, requestBody)
+		if err != nil {
+			s.logger.Error("[MEDIA PROXY] Error writing request body to tunnel: %v", err)
+			s.writeHTTPError(clientConn, 502, "Bad Gateway")
 			return
 		}
-	}
-
-	s.logger.Info("[MEDIA PROXY] Request forwarded, starting bidirectional streaming")
-
-	// Start bidirectional streaming with larger buffers for media content
-	errChan := make(chan error, 2)
-
-	// Copy from local service to client (response)
-	go func() {
-		// Use larger buffer for media streaming (64KB instead of default 32KB)
-		buf := make([]byte, 65536)
-		_, err := io.CopyBuffer(clientConn, localConn, buf)
-		errChan <- err
-	}()
-
-	// Copy from client to local service (for any additional data)
-	go func() {
-		buf := make([]byte, 65536)
-		_, err := io.CopyBuffer(localConn, clientConn, buf)
-		errChan <- err
-	}()
-
-	// Wait for either direction to complete
-	err = <-errChan
-	if err != nil && err != io.EOF {
-		s.logger.Info("[MEDIA PROXY] Media streaming completed with: %v", err)
+		s.logger.Info("[MEDIA PROXY] Sent %d bytes of request body to tunnel", written)
 	} else {
-		s.logger.Info("[MEDIA PROXY] Media streaming completed successfully")
+		s.logger.Info("[MEDIA PROXY] Sent 0 bytes of request body to tunnel")
 	}
+
+	// Read the HTTP response from the tunnel
+	tunnelReader := bufio.NewReader(tunnelConn.conn)
+
+	// Parse the response
+	response, err := http.ReadResponse(tunnelReader, nil)
+	if err != nil {
+		s.logger.Error("[MEDIA PROXY] Error reading response from tunnel: %v", err)
+		s.writeHTTPError(clientConn, 502, "Bad Gateway")
+		return
+	}
+
+	s.logger.Info("[MEDIA PROXY] Received HTTP response: %s", response.Status)
+
+	// Write the response back to the client with optimized streaming
+	clientWriter := bufio.NewWriter(clientConn)
+	if err := response.Write(clientWriter); err != nil {
+		s.logger.Error("[MEDIA PROXY] Error writing response to client: %v", err)
+		return
+	}
+
+	if err := clientWriter.Flush(); err != nil {
+		s.logger.Error("[MEDIA PROXY] Error flushing response: %v", err)
+		return
+	}
+
+	s.logger.Info("[MEDIA PROXY] Media streaming completed successfully")
 }
 
 // writeHTTPError writes a proper HTTP error response
