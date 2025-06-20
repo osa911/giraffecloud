@@ -69,6 +69,8 @@ func DefaultRetryConfig() *RetryConfig {
 	}
 }
 
+
+
 // Tunnel represents a secure tunnel connection with enhanced reliability
 type Tunnel struct {
 	conn         net.Conn
@@ -101,15 +103,19 @@ type Tunnel struct {
 	reconnectMutex sync.Mutex
 	isReconnecting bool
 	isIntentionalReconnect bool // Flag to prevent race conditions during WebSocket recycling
+
+	// Streaming configuration
+	streamConfig *StreamingConfig
 }
 
 // NewTunnel creates a new tunnel instance with enhanced features
 func NewTunnel() *Tunnel {
 	return &Tunnel{
-		stopChan:    make(chan struct{}),
-		logger:      logging.GetGlobalLogger(),
-		state:       StateDisconnected,
-		retryConfig: DefaultRetryConfig(),
+		stopChan:     make(chan struct{}),
+		logger:       logging.GetGlobalLogger(),
+		state:        StateDisconnected,
+		retryConfig:  DefaultRetryConfig(),
+		streamConfig: DefaultStreamingConfig(), // Use default streaming config
 	}
 }
 
@@ -508,6 +514,9 @@ func (t *Tunnel) handleWebSocketUpgradeOnDedicatedConnection(request *http.Reque
 
 // handleHTTPRequest handles regular HTTP requests (non-WebSocket) on the HTTP tunnel
 func (t *Tunnel) handleHTTPRequest(request *http.Request, tunnelConn net.Conn) {
+	// Check if this is a media request that needs optimized handling
+	isMediaRequest := t.isMediaRequest(request)
+
 	// Connect to local service for this request
 	localConn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", t.localPort), 5*time.Second)
 	if err != nil {
@@ -525,8 +534,79 @@ func (t *Tunnel) handleHTTPRequest(request *http.Request, tunnelConn net.Conn) {
 		return
 	}
 
-	t.logger.Info("Request forwarded to local service, reading response")
+	if isMediaRequest {
+		t.logger.Info("Handling media request with optimized streaming: %s %s", request.Method, request.URL.Path)
+		t.handleMediaResponse(localConn, tunnelConn)
+	} else {
+		t.logger.Info("Request forwarded to local service, reading response")
+		t.handleRegularResponse(request, localConn, tunnelConn)
+	}
+}
 
+// isMediaRequest checks if this is a media/video request
+func (t *Tunnel) isMediaRequest(request *http.Request) bool {
+	if !t.streamConfig.EnableMediaOptimization {
+		return false
+	}
+
+	path := request.URL.Path
+
+	// Check for media file extensions from config
+	for _, ext := range t.streamConfig.MediaExtensions {
+		if strings.HasSuffix(path, ext) {
+			return true
+		}
+	}
+
+	// Check for Range requests (common for video streaming)
+	if request.Header.Get("Range") != "" {
+		return true
+	}
+
+	// Check for media paths from config
+	for _, mediaPath := range t.streamConfig.MediaPaths {
+		if strings.Contains(path, mediaPath) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// handleMediaResponse handles media responses with optimized streaming
+func (t *Tunnel) handleMediaResponse(localConn, tunnelConn net.Conn) {
+	t.logger.Info("Starting optimized media streaming")
+
+		// Use larger buffers for media streaming
+	buffer := make([]byte, t.streamConfig.MediaBufferSize)
+
+	// Start bidirectional copying with optimized buffers
+	errChan := make(chan error, 2)
+
+	// Copy from local service to tunnel (response)
+	go func() {
+		_, err := io.CopyBuffer(tunnelConn, localConn, buffer)
+		errChan <- err
+	}()
+
+	// Copy from tunnel to local service (for any additional data)
+	go func() {
+		buffer2 := make([]byte, t.streamConfig.MediaBufferSize)
+		_, err := io.CopyBuffer(localConn, tunnelConn, buffer2)
+		errChan <- err
+	}()
+
+	// Wait for either direction to complete
+	err := <-errChan
+	if err != nil && err != io.EOF {
+		t.logger.Info("Media streaming completed with: %v", err)
+	} else {
+		t.logger.Info("Media streaming completed successfully")
+	}
+}
+
+// handleRegularResponse handles regular HTTP responses
+func (t *Tunnel) handleRegularResponse(request *http.Request, localConn, tunnelConn net.Conn) {
 	// Read response from local service
 	localReader := bufio.NewReader(localConn)
 	response, err := http.ReadResponse(localReader, request)
@@ -695,6 +775,8 @@ func (t *Tunnel) GetStats() map[string]interface{} {
 		"domain":       t.domain,
 		"local_port":   t.localPort,
 		"last_ping":    t.lastPing,
+		"media_optimization": t.streamConfig.EnableMediaOptimization,
+		"media_buffer_size":  t.streamConfig.MediaBufferSize,
 	}
 
 	if t.lastError != nil {
@@ -702,6 +784,18 @@ func (t *Tunnel) GetStats() map[string]interface{} {
 	}
 
 	return stats
+}
+
+// UpdateStreamingConfig updates the streaming configuration
+func (t *Tunnel) UpdateStreamingConfig(config *StreamingConfig) {
+	t.streamConfig = config
+	t.logger.Info("Updated tunnel streaming configuration: MediaOptimization=%v, MediaBufferSize=%d",
+		config.EnableMediaOptimization, config.MediaBufferSize)
+}
+
+// GetStreamingConfig returns the current streaming configuration
+func (t *Tunnel) GetStreamingConfig() *StreamingConfig {
+	return t.streamConfig
 }
 
 // calculateNextDelay implements exponential backoff with jitter

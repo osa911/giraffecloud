@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // Server represents a server configuration with host and port
@@ -37,6 +38,26 @@ type SecurityConfig struct {
 	ClientKey          string `json:"client_key"`
 }
 
+// StreamingConfig holds configuration for streaming optimizations
+type StreamingConfig struct {
+	// Buffer sizes
+	MediaBufferSize    int           `json:"media_buffer_size"`    // Buffer size for media streaming (bytes)
+	RegularBufferSize  int           `json:"regular_buffer_size"`  // Buffer size for regular requests (bytes)
+
+	// Connection pool settings
+	PoolSize           int           `json:"pool_size"`           // Maximum connections per pool
+	PoolTimeout        time.Duration `json:"pool_timeout"`        // Connection timeout
+	PoolKeepAlive      time.Duration `json:"pool_keep_alive"`     // Keep-alive duration
+
+	// Media detection settings
+	EnableMediaOptimization bool     `json:"enable_media_optimization"` // Enable media-specific optimizations
+	MediaExtensions        []string `json:"media_extensions"`           // File extensions to treat as media
+	MediaPaths             []string `json:"media_paths"`                // URL paths to treat as media
+
+	// Performance settings
+	ConcurrentMediaStreams int `json:"concurrent_media_streams"` // Max concurrent media streams per domain
+}
+
 // DefaultConfig provides default tunnel configuration
 var DefaultConfig = Config{
 	Server: ServerConfig{
@@ -50,6 +71,32 @@ var DefaultConfig = Config{
 	Security: SecurityConfig{
 		InsecureSkipVerify: false,
 	},
+}
+
+// DefaultStreamingConfig returns default streaming configuration
+func DefaultStreamingConfig() *StreamingConfig {
+	return &StreamingConfig{
+		MediaBufferSize:   65536, // 64KB
+		RegularBufferSize: 32768, // 32KB
+
+		PoolSize:      15,
+		PoolTimeout:   10 * time.Second,
+		PoolKeepAlive: 30 * time.Second,
+
+		EnableMediaOptimization: true,
+		MediaExtensions: []string{
+			".mp4", ".avi", ".mkv", ".mov", ".wmv", ".flv", ".webm", ".ogg", ".ogv",
+			".mp3", ".wav", ".flac", ".aac", ".m4a", ".wma",
+			".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".svg",
+			".pdf", ".zip", ".rar", ".tar", ".gz", ".7z",
+		},
+		MediaPaths: []string{
+			"/video/", "/media/", "/stream/", "/download/", "/files/",
+			"/uploads/", "/assets/", "/static/", "/public/",
+		},
+
+		ConcurrentMediaStreams: 5,
+	}
 }
 
 // LoadConfig loads the configuration from the default location
@@ -128,4 +175,24 @@ func (c *Config) Validate() error {
 	}
 
 	return nil
+}
+
+// IsMediaExtension checks if a file extension is considered media
+func (c *StreamingConfig) IsMediaExtension(ext string) bool {
+	for _, mediaExt := range c.MediaExtensions {
+		if ext == mediaExt {
+			return true
+		}
+	}
+	return false
+}
+
+// IsMediaPath checks if a URL path is considered media
+func (c *StreamingConfig) IsMediaPath(path string) bool {
+	for _, mediaPath := range c.MediaPaths {
+		if len(path) >= len(mediaPath) && path[:len(mediaPath)] == mediaPath {
+			return true
+		}
+	}
+	return false
 }
