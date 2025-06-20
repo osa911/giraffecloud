@@ -232,11 +232,11 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData
 		return
 	}
 
-	// Check if this is a media/video request that should bypass serialization
+	// Check if this is a media/video request that should use optimized handling
 	isMediaRequest := s.isMediaRequest(requestData)
 
 	if isMediaRequest {
-		// For media requests, use a separate connection to avoid blocking other requests
+		// For media requests, use optimized handling but still serialize to prevent corruption
 		s.logger.Info("[PROXY DEBUG] Detected media request, using optimized streaming for domain: %s", domain)
 		s.proxyMediaRequest(domain, conn, requestData, requestBody)
 		return
@@ -341,10 +341,12 @@ func (s *TunnelServer) proxyMediaRequest(domain string, clientConn net.Conn, req
 		return
 	}
 
-	s.logger.Info("[MEDIA PROXY] Using tunnel connection for media streaming")
+	// Lock the tunnel connection to prevent response corruption
+	// Media optimization is in the processing, not in bypassing serialization
+	tunnelConn.Lock()
+	defer tunnelConn.Unlock()
 
-	// For media requests, we don't lock the tunnel to allow concurrent media streaming
-	// This allows multiple video segments to be requested simultaneously
+	s.logger.Info("[MEDIA PROXY] Using tunnel connection for media streaming")
 
 	// Write the HTTP request headers to the tunnel connection
 	if _, err := tunnelConn.conn.Write(requestData); err != nil {
