@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"time"
 )
 
 /**
@@ -236,8 +237,7 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData
 	isMediaRequest := s.isMediaRequest(requestData)
 
 	if isMediaRequest {
-		// For media requests, use optimized handling but still serialize to prevent corruption
-		s.logger.Info("[PROXY DEBUG] Detected media request, using optimized streaming for domain: %s", domain)
+		// For media requests, use optimized handling with minimal logging
 		s.proxyMediaRequest(domain, conn, requestData, requestBody)
 		return
 	}
@@ -247,8 +247,6 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData
 	tunnelConn.Lock()
 	defer tunnelConn.Unlock()
 
-	s.logger.Info("[PROXY DEBUG] Starting HTTP proxy for domain: %s", domain)
-
 	// Write the HTTP request headers to the tunnel connection
 	if _, err := tunnelConn.conn.Write(requestData); err != nil {
 		s.logger.Error("[PROXY DEBUG] Error writing request headers to tunnel: %v", err)
@@ -256,19 +254,13 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData
 		return
 	}
 
-	s.logger.Info("[PROXY DEBUG] Sent HTTP request headers to tunnel")
-
 	// Copy request body if present
 	if requestBody != nil {
-		written, err := io.Copy(tunnelConn.conn, requestBody)
-		if err != nil {
+		if _, err := io.Copy(tunnelConn.conn, requestBody); err != nil {
 			s.logger.Error("[PROXY DEBUG] Error writing request body to tunnel: %v", err)
 			s.writeHTTPError(conn, 502, "Bad Gateway")
 			return
 		}
-		s.logger.Info("[PROXY DEBUG] Sent %d bytes of request body to tunnel", written)
-	} else {
-		s.logger.Info("[PROXY DEBUG] Sent 0 bytes of request body to tunnel")
 	}
 
 	// Read the HTTP response from the tunnel
@@ -282,21 +274,17 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData
 		return
 	}
 
-	s.logger.Info("[PROXY DEBUG] Received HTTP response: %s", response.Status)
-
 	// Write the response back to the client
 	clientWriter := bufio.NewWriter(conn)
 	if err := response.Write(clientWriter); err != nil {
-		s.logger.Error("[PROXY DEBUG] Error writing response to client: %v", err)
+		s.logger.Debug("[PROXY DEBUG] Error writing response to client: %v", err)
 		return
 	}
 
 	if err := clientWriter.Flush(); err != nil {
-		s.logger.Error("[PROXY DEBUG] Error flushing response: %v", err)
+		s.logger.Debug("[PROXY DEBUG] Error flushing response: %v", err)
 		return
 	}
-
-	s.logger.Info("[PROXY DEBUG] HTTP proxy completed successfully")
 }
 
 // isMediaRequest checks if the request is for media content that should be streamed
@@ -341,12 +329,13 @@ func (s *TunnelServer) proxyMediaRequest(domain string, clientConn net.Conn, req
 		return
 	}
 
+	s.logger.Info("[MEDIA PROXY] Starting media request for domain: %s", domain)
+
 	// Lock the tunnel connection to prevent response corruption
-	// Media optimization is in the processing, not in bypassing serialization
 	tunnelConn.Lock()
 	defer tunnelConn.Unlock()
 
-	s.logger.Info("[MEDIA PROXY] Using tunnel connection for media streaming")
+	s.logger.Info("[MEDIA PROXY] Acquired tunnel lock")
 
 	// Write the HTTP request headers to the tunnel connection
 	if _, err := tunnelConn.conn.Write(requestData); err != nil {
@@ -355,20 +344,25 @@ func (s *TunnelServer) proxyMediaRequest(domain string, clientConn net.Conn, req
 		return
 	}
 
-	s.logger.Info("[MEDIA PROXY] Sent HTTP request headers to tunnel")
+	s.logger.Info("[MEDIA PROXY] Sent request headers to tunnel")
 
 	// Copy request body if present
 	if requestBody != nil {
-		written, err := io.Copy(tunnelConn.conn, requestBody)
-		if err != nil {
+		if _, err := io.Copy(tunnelConn.conn, requestBody); err != nil {
 			s.logger.Error("[MEDIA PROXY] Error writing request body to tunnel: %v", err)
 			s.writeHTTPError(clientConn, 502, "Bad Gateway")
 			return
 		}
-		s.logger.Info("[MEDIA PROXY] Sent %d bytes of request body to tunnel", written)
+		s.logger.Info("[MEDIA PROXY] Sent request body to tunnel")
 	} else {
-		s.logger.Info("[MEDIA PROXY] Sent 0 bytes of request body to tunnel")
+		s.logger.Info("[MEDIA PROXY] No request body to send")
 	}
+
+	s.logger.Info("[MEDIA PROXY] Reading response from tunnel...")
+
+	// Set a read timeout to prevent hanging
+	tunnelConn.conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+	defer tunnelConn.conn.SetReadDeadline(time.Time{}) // Clear timeout
 
 	// Read the HTTP response from the tunnel
 	tunnelReader := bufio.NewReader(tunnelConn.conn)
@@ -381,17 +375,18 @@ func (s *TunnelServer) proxyMediaRequest(domain string, clientConn net.Conn, req
 		return
 	}
 
-	s.logger.Info("[MEDIA PROXY] Received HTTP response: %s", response.Status)
+	s.logger.Info("[MEDIA PROXY] Received response: %s", response.Status)
 
 	// Write the response back to the client with optimized streaming
 	clientWriter := bufio.NewWriter(clientConn)
 	if err := response.Write(clientWriter); err != nil {
-		s.logger.Error("[MEDIA PROXY] Error writing response to client: %v", err)
+		// This is often normal - client may close connection early during video streaming
+		s.logger.Debug("[MEDIA PROXY] Client closed connection during streaming: %v", err)
 		return
 	}
 
 	if err := clientWriter.Flush(); err != nil {
-		s.logger.Error("[MEDIA PROXY] Error flushing response: %v", err)
+		s.logger.Debug("[MEDIA PROXY] Error flushing response (client likely disconnected): %v", err)
 		return
 	}
 
