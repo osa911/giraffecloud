@@ -289,59 +289,36 @@ func (s *Server) Start(cfg *Config) error {
 	// Custom handler for tunnel domains only
 	httpHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		domain := r.Host
-		logger.Info("[HIJACK DEBUG] Received HTTP request for domain: %s, method: %s, path: %s", domain, r.Method, r.URL.Path)
-		logger.Info("[HIJACK DEBUG] Headers: %+v", r.Header)
-
 		isTunnel := s.tunnelServer.IsTunnelDomain(domain)
-		logger.Info("[HIJACK DEBUG] HTTP request for domain: %s, isTunnel: %v", domain, isTunnel)
 
 		if isTunnel {
 			// Check if this is a WebSocket upgrade request
 			isWebSocket := isWebSocketUpgrade(r)
-			logger.Info("[HIJACK DEBUG] WebSocket upgrade request: %v", isWebSocket)
-
-			// Debug: Show all available tunnel connections for this domain
-			hasHTTP := s.tunnelServer.GetConnection(domain) != nil
-			hasWebSocket := s.tunnelServer.HasWebSocketConnection(domain)
-			logger.Info("[TUNNEL DEBUG] Domain: %s, HTTP tunnel: %v, WebSocket tunnel: %v", domain, hasHTTP, hasWebSocket)
-
-			logger.Info("[HIJACK DEBUG] Attempting to hijack connection for domain: %s", domain)
 			hj, ok := w.(http.Hijacker)
 			if !ok {
-				logger.Error("[HIJACK DEBUG] Failed to hijack: ResponseWriter doesn't support hijacking")
+				logger.Error("Failed to hijack: ResponseWriter doesn't support hijacking")
 				http.Error(w, "webserver doesn't support hijacking", http.StatusInternalServerError)
 				return
 			}
 
 			conn, bufrw, err := hj.Hijack()
 			if err != nil {
-				logger.Error("[HIJACK DEBUG] Failed to hijack connection: %v", err)
+				logger.Error("Failed to hijack connection: %v", err)
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
 			defer conn.Close()
-			logger.Info("[HIJACK DEBUG] Successfully hijacked connection for domain: %s", domain)
 
 			// Ensure any buffered data is flushed before proxying
 			if bufrw.Writer.Buffered() > 0 {
 				if err := bufrw.Writer.Flush(); err != nil {
-					logger.Error("[HIJACK DEBUG] Failed to flush buffered data: %v", err)
+					logger.Error("Failed to flush buffered data: %v", err)
 					return
 				}
 			}
 
 			if isWebSocket {
 				// Handle WebSocket upgrade
-				logger.Info("[WEBSOCKET DEBUG] Handling WebSocket upgrade for domain: %s", domain)
-
-				// Check if WebSocket tunnel is available
-				hasWebSocketTunnel := s.tunnelServer.HasWebSocketConnection(domain)
-				logger.Info("[WEBSOCKET DEBUG] WebSocket tunnel available for domain %s: %v", domain, hasWebSocketTunnel)
-
-				if !hasWebSocketTunnel {
-					logger.Error("[WEBSOCKET DEBUG] No WebSocket tunnel available for domain: %s, falling back to HTTP proxy", domain)
-				}
-
 				s.tunnelServer.ProxyWebSocketConnection(domain, conn, r)
 			} else {
 				// Handle regular HTTP request
@@ -373,9 +350,6 @@ func (s *Server) Start(cfg *Config) error {
 
 				// Get the request as bytes
 				requestBytes := []byte(requestData.String())
-				logger.Info("[HIJACK DEBUG] Forwarding HTTP request:\n%s", requestData.String())
-
-				logger.Info("[HIJACK DEBUG] Proxying connection for domain: %s", domain)
 				s.tunnelServer.ProxyConnection(domain, conn, requestBytes, r.Body)
 			}
 		} else {
