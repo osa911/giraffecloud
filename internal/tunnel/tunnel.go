@@ -362,9 +362,11 @@ func (t *Tunnel) handleHTTPConnection(conn net.Conn) {
 					// Timeout is normal, continue
 					continue
 				}
-				// Connection closed or error - trigger coordinated reconnection
+				// Connection closed or error - check if reconnection is needed
 				t.logger.Info("HTTP tunnel connection closed: %v", err)
-				t.coordinatedReconnect()
+				if !isExpectedConnectionClose(err) {
+					t.coordinatedReconnect()
+				}
 				return
 			}
 
@@ -410,9 +412,11 @@ func (t *Tunnel) handleWebSocketConnection(conn net.Conn) {
 					// Timeout is normal, continue
 					continue
 				}
-				// Connection closed or error - trigger coordinated reconnection
+				// Connection closed or error - check if reconnection is needed
 				t.logger.Info("WebSocket tunnel connection closed: %v", err)
-				t.coordinatedReconnect()
+				if !isExpectedConnectionClose(err) {
+					t.coordinatedReconnect()
+				}
 				return
 			}
 
@@ -427,7 +431,7 @@ func (t *Tunnel) handleWebSocketConnection(conn net.Conn) {
 			// After a WebSocket session completes, the tunnel connection is no longer usable
 			// for HTTP parsing due to the bidirectional copying. We need to reconnect.
 			t.logger.Info("[WEBSOCKET DEBUG] WebSocket session completed, triggering tunnel reconnection")
-			t.coordinatedReconnect()
+			t.coordinatedReconnectWithContext(true) // Mark as intentional
 			return
 		}
 	}
@@ -626,7 +630,35 @@ func (t *Tunnel) handleRegularResponse(request *http.Request, localConn, tunnelC
 
 // startHealthMonitoring starts the health monitoring goroutine
 func (t *Tunnel) startHealthMonitoring() {
-	t.logger.Info("Health monitoring disabled - relying on HTTP traffic for connection health")
+	t.logger.Info("Starting health monitoring with %v interval", t.retryConfig.HealthCheckInterval)
+
+	t.healthTicker = time.NewTicker(t.retryConfig.HealthCheckInterval)
+	go func() {
+		defer t.healthTicker.Stop()
+		for {
+			select {
+			case <-t.healthTicker.C:
+				// Simple health check - try to write to connection
+				if t.conn != nil {
+					t.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+					_, err := t.conn.Write([]byte{}) // Empty write as keepalive
+					t.conn.SetWriteDeadline(time.Time{})
+
+					if err != nil {
+						t.logger.Info("Health check failed, triggering reconnection: %v", err)
+						t.coordinatedReconnect()
+						return
+					}
+				}
+
+				// Update last ping time
+				t.lastPing = time.Now()
+
+			case <-t.ctx.Done():
+				return
+			}
+		}
+	}()
 }
 
 // coordinatedReconnect handles reconnection logic with coordination between HTTP and WebSocket handlers
@@ -853,4 +885,27 @@ func indexOf(s, substr string) int {
 		}
 	}
 	return -1
+}
+
+// isExpectedConnectionClose checks if the connection closure was expected
+func isExpectedConnectionClose(err error) bool {
+	if err == nil {
+		return true
+	}
+
+	errStr := err.Error()
+	expectedErrors := []string{
+		"use of closed network connection",
+		"connection reset by peer",
+		"EOF",
+		"broken pipe",
+	}
+
+	for _, expected := range expectedErrors {
+		if strings.Contains(errStr, expected) {
+			return true
+		}
+	}
+
+	return false
 }
