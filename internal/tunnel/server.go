@@ -233,6 +233,13 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData
 		return
 	}
 
+	// Validate connection is still alive before using it
+	if tunnelConn.conn == nil {
+		s.logger.Error("HTTP tunnel connection is closed for domain: %s", domain)
+		s.writeHTTPError(conn, 502, "Bad Gateway - HTTP tunnel connection closed")
+		return
+	}
+
 	// Check if this is a media/video request that should use optimized handling
 	isMediaRequest := s.isMediaRequest(requestData)
 
@@ -321,11 +328,18 @@ func (s *TunnelServer) isMediaRequest(requestData []byte) bool {
 
 // proxyMediaRequest handles media requests with optimized streaming through the tunnel
 func (s *TunnelServer) proxyMediaRequest(domain string, clientConn net.Conn, requestData []byte, requestBody io.Reader) {
-	// Get the tunnel connection
+	// Get the tunnel connection with validation
 	tunnelConn := s.connections.GetHTTPConnection(domain)
 	if tunnelConn == nil {
 		s.logger.Error("No tunnel connection found for media request to domain: %s", domain)
 		s.writeHTTPError(clientConn, 502, "Bad Gateway - Tunnel not connected")
+		return
+	}
+
+	// Validate connection is still alive before using it
+	if tunnelConn.conn == nil {
+		s.logger.Error("Tunnel connection is closed for domain: %s", domain)
+		s.writeHTTPError(clientConn, 502, "Bad Gateway - Tunnel connection closed")
 		return
 	}
 
