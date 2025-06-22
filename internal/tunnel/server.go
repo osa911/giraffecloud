@@ -609,7 +609,7 @@ func (s *TunnelServer) ProxyWebSocketConnection(domain string, clientConn net.Co
 		return
 	}
 
-	s.logger.Info("[WEBSOCKET DEBUG] Starting WebSocket proxy for domain: %s", domain)
+	s.logger.Debug("[WEBSOCKET DEBUG] Starting WebSocket proxy for domain: %s", domain)
 
 	// Build the WebSocket upgrade request
 	var requestData strings.Builder
@@ -634,7 +634,7 @@ func (s *TunnelServer) ProxyWebSocketConnection(domain string, clientConn net.Co
 
 	// Get the request as bytes
 	requestBytes := []byte(requestData.String())
-	s.logger.Info("[WEBSOCKET DEBUG] Forwarding WebSocket upgrade request:\n%s", requestData.String())
+	s.logger.Debug("[WEBSOCKET DEBUG] Forwarding WebSocket upgrade request:\n%s", requestData.String())
 
 	// Lock the tunnel connection only for the upgrade handshake
 	tunnelConn.Lock()
@@ -647,7 +647,7 @@ func (s *TunnelServer) ProxyWebSocketConnection(domain string, clientConn net.Co
 		return
 	}
 
-	s.logger.Info("[WEBSOCKET DEBUG] Sent WebSocket upgrade request to tunnel")
+	s.logger.Debug("[WEBSOCKET DEBUG] Sent WebSocket upgrade request to tunnel")
 
 	// Read the upgrade response from the tunnel
 	tunnelReader := bufio.NewReader(tunnelConn.conn)
@@ -659,7 +659,7 @@ func (s *TunnelServer) ProxyWebSocketConnection(domain string, clientConn net.Co
 		return
 	}
 
-	s.logger.Info("[WEBSOCKET DEBUG] Received upgrade response: %s", response.Status)
+	s.logger.Debug("[WEBSOCKET DEBUG] Received upgrade response: %s", response.Status)
 
 	// Write the upgrade response back to the client
 	clientWriter := bufio.NewWriter(clientConn)
@@ -682,7 +682,7 @@ func (s *TunnelServer) ProxyWebSocketConnection(domain string, clientConn net.Co
 		return
 	}
 
-	s.logger.Info("[WEBSOCKET DEBUG] WebSocket upgrade successful, starting bidirectional forwarding")
+	s.logger.Debug("[WEBSOCKET DEBUG] WebSocket upgrade successful, starting bidirectional forwarding")
 
 	// Unlock the tunnel connection after successful upgrade
 	// We don't need serialization for WebSocket data forwarding
@@ -706,10 +706,10 @@ func (s *TunnelServer) ProxyWebSocketConnection(domain string, clientConn net.Co
 	// Wait for either direction to close or error
 	err = <-errChan
 	if err != nil {
-		s.logger.Info("[WEBSOCKET DEBUG] WebSocket connection closed: %v", err)
+		s.logger.Debug("[WEBSOCKET DEBUG] WebSocket connection closed: %v", err)
 	} else {
-		s.logger.Info("[WEBSOCKET DEBUG] WebSocket connection closed normally")
+		s.logger.Debug("[WEBSOCKET DEBUG] WebSocket connection closed normally")
 	}
 
-	s.logger.Info("[WEBSOCKET DEBUG] WebSocket proxy completed")
+	s.logger.Debug("[WEBSOCKET DEBUG] WebSocket proxy completed")
 }
