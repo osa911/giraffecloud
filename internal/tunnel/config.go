@@ -49,6 +49,10 @@ type StreamingConfig struct {
 	PoolTimeout        time.Duration `json:"pool_timeout"`        // Connection timeout
 	PoolKeepAlive      time.Duration `json:"pool_keep_alive"`     // Keep-alive duration
 
+	// Timeout settings
+	MediaTimeout       time.Duration `json:"media_timeout"`       // Timeout for media requests
+	RegularTimeout     time.Duration `json:"regular_timeout"`     // Timeout for regular requests
+
 	// Media detection settings
 	EnableMediaOptimization bool     `json:"enable_media_optimization"` // Enable media-specific optimizations
 	MediaExtensions        []string `json:"media_extensions"`           // File extensions to treat as media
@@ -82,6 +86,10 @@ func DefaultStreamingConfig() *StreamingConfig {
 		PoolSize:      15,
 		PoolTimeout:   10 * time.Second,
 		PoolKeepAlive: 30 * time.Second,
+
+		// Timeout settings - much shorter for media requests
+		MediaTimeout:   8 * time.Second,   // 8 seconds for media requests
+		RegularTimeout: 15 * time.Second,  // 15 seconds for regular requests
 
 		EnableMediaOptimization: true,
 		MediaExtensions: []string{

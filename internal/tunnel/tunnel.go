@@ -272,7 +272,7 @@ func (t *Tunnel) establishConnection(serverAddr string, tlsConfig *tls.Config, c
 	}
 
 	// Perform handshake with timeout and connection type
-	conn.SetDeadline(time.Now().Add(30 * time.Second))
+	conn.SetDeadline(time.Now().Add(15 * time.Second))
 	resp, err := t.performHandshake(conn, t.token, connType)
 	if err != nil {
 		conn.Close()

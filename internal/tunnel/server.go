@@ -270,6 +270,11 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData
 		}
 	}
 
+	// Set a read timeout for regular requests
+	regularTimeout := s.streamConfig.RegularTimeout
+	tunnelConn.conn.SetReadDeadline(time.Now().Add(regularTimeout))
+	defer tunnelConn.conn.SetReadDeadline(time.Time{}) // Clear timeout
+
 	// Read the HTTP response from the tunnel
 	tunnelReader := bufio.NewReader(tunnelConn.conn)
 
@@ -390,8 +395,9 @@ func (s *TunnelServer) proxyMediaRequest(domain string, clientConn net.Conn, req
 
 	s.logger.Info("[MEDIA PROXY] Reading response from tunnel...")
 
-	// Set a read timeout to prevent hanging
-	tunnelConn.conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+	// Set a read timeout to prevent hanging - use configurable media timeout
+	mediaTimeout := s.streamConfig.MediaTimeout
+	tunnelConn.conn.SetReadDeadline(time.Now().Add(mediaTimeout))
 	defer tunnelConn.conn.SetReadDeadline(time.Time{}) // Clear timeout
 
 	// Read the HTTP response from the tunnel
@@ -502,8 +508,9 @@ func (s *TunnelServer) retryMediaRequest(domain string, clientConn net.Conn, req
 		}
 	}
 
-	// Set a read timeout
-	tunnelConn.conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+	// Set a read timeout - use configurable media timeout for retry
+	mediaTimeout := s.streamConfig.MediaTimeout
+	tunnelConn.conn.SetReadDeadline(time.Now().Add(mediaTimeout))
 	defer tunnelConn.conn.SetReadDeadline(time.Time{})
 
 	// Read the HTTP response from the tunnel
@@ -557,6 +564,11 @@ func (s *TunnelServer) retryRegularRequest(domain string, clientConn net.Conn, r
 			return
 		}
 	}
+
+	// Set a read timeout - use configurable regular timeout for retry
+	regularTimeout := s.streamConfig.RegularTimeout
+	tunnelConn.conn.SetReadDeadline(time.Now().Add(regularTimeout))
+	defer tunnelConn.conn.SetReadDeadline(time.Time{})
 
 	// Read the HTTP response from the tunnel
 	tunnelReader := bufio.NewReader(tunnelConn.conn)
