@@ -273,9 +273,25 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData
 	// Read the HTTP response from the tunnel
 	tunnelReader := bufio.NewReader(tunnelConn.conn)
 
-	// Parse the response
+	// Parse the response with retry logic for connection issues
 	response, err := http.ReadResponse(tunnelReader, nil)
 	if err != nil {
+		// Check if this is a connection issue that might resolve with retry
+		if isConnectionError(err) {
+			s.logger.Info("[PROXY DEBUG] Connection error during request, retrying once: %v", err)
+
+			// Wait a moment for reconnection to complete
+			time.Sleep(100 * time.Millisecond)
+
+			// Try to get a fresh connection
+			retryTunnelConn := s.connections.GetHTTPConnection(domain)
+			if retryTunnelConn != nil && retryTunnelConn.conn != nil {
+				// Retry the request with the new connection
+				s.retryRegularRequest(domain, conn, requestData, requestBody, retryTunnelConn)
+				return
+			}
+		}
+
 		s.logger.Error("[PROXY DEBUG] Error reading response from tunnel: %v", err)
 		s.writeHTTPError(conn, 502, "Bad Gateway")
 		return
@@ -381,9 +397,25 @@ func (s *TunnelServer) proxyMediaRequest(domain string, clientConn net.Conn, req
 	// Read the HTTP response from the tunnel
 	tunnelReader := bufio.NewReader(tunnelConn.conn)
 
-	// Parse the response
+	// Parse the response with retry logic for connection issues
 	response, err := http.ReadResponse(tunnelReader, nil)
 	if err != nil {
+		// Check if this is a connection issue that might resolve with retry
+		if isConnectionError(err) {
+			s.logger.Info("[MEDIA PROXY] Connection error during media request, retrying once: %v", err)
+
+			// Wait a moment for reconnection to complete
+			time.Sleep(100 * time.Millisecond)
+
+			// Try to get a fresh connection
+			retryTunnelConn := s.connections.GetHTTPConnection(domain)
+			if retryTunnelConn != nil && retryTunnelConn.conn != nil {
+				// Retry the request with the new connection
+				s.retryMediaRequest(domain, clientConn, requestData, requestBody, retryTunnelConn)
+				return
+			}
+		}
+
 		s.logger.Error("[MEDIA PROXY] Error reading response from tunnel: %v", err)
 		s.writeHTTPError(clientConn, 502, "Bad Gateway")
 		return
@@ -421,6 +453,137 @@ func (s *TunnelServer) writeHTTPError(conn net.Conn, code int, message string) {
 		"%s", code, statusText, message)
 
 	conn.Write([]byte(response))
+}
+
+// isConnectionError checks if an error is related to connection issues
+func isConnectionError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errStr := err.Error()
+	connectionErrors := []string{
+		"unexpected EOF",
+		"connection reset by peer",
+		"broken pipe",
+		"use of closed network connection",
+	}
+
+	for _, connErr := range connectionErrors {
+		if strings.Contains(errStr, connErr) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// retryMediaRequest retries a media request with a fresh connection
+func (s *TunnelServer) retryMediaRequest(domain string, clientConn net.Conn, requestData []byte, requestBody io.Reader, tunnelConn *TunnelConnection) {
+	s.logger.Info("[MEDIA PROXY] Retrying media request with fresh connection")
+
+	// Lock the fresh tunnel connection
+	tunnelConn.Lock()
+	defer tunnelConn.Unlock()
+
+	// Write the HTTP request headers to the tunnel connection
+	if _, err := tunnelConn.conn.Write(requestData); err != nil {
+		s.logger.Error("[MEDIA PROXY] Retry failed - error writing request headers: %v", err)
+		s.writeHTTPError(clientConn, 502, "Bad Gateway")
+		return
+	}
+
+	// Copy request body if present (note: this might be empty if already consumed)
+	if requestBody != nil {
+		if _, err := io.Copy(tunnelConn.conn, requestBody); err != nil {
+			s.logger.Error("[MEDIA PROXY] Retry failed - error writing request body: %v", err)
+			s.writeHTTPError(clientConn, 502, "Bad Gateway")
+			return
+		}
+	}
+
+	// Set a read timeout
+	tunnelConn.conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+	defer tunnelConn.conn.SetReadDeadline(time.Time{})
+
+	// Read the HTTP response from the tunnel
+	tunnelReader := bufio.NewReader(tunnelConn.conn)
+
+	// Parse the response
+	response, err := http.ReadResponse(tunnelReader, nil)
+	if err != nil {
+		s.logger.Error("[MEDIA PROXY] Retry failed - error reading response: %v", err)
+		s.writeHTTPError(clientConn, 502, "Bad Gateway")
+		return
+	}
+
+	s.logger.Info("[MEDIA PROXY] Retry successful - received response: %s", response.Status)
+
+	// Write the response back to the client
+	clientWriter := bufio.NewWriter(clientConn)
+	if err := response.Write(clientWriter); err != nil {
+		s.logger.Debug("[MEDIA PROXY] Retry - client closed connection during streaming: %v", err)
+		return
+	}
+
+	if err := clientWriter.Flush(); err != nil {
+		s.logger.Debug("[MEDIA PROXY] Retry - error flushing response: %v", err)
+		return
+	}
+
+	s.logger.Info("[MEDIA PROXY] Retry completed successfully")
+}
+
+// retryRegularRequest retries a regular HTTP request with a fresh connection
+func (s *TunnelServer) retryRegularRequest(domain string, clientConn net.Conn, requestData []byte, requestBody io.Reader, tunnelConn *TunnelConnection) {
+	s.logger.Info("[PROXY DEBUG] Retrying regular request with fresh connection")
+
+	// Lock the fresh tunnel connection
+	tunnelConn.Lock()
+	defer tunnelConn.Unlock()
+
+	// Write the HTTP request headers to the tunnel connection
+	if _, err := tunnelConn.conn.Write(requestData); err != nil {
+		s.logger.Error("[PROXY DEBUG] Retry failed - error writing request headers: %v", err)
+		s.writeHTTPError(clientConn, 502, "Bad Gateway")
+		return
+	}
+
+	// Copy request body if present
+	if requestBody != nil {
+		if _, err := io.Copy(tunnelConn.conn, requestBody); err != nil {
+			s.logger.Error("[PROXY DEBUG] Retry failed - error writing request body: %v", err)
+			s.writeHTTPError(clientConn, 502, "Bad Gateway")
+			return
+		}
+	}
+
+	// Read the HTTP response from the tunnel
+	tunnelReader := bufio.NewReader(tunnelConn.conn)
+
+	// Parse the response
+	response, err := http.ReadResponse(tunnelReader, nil)
+	if err != nil {
+		s.logger.Error("[PROXY DEBUG] Retry failed - error reading response: %v", err)
+		s.writeHTTPError(clientConn, 502, "Bad Gateway")
+		return
+	}
+
+	s.logger.Info("[PROXY DEBUG] Retry successful - received response: %s", response.Status)
+
+	// Write the response back to the client
+	clientWriter := bufio.NewWriter(clientConn)
+	if err := response.Write(clientWriter); err != nil {
+		s.logger.Debug("[PROXY DEBUG] Retry - error writing response to client: %v", err)
+		return
+	}
+
+	if err := clientWriter.Flush(); err != nil {
+		s.logger.Debug("[PROXY DEBUG] Retry - error flushing response: %v", err)
+		return
+	}
+
+	s.logger.Info("[PROXY DEBUG] Retry completed successfully")
 }
 
 // ProxyWebSocketConnection handles WebSocket upgrade and bidirectional forwarding
