@@ -12,6 +12,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -246,11 +247,25 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData
 	concurrent := atomic.AddInt64(&s.concurrentReqs, 1)
 	defer atomic.AddInt64(&s.concurrentReqs, -1)
 
-		// Log performance metrics every 10 requests and perform cleanup
+	// Log performance metrics every 10 requests and perform cleanup
 	if atomic.LoadInt64(&s.requestCount)%10 == 0 {
 		poolSize := s.connections.GetHTTPPoolSize(domain)
 		hits := atomic.LoadInt64(&s.poolHits)
 		misses := atomic.LoadInt64(&s.poolMisses)
+
+		// Get memory statistics
+		var memStats runtime.MemStats
+		runtime.ReadMemStats(&memStats)
+
+		// Calculate actual connection memory overhead
+		connOverheadMB := s.getConnectionMemoryOverhead()
+
+		// Total system memory usage
+		totalMemoryMB := float64(memStats.Alloc) / 1024.0 / 1024.0
+
+		// Project costs for different pool sizes
+		projected50MB := connOverheadMB * 50
+		projected100MB := connOverheadMB * 100
 
 		// Perform periodic cleanup every 5 minutes (less aggressive for stability)
 		now := time.Now()
@@ -266,8 +281,10 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData
 		}
 
 		recentTimeouts := atomic.LoadInt64(&s.recentTimeouts)
-		s.logger.Info("[PERF] Requests: %d, Concurrent: %d, Pool Size: %d, Hits: %d, Misses: %d, Timeouts: %d",
+		s.logger.Info("[PERF] Requests: %d, Concurrent: %d, Pool: %d, Hits: %d, Misses: %d, Timeouts: %d",
 			atomic.LoadInt64(&s.requestCount), concurrent, poolSize, hits, misses, recentTimeouts)
+		s.logger.Info("[MEMORY] Total: %.1fMB, Per-Conn: ~%.2fMB, Projected-50: %.1fMB, Projected-100: %.1fMB, GC: %d",
+			totalMemoryMB, connOverheadMB, projected50MB, projected100MB, memStats.NumGC)
 	}
 
 	// Smart connection acquisition with load monitoring
@@ -1022,4 +1039,21 @@ func (s *TunnelServer) ProxyWebSocketConnection(domain string, clientConn net.Co
 	}
 
 	s.logger.Debug("[WEBSOCKET DEBUG] WebSocket proxy completed")
+}
+
+// getConnectionMemoryOverhead estimates memory overhead per connection
+func (s *TunnelServer) getConnectionMemoryOverhead() float64 {
+	// Estimate memory per connection:
+	// - TCP connection buffers (kernel): ~16KB each (read + write)
+	// - TLS buffers: ~32KB each
+	// - Application buffers: MediaBufferSize + RegularBufferSize
+	// - Connection struct + metadata: ~1KB
+
+	tcpBuffers := 16.0 * 1024  // 16KB kernel buffers
+	tlsBuffers := 32.0 * 1024  // 32KB TLS buffers
+	appBuffers := float64(s.streamConfig.MediaBufferSize + s.streamConfig.RegularBufferSize)
+	metadata := 1.0 * 1024     // 1KB struct overhead
+
+	totalBytesPerConn := tcpBuffers + tlsBuffers + appBuffers + metadata
+	return totalBytesPerConn / 1024.0 / 1024.0 // Convert to MB
 }
