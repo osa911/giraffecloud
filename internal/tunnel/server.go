@@ -252,9 +252,9 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData
 		hits := atomic.LoadInt64(&s.poolHits)
 		misses := atomic.LoadInt64(&s.poolMisses)
 
-		// Perform periodic cleanup every 30 seconds (very aggressive)
+		// Perform periodic cleanup every 5 minutes (less aggressive for stability)
 		now := time.Now()
-		if now.Sub(s.lastCleanup) > 30*time.Second {
+		if now.Sub(s.lastCleanup) > 5*time.Minute {
 			cleanupStats := s.connections.CleanupDeadConnections()
 			if len(cleanupStats) > 0 {
 				s.logger.Info("[CLEANUP] Removed dead connections: %v", cleanupStats)
@@ -283,7 +283,7 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData
 	poolSize := s.connections.GetHTTPPoolSize(domain)
 	currentConcurrent := atomic.LoadInt64(&s.concurrentReqs)
 
-	if currentConcurrent >= int64(poolSize) && poolSize < 10 {
+	if currentConcurrent >= int64(poolSize) && poolSize < 20 {
 		s.logger.Info("[POOL STRESS] All %d connections busy (%d concurrent), need more capacity", poolSize, currentConcurrent)
 		// This will trigger client to establish more connections
 	}
@@ -728,13 +728,13 @@ func (s *TunnelServer) isConnectionCleanForReuse(tunnelConn *TunnelConnection, r
 
 	// NEVER reuse connections that have handled too many requests
 	requestCount := tunnelConn.GetRequestCount()
-	if requestCount > 5 { // Much more aggressive - only 5 requests per connection
+	if requestCount > 50 { // Allow more requests per connection to prevent cascade failures
 		s.logger.Debug("[CONNECTION] Connection has handled %d requests, retiring", requestCount)
 		return false
 	}
 
-	// NEVER reuse connections older than 2 minutes (very aggressive)
-	if time.Since(tunnelConn.GetCreatedAt()) > 2*time.Minute {
+	// NEVER reuse connections older than 10 minutes (less aggressive for fast clicking)
+	if time.Since(tunnelConn.GetCreatedAt()) > 10*time.Minute {
 		s.logger.Debug("[CONNECTION] Connection is %v old, retiring", time.Since(tunnelConn.GetCreatedAt()))
 		return false
 	}
@@ -818,10 +818,10 @@ func (s *TunnelServer) recycleOldConnections(domain string) {
 		shouldRecycle := false
 		reason := ""
 
-		if age > 1*time.Minute {
+		if age > 15*time.Minute {
 			shouldRecycle = true
 			reason = "age"
-		} else if requests > 3 {
+		} else if requests > 100 {
 			shouldRecycle = true
 			reason = "request_count"
 		}

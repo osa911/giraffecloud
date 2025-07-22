@@ -83,7 +83,7 @@ func DefaultStreamingConfig() *StreamingConfig {
 		MediaBufferSize:   65536, // 64KB
 		RegularBufferSize: 32768, // 32KB
 
-		PoolSize:      6,  // Balanced pool size - enough for aggressive usage, not too large
+		PoolSize:      15, // Match client connection count to prevent pool stress
 		PoolTimeout:   10 * time.Second,
 		PoolKeepAlive: 30 * time.Second,
 
