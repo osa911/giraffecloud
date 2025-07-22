@@ -242,15 +242,15 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData
 	concurrent := atomic.AddInt64(&s.concurrentReqs, 1)
 	defer atomic.AddInt64(&s.concurrentReqs, -1)
 
-		// Log performance metrics every 100 requests and perform cleanup
-	if atomic.LoadInt64(&s.requestCount)%100 == 0 {
+		// Log performance metrics every 50 requests and perform cleanup
+	if atomic.LoadInt64(&s.requestCount)%50 == 0 {
 		poolSize := s.connections.GetHTTPPoolSize(domain)
 		hits := atomic.LoadInt64(&s.poolHits)
 		misses := atomic.LoadInt64(&s.poolMisses)
 
-		// Perform periodic cleanup every 5 minutes
+		// Perform periodic cleanup every 2 minutes (more frequent)
 		now := time.Now()
-		if now.Sub(s.lastCleanup) > 5*time.Minute {
+		if now.Sub(s.lastCleanup) > 2*time.Minute {
 			cleanupStats := s.connections.CleanupDeadConnections()
 			if len(cleanupStats) > 0 {
 				s.logger.Info("[CLEANUP] Removed dead connections: %v", cleanupStats)
@@ -281,6 +281,24 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData
 		return
 	}
 
+	// Set a short deadline for connection validation
+	tunnelConn.GetConn().SetDeadline(time.Now().Add(1 * time.Second))
+	// Test the connection with a small write (will fail immediately if connection is dead)
+	if _, err := tunnelConn.GetConn().Write([]byte{}); err != nil {
+		s.logger.Error("HTTP tunnel connection failed validation for domain: %s, error: %v", domain, err)
+		s.connections.RemoveSpecificHTTPConnection(domain, tunnelConn)
+		// Try to get another connection immediately
+		if retryConn := s.connections.GetHTTPConnection(domain); retryConn != nil && retryConn != tunnelConn {
+			s.logger.Info("Switching to backup connection after validation failure")
+			tunnelConn = retryConn
+		} else {
+			s.writeHTTPError(conn, 502, "Bad Gateway - No healthy connections available")
+			return
+		}
+	}
+	// Clear the validation deadline
+	tunnelConn.GetConn().SetDeadline(time.Time{})
+
 	// Check if this is a media/video request that should use optimized handling
 	isMediaRequest := s.isMediaRequest(requestData)
 
@@ -308,6 +326,14 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData
 		s.logger.Error("[PROXY DEBUG] Error writing request headers to tunnel: %v", err)
 		// Connection is dead, remove it from pool
 		s.connections.RemoveSpecificHTTPConnection(domain, tunnelConn)
+
+		// Check if we should retry immediately for connection errors
+		if s.isRetryableConnectionError(err) && s.connections.GetHTTPPoolSize(domain) > 1 {
+			s.logger.Info("[PROXY DEBUG] Connection error detected, attempting immediate retry")
+			s.retryWithFreshConnection(domain, conn, requestData, requestBody)
+			return
+		}
+
 		s.writeHTTPError(conn, 502, "Bad Gateway - Failed to write to tunnel")
 		return
 	}
@@ -317,6 +343,14 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData
 		if _, err := io.Copy(tunnelConn.GetConn(), requestBody); err != nil {
 			s.logger.Error("[PROXY DEBUG] Error writing request body to tunnel: %v", err)
 			s.connections.RemoveSpecificHTTPConnection(domain, tunnelConn)
+
+			// Check if we should retry immediately for connection errors
+			if s.isRetryableConnectionError(err) && s.connections.GetHTTPPoolSize(domain) > 1 {
+				s.logger.Info("[PROXY DEBUG] Body write error detected, attempting immediate retry")
+				s.retryWithFreshConnection(domain, conn, requestData, requestBody)
+				return
+			}
+
 			s.writeHTTPError(conn, 502, "Bad Gateway - Failed to write body to tunnel")
 			return
 		}
@@ -330,16 +364,16 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData
 	// Read the HTTP response from the tunnel
 	tunnelReader := bufio.NewReader(tunnelConn.GetConn())
 
-		// Parse the response with better error handling
+			// Parse the response with better error handling
 	response, err := http.ReadResponse(tunnelReader, nil)
 	if err != nil {
 		s.logger.Error("[PROXY DEBUG] Error reading response from tunnel: %v", err)
 		// Connection is corrupted, remove it from pool
 		s.connections.RemoveSpecificHTTPConnection(domain, tunnelConn)
 
-		// Try to get a fresh connection for retry (only if we have other connections)
-		if s.connections.GetHTTPPoolSize(domain) > 1 {
-			s.logger.Info("[PROXY DEBUG] Attempting retry with fresh connection")
+		// Try to get a fresh connection for retry (prioritize retryable errors)
+		if s.isRetryableConnectionError(err) && s.connections.GetHTTPPoolSize(domain) > 1 {
+			s.logger.Info("[PROXY DEBUG] Retryable error detected, attempting retry with fresh connection")
 			// Note: Let the defer handle the unlock - don't unlock manually here
 			s.retryWithFreshConnection(domain, conn, requestData, requestBody)
 			return
@@ -474,9 +508,26 @@ func (s *TunnelServer) proxyMediaRequest(domain string, clientConn net.Conn, req
 	// Validate connection is still alive before using it
 	if tunnelConn.GetConn() == nil {
 		s.logger.Error("Tunnel connection is closed for domain: %s", domain)
+		s.connections.RemoveSpecificHTTPConnection(domain, tunnelConn)
 		s.writeHTTPError(clientConn, 502, "Bad Gateway - Tunnel connection closed")
 		return
 	}
+
+	// Quick connection validation for media requests
+	tunnelConn.GetConn().SetDeadline(time.Now().Add(1 * time.Second))
+	if _, err := tunnelConn.GetConn().Write([]byte{}); err != nil {
+		s.logger.Error("Media tunnel connection failed validation for domain: %s, error: %v", domain, err)
+		s.connections.RemoveSpecificHTTPConnection(domain, tunnelConn)
+		// Try to get another connection immediately
+		if retryConn := s.connections.GetHTTPConnection(domain); retryConn != nil && retryConn != tunnelConn {
+			s.logger.Info("Switching to backup connection for media request after validation failure")
+			tunnelConn = retryConn
+		} else {
+			s.writeHTTPError(clientConn, 502, "Bad Gateway - No healthy media connections available")
+			return
+		}
+	}
+	tunnelConn.GetConn().SetDeadline(time.Time{})
 
 	s.logger.Info("[MEDIA PROXY] Starting media request for domain: %s", domain)
 
@@ -512,16 +563,16 @@ func (s *TunnelServer) proxyMediaRequest(domain string, clientConn net.Conn, req
 	// Read the HTTP response from the tunnel
 	tunnelReader := bufio.NewReader(tunnelConn.GetConn())
 
-		// Parse the response with error handling
+			// Parse the response with error handling
 	response, err := http.ReadResponse(tunnelReader, nil)
 	if err != nil {
 		s.logger.Error("[MEDIA PROXY] Error reading response from tunnel: %v", err)
 		// Connection is corrupted, remove it from pool
 		s.connections.RemoveSpecificHTTPConnection(domain, tunnelConn)
 
-		// Try to get a fresh connection for retry (only if we have other connections)
-		if s.connections.GetHTTPPoolSize(domain) > 1 {
-			s.logger.Info("[MEDIA PROXY] Attempting retry with fresh connection")
+		// Try to get a fresh connection for retry (prioritize retryable errors)
+		if s.isRetryableConnectionError(err) && s.connections.GetHTTPPoolSize(domain) > 1 {
+			s.logger.Info("[MEDIA PROXY] Retryable error detected, attempting retry with fresh connection")
 			// Note: Let the defer handle the unlock - don't unlock manually here
 			s.retryWithFreshConnection(domain, clientConn, requestData, requestBody)
 			return
@@ -563,6 +614,35 @@ func (s *TunnelServer) writeHTTPError(conn net.Conn, code int, message string) {
 		"%s", code, statusText, message)
 
 	conn.Write([]byte(response))
+}
+
+// isRetryableConnectionError checks if an error indicates a connection issue that should trigger a retry
+func (s *TunnelServer) isRetryableConnectionError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errStr := err.Error()
+
+	// Common connection errors that indicate the connection is dead/corrupted
+	retryableErrors := []string{
+		"use of closed network connection",
+		"connection reset by peer",
+		"broken pipe",
+		"i/o timeout",
+		"unexpected EOF",
+		"EOF",
+		"connection refused",
+		"no route to host",
+	}
+
+	for _, retryableErr := range retryableErrors {
+		if strings.Contains(errStr, retryableErr) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // Connection error handling is now done through connection pool management

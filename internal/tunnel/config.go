@@ -87,9 +87,9 @@ func DefaultStreamingConfig() *StreamingConfig {
 		PoolTimeout:   10 * time.Second,
 		PoolKeepAlive: 30 * time.Second,
 
-		// Timeout settings - much shorter for media requests
-		MediaTimeout:   8 * time.Second,   // 8 seconds for media requests
-		RegularTimeout: 15 * time.Second,  // 15 seconds for regular requests
+		// Timeout settings - more generous for stability
+		MediaTimeout:   30 * time.Second,  // 30 seconds for media requests
+		RegularTimeout: 45 * time.Second,  // 45 seconds for regular requests
 
 		EnableMediaOptimization: true,
 		MediaExtensions: []string{
