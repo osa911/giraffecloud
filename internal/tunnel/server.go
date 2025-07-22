@@ -242,15 +242,15 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData
 	concurrent := atomic.AddInt64(&s.concurrentReqs, 1)
 	defer atomic.AddInt64(&s.concurrentReqs, -1)
 
-		// Log performance metrics every 50 requests and perform cleanup
-	if atomic.LoadInt64(&s.requestCount)%50 == 0 {
+		// Log performance metrics every 10 requests and perform cleanup
+	if atomic.LoadInt64(&s.requestCount)%10 == 0 {
 		poolSize := s.connections.GetHTTPPoolSize(domain)
 		hits := atomic.LoadInt64(&s.poolHits)
 		misses := atomic.LoadInt64(&s.poolMisses)
 
-		// Perform periodic cleanup every 1 minute (more aggressive)
+		// Perform periodic cleanup every 30 seconds (very aggressive)
 		now := time.Now()
-		if now.Sub(s.lastCleanup) > 1*time.Minute {
+		if now.Sub(s.lastCleanup) > 30*time.Second {
 			cleanupStats := s.connections.CleanupDeadConnections()
 			if len(cleanupStats) > 0 {
 				s.logger.Info("[CLEANUP] Removed dead connections: %v", cleanupStats)
@@ -401,9 +401,9 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData
 		return
 	}
 
-	// CRITICAL: Check if we should recycle this connection
-	if s.shouldRecycleConnection(tunnelConn, response) {
-		s.logger.Debug("[PROXY DEBUG] Recycling tunnel connection after request completion")
+	// CRITICAL: Always validate connection state after use
+	if !s.isConnectionCleanForReuse(tunnelConn, response) {
+		s.logger.Debug("[PROXY DEBUG] Connection not clean, removing from pool")
 		s.connections.RemoveSpecificHTTPConnection(domain, tunnelConn)
 		go tunnelConn.Close() // Close asynchronously to avoid blocking
 	}
@@ -630,9 +630,9 @@ func (s *TunnelServer) proxyMediaRequest(domain string, clientConn net.Conn, req
 
 	s.logger.Info("[MEDIA PROXY] Media streaming completed successfully")
 
-	// CRITICAL: Check if we should recycle this connection after media streaming
-	if s.shouldRecycleConnection(tunnelConn, response) {
-		s.logger.Debug("[MEDIA PROXY] Recycling tunnel connection after media request completion")
+	// CRITICAL: Always validate connection state after media use
+	if !s.isConnectionCleanForReuse(tunnelConn, response) {
+		s.logger.Debug("[MEDIA PROXY] Connection not clean after media request, removing from pool")
 		s.connections.RemoveSpecificHTTPConnection(domain, tunnelConn)
 		go tunnelConn.Close() // Close asynchronously to avoid blocking
 	}
@@ -683,37 +683,55 @@ func (s *TunnelServer) isRetryableConnectionError(err error) bool {
 	return false
 }
 
-// shouldRecycleConnection determines if a tunnel connection should be closed and recycled
-func (s *TunnelServer) shouldRecycleConnection(tunnelConn *TunnelConnection, response *http.Response) bool {
-	// Always recycle on connection close header
+// isConnectionCleanForReuse determines if a tunnel connection is safe to reuse
+func (s *TunnelServer) isConnectionCleanForReuse(tunnelConn *TunnelConnection, response *http.Response) bool {
+	// NEVER reuse connections with "Connection: close" header
 	if response != nil {
 		if connHeader := response.Header.Get("Connection"); strings.ToLower(connHeader) == "close" {
-			return true
+			s.logger.Debug("[CONNECTION] Connection marked for close by server")
+			return false
 		}
 	}
 
-	// Recycle connections that have handled many requests to prevent staleness
-	// Be more aggressive for media requests to handle gallery navigation better
+	// NEVER reuse connections that have handled too many requests
 	requestCount := tunnelConn.GetRequestCount()
-	if requestCount > 30 { // Recycle after 30 requests (more aggressive)
-		return true
+	if requestCount > 5 { // Much more aggressive - only 5 requests per connection
+		s.logger.Debug("[CONNECTION] Connection has handled %d requests, retiring", requestCount)
+		return false
 	}
 
-	// Recycle connections that have been alive for too long
-	// Be more aggressive for media connections
-	if time.Since(tunnelConn.GetCreatedAt()) > 5*time.Minute {
-		return true
+	// NEVER reuse connections older than 2 minutes (very aggressive)
+	if time.Since(tunnelConn.GetCreatedAt()) > 2*time.Minute {
+		s.logger.Debug("[CONNECTION] Connection is %v old, retiring", time.Since(tunnelConn.GetCreatedAt()))
+		return false
 	}
 
-	// Recycle on certain HTTP status codes that might indicate connection issues
+	// NEVER reuse connections after error status codes
 	if response != nil {
 		switch response.StatusCode {
 		case 502, 503, 504: // Bad Gateway, Service Unavailable, Gateway Timeout
-			return true
+			s.logger.Debug("[CONNECTION] Error status code %d, retiring connection", response.StatusCode)
+			return false
 		}
 	}
 
-	return false
+	// NEVER reuse if connection appears unhealthy
+	if tunnelConn.GetConn() == nil {
+		s.logger.Debug("[CONNECTION] Connection is nil, cannot reuse")
+		return false
+	}
+
+	// Test connection health with a minimal write
+	tunnelConn.GetConn().SetDeadline(time.Now().Add(100 * time.Millisecond))
+	if _, err := tunnelConn.GetConn().Write([]byte{}); err != nil {
+		s.logger.Debug("[CONNECTION] Connection failed health check: %v", err)
+		tunnelConn.GetConn().SetDeadline(time.Time{})
+		return false
+	}
+	tunnelConn.GetConn().SetDeadline(time.Time{})
+
+	s.logger.Debug("[CONNECTION] Connection passed all health checks, safe for reuse")
+	return true
 }
 
 	// recycleOldConnections proactively recycles connections that might be getting stuck
@@ -722,7 +740,7 @@ func (s *TunnelServer) recycleOldConnections(domain string) {
 	recycledCount := 0
 
 	for _, conn := range connections {
-		// Be more aggressive for potentially stuck connections
+		// Be VERY aggressive for potentially stuck connections
 		// Especially important for image gallery navigation where connections can get stuck
 		age := time.Since(conn.GetCreatedAt())
 		requests := conn.GetRequestCount()
@@ -730,10 +748,10 @@ func (s *TunnelServer) recycleOldConnections(domain string) {
 		shouldRecycle := false
 		reason := ""
 
-		if age > 3*time.Minute {
+		if age > 1*time.Minute {
 			shouldRecycle = true
 			reason = "age"
-		} else if requests > 20 {
+		} else if requests > 3 {
 			shouldRecycle = true
 			reason = "request_count"
 		}

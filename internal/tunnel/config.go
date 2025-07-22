@@ -83,13 +83,13 @@ func DefaultStreamingConfig() *StreamingConfig {
 		MediaBufferSize:   65536, // 64KB
 		RegularBufferSize: 32768, // 32KB
 
-		PoolSize:      15,
+		PoolSize:      3,  // Small pool size to prevent connection corruption
 		PoolTimeout:   10 * time.Second,
 		PoolKeepAlive: 30 * time.Second,
 
-		// Timeout settings - optimized for large images and user navigation
-		MediaTimeout:   120 * time.Second, // 2 minutes for large images/videos
-		RegularTimeout: 45 * time.Second,  // 45 seconds for regular requests
+		// Timeout settings - more aggressive to prevent stuck connections
+		MediaTimeout:   15 * time.Second,  // 15 seconds for media (aggressive)
+		RegularTimeout: 10 * time.Second,  // 10 seconds for regular requests (aggressive)
 
 		EnableMediaOptimization: true,
 		MediaExtensions: []string{
