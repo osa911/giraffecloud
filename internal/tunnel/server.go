@@ -49,6 +49,10 @@ type TunnelServer struct {
 	// Connection health monitoring
 	lastCleanup     time.Time // Last cleanup time
 	cleanupStats    map[string]int // Cleanup statistics
+
+	// Circuit breaker for cascade failure prevention
+	recentTimeouts  int64    // Recent timeout count
+	lastTimeoutTime time.Time // Last timeout occurrence
 }
 
 // NewServer creates a new tunnel server instance
@@ -261,16 +265,27 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData
 			s.lastCleanup = now
 		}
 
-		s.logger.Info("[PERF] Requests: %d, Concurrent: %d, Pool Size: %d, Hits: %d, Misses: %d",
-			atomic.LoadInt64(&s.requestCount), concurrent, poolSize, hits, misses)
+		recentTimeouts := atomic.LoadInt64(&s.recentTimeouts)
+		s.logger.Info("[PERF] Requests: %d, Concurrent: %d, Pool Size: %d, Hits: %d, Misses: %d, Timeouts: %d",
+			atomic.LoadInt64(&s.requestCount), concurrent, poolSize, hits, misses, recentTimeouts)
 	}
 
+	// Smart connection acquisition with load monitoring
 	tunnelConn := s.connections.GetHTTPConnection(domain)
 	if tunnelConn == nil {
 		atomic.AddInt64(&s.poolMisses, 1)
 		s.logger.Error("No HTTP tunnel connection found for domain: %s", domain)
 		s.writeHTTPError(conn, 502, "Bad Gateway - HTTP tunnel not connected")
 		return
+	}
+
+	// Check if pool is under stress (all connections busy)
+	poolSize := s.connections.GetHTTPPoolSize(domain)
+	currentConcurrent := atomic.LoadInt64(&s.concurrentReqs)
+
+	if currentConcurrent >= int64(poolSize) && poolSize < 10 {
+		s.logger.Info("[POOL STRESS] All %d connections busy (%d concurrent), need more capacity", poolSize, currentConcurrent)
+		// This will trigger client to establish more connections
 	}
 
 	// Successfully got a connection from the pool
@@ -362,8 +377,8 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData
 		}
 	}
 
-	// Set a read timeout for regular requests
-	regularTimeout := s.streamConfig.RegularTimeout
+	// Set a read timeout for regular requests - use adaptive timeout based on circuit breaker
+	regularTimeout := s.getAdaptiveTimeout(false) // false = not media request
 	tunnelConn.GetConn().SetReadDeadline(time.Now().Add(regularTimeout))
 	defer tunnelConn.GetConn().SetReadDeadline(time.Time{}) // Clear timeout
 
@@ -374,6 +389,12 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData
 	response, err := http.ReadResponse(tunnelReader, nil)
 	if err != nil {
 		s.logger.Error("[PROXY DEBUG] Error reading response from tunnel: %v", err)
+
+		// Record timeout for circuit breaker if it's a timeout error
+		if strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "deadline") {
+			s.recordTimeout()
+		}
+
 		// Connection is corrupted, remove it from pool
 		s.connections.RemoveSpecificHTTPConnection(domain, tunnelConn)
 
@@ -442,9 +463,9 @@ func (s *TunnelServer) retryWithFreshConnection(domain string, clientConn net.Co
 		}
 	}
 
-	// Set a read timeout for retry
-	regularTimeout := s.streamConfig.RegularTimeout
-	retryTunnelConn.GetConn().SetReadDeadline(time.Now().Add(regularTimeout))
+	// Set a read timeout for retry - use adaptive timeout
+	retryTimeout := s.getAdaptiveTimeout(false) // false = not media request
+	retryTunnelConn.GetConn().SetReadDeadline(time.Now().Add(retryTimeout))
 	defer retryTunnelConn.GetConn().SetReadDeadline(time.Time{})
 
 	// Read the HTTP response from the tunnel
@@ -454,6 +475,12 @@ func (s *TunnelServer) retryWithFreshConnection(domain string, clientConn net.Co
 	response, err := http.ReadResponse(tunnelReader, nil)
 	if err != nil {
 		s.logger.Error("[PROXY DEBUG] Retry failed - error reading response: %v", err)
+
+		// Record timeout for circuit breaker if retry also timed out
+		if strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "deadline") {
+			s.recordTimeout()
+		}
+
 		s.connections.RemoveSpecificHTTPConnection(domain, retryTunnelConn)
 		s.writeHTTPError(clientConn, 502, "Bad Gateway - Retry failed")
 		return
@@ -571,8 +598,8 @@ func (s *TunnelServer) proxyMediaRequest(domain string, clientConn net.Conn, req
 
 	s.logger.Info("[MEDIA PROXY] Reading response from tunnel...")
 
-	// Set a read timeout to prevent hanging - use configurable media timeout
-	mediaTimeout := s.streamConfig.MediaTimeout
+	// Set a read timeout to prevent hanging - use adaptive timeout for media
+	mediaTimeout := s.getAdaptiveTimeout(true) // true = media request
 	tunnelConn.GetConn().SetReadDeadline(time.Now().Add(mediaTimeout))
 	defer tunnelConn.GetConn().SetReadDeadline(time.Time{}) // Clear timeout
 
@@ -583,6 +610,12 @@ func (s *TunnelServer) proxyMediaRequest(domain string, clientConn net.Conn, req
 	response, err := http.ReadResponse(tunnelReader, nil)
 	if err != nil {
 		s.logger.Error("[MEDIA PROXY] Error reading response from tunnel: %v", err)
+
+		// Record timeout for circuit breaker if it's a timeout error
+		if strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "deadline") {
+			s.recordTimeout()
+		}
+
 		// Connection is corrupted, remove it from pool
 		s.connections.RemoveSpecificHTTPConnection(domain, tunnelConn)
 
@@ -732,6 +765,43 @@ func (s *TunnelServer) isConnectionCleanForReuse(tunnelConn *TunnelConnection, r
 
 	s.logger.Debug("[CONNECTION] Connection passed all health checks, safe for reuse")
 	return true
+}
+
+// getAdaptiveTimeout returns timeout based on recent failures (circuit breaker logic)
+func (s *TunnelServer) getAdaptiveTimeout(isMedia bool) time.Duration {
+	// Check if we're in a failure cascade (many recent timeouts)
+	recentTimeouts := atomic.LoadInt64(&s.recentTimeouts)
+	timeSinceLastTimeout := time.Since(s.lastTimeoutTime)
+
+	// Reset timeout counter if it's been quiet for a while
+	if timeSinceLastTimeout > 30*time.Second {
+		atomic.StoreInt64(&s.recentTimeouts, 0)
+		recentTimeouts = 0
+	}
+
+	var baseTimeout time.Duration
+	if isMedia {
+		baseTimeout = s.streamConfig.MediaTimeout
+	} else {
+		baseTimeout = s.streamConfig.RegularTimeout
+	}
+
+	// If we're seeing many timeouts, be more aggressive with shorter timeouts
+	if recentTimeouts > 3 {
+		aggressiveTimeout := baseTimeout / 3 // Much shorter timeout during failures
+		s.logger.Debug("[CIRCUIT BREAKER] Using aggressive timeout %v due to %d recent timeouts", aggressiveTimeout, recentTimeouts)
+		return aggressiveTimeout
+	}
+
+	return baseTimeout
+}
+
+// recordTimeout records a timeout for circuit breaker logic
+func (s *TunnelServer) recordTimeout() {
+	atomic.AddInt64(&s.recentTimeouts, 1)
+	s.lastTimeoutTime = time.Now()
+	timeouts := atomic.LoadInt64(&s.recentTimeouts)
+	s.logger.Debug("[CIRCUIT BREAKER] Recorded timeout #%d", timeouts)
 }
 
 	// recycleOldConnections proactively recycles connections that might be getting stuck
