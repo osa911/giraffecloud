@@ -4,6 +4,7 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // ConnectionType represents the type of tunnel connection
@@ -43,6 +44,50 @@ func (p *TunnelConnectionPool) AddConnection(conn net.Conn) *TunnelConnection {
 	return tunnelConn
 }
 
+// IsConnectionHealthy checks if a tunnel connection is still alive and responsive
+func (p *TunnelConnectionPool) IsConnectionHealthy(conn *TunnelConnection) bool {
+	if conn == nil || conn.GetConn() == nil {
+		return false
+	}
+
+	// Set a very short read deadline to test connection
+	conn.GetConn().SetReadDeadline(time.Now().Add(1 * time.Millisecond))
+	defer conn.GetConn().SetReadDeadline(time.Time{}) // Clear deadline
+
+	// Try to read one byte (should timeout immediately if connection is alive)
+	one := make([]byte, 1)
+	_, err := conn.GetConn().Read(one)
+
+	// If we get a timeout, the connection is likely alive
+	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+		return true
+	}
+
+	// If we get EOF or other error, connection is dead
+	return false
+}
+
+// CleanupDeadConnections removes dead connections from the pool
+func (p *TunnelConnectionPool) CleanupDeadConnections() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	var healthyConnections []*TunnelConnection
+	removedCount := 0
+
+	for _, conn := range p.connections {
+		if p.IsConnectionHealthy(conn) {
+			healthyConnections = append(healthyConnections, conn)
+		} else {
+			conn.Close()
+			removedCount++
+		}
+	}
+
+	p.connections = healthyConnections
+	return removedCount
+}
+
 // GetConnection returns a connection using round-robin distribution
 func (p *TunnelConnectionPool) GetConnection() *TunnelConnection {
 	p.mu.RLock()
@@ -54,7 +99,16 @@ func (p *TunnelConnectionPool) GetConnection() *TunnelConnection {
 
 	// Use atomic round-robin to distribute load across connections
 	index := atomic.AddUint64(&p.roundRobin, 1) % uint64(len(p.connections))
-	return p.connections[index]
+	conn := p.connections[index]
+
+	// Quick health check on the selected connection
+	if conn.GetConn() == nil {
+		// Connection is dead, trigger cleanup and try again
+		go p.CleanupDeadConnections()
+		return nil
+	}
+
+	return conn
 }
 
 // RemoveConnection removes a specific connection from the pool
@@ -286,6 +340,26 @@ func (m *ConnectionManager) GetHTTPPoolSize(domain string) int {
 	defer domainConns.mu.RUnlock()
 
 	return domainConns.httpPool.Size()
+}
+
+// CleanupDeadConnections removes dead connections from all pools
+func (m *ConnectionManager) CleanupDeadConnections() map[string]int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	cleanupStats := make(map[string]int)
+
+	for domain, domainConns := range m.connections {
+		domainConns.mu.Lock()
+		removed := domainConns.httpPool.CleanupDeadConnections()
+		domainConns.mu.Unlock()
+
+		if removed > 0 {
+			cleanupStats[domain] = removed
+		}
+	}
+
+	return cleanupStats
 }
 
 // Close closes all connections and cleans up resources
