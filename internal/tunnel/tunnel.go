@@ -223,39 +223,65 @@ func (t *Tunnel) attemptDualConnections(serverAddr string, tlsConfig *tls.Config
 		}
 	}
 
-	t.logger.Info("[DUAL TUNNEL DEBUG] Starting dual tunnel establishment...")
+	t.logger.Info("[DUAL TUNNEL DEBUG] Starting enhanced tunnel establishment...")
 
-	// First, establish the HTTP tunnel connection
-	t.logger.Info("[DUAL TUNNEL DEBUG] Establishing HTTP tunnel...")
-	httpConn, err := t.establishConnection(serverAddr, tlsConfig, "http")
-	if err != nil {
-		t.logger.Error("[DUAL TUNNEL DEBUG] Failed to establish HTTP tunnel: %v", err)
-		return fmt.Errorf("failed to establish HTTP tunnel: %w", err)
+	// Determine the number of HTTP connections to establish based on pool size
+	poolSize := t.streamConfig.PoolSize
+	if poolSize <= 0 {
+		poolSize = 3 // Default to 3 concurrent HTTP connections
 	}
-	t.logger.Info("[DUAL TUNNEL DEBUG] HTTP tunnel established successfully")
+
+	t.logger.Info("[DUAL TUNNEL DEBUG] Establishing %d HTTP tunnel connections for concurrency...", poolSize)
+
+	// Establish multiple HTTP tunnel connections for concurrent request handling
+	httpConnections := make([]net.Conn, 0, poolSize)
+	for i := 0; i < poolSize; i++ {
+		t.logger.Info("[DUAL TUNNEL DEBUG] Establishing HTTP tunnel %d/%d...", i+1, poolSize)
+		httpConn, err := t.establishConnection(serverAddr, tlsConfig, "http")
+		if err != nil {
+			// Clean up previously established connections
+			for _, conn := range httpConnections {
+				conn.Close()
+			}
+			t.logger.Error("[DUAL TUNNEL DEBUG] Failed to establish HTTP tunnel %d: %v", i+1, err)
+			return fmt.Errorf("failed to establish HTTP tunnel %d: %w", i+1, err)
+		}
+		httpConnections = append(httpConnections, httpConn)
+		t.logger.Info("[DUAL TUNNEL DEBUG] HTTP tunnel %d/%d established successfully", i+1, poolSize)
+	}
 
 	// Then, establish the WebSocket tunnel connection
 	t.logger.Info("[DUAL TUNNEL DEBUG] Establishing WebSocket tunnel...")
 	wsConn, err := t.establishConnection(serverAddr, tlsConfig, "websocket")
 	if err != nil {
-		httpConn.Close() // Clean up HTTP connection if WebSocket fails
+		// Clean up HTTP connections if WebSocket fails
+		for _, conn := range httpConnections {
+			conn.Close()
+		}
 		t.logger.Error("[DUAL TUNNEL DEBUG] Failed to establish WebSocket tunnel: %v", err)
 		return fmt.Errorf("failed to establish WebSocket tunnel: %w", err)
 	}
 	t.logger.Info("[DUAL TUNNEL DEBUG] WebSocket tunnel established successfully")
 
-	// Store both connections
-	t.conn = httpConn // Main connection for HTTP traffic
+	// Store the first HTTP connection as the main connection (for backward compatibility)
+	t.conn = httpConnections[0]
 	t.wsConn = wsConn // Store WebSocket connection separately
 
-	t.logger.Info("Dual tunnel connections established successfully. Domain: %s, Local Port: %d", t.domain, t.localPort)
+	t.logger.Info("Enhanced tunnel connections established successfully. Domain: %s, Local Port: %d, HTTP Connections: %d",
+		t.domain, t.localPort, len(httpConnections))
 
-	// Start handling for both connections
-	t.wg.Add(2)
-	go t.handleHTTPConnection(httpConn)
+	// Start handling for all HTTP connections and the WebSocket connection
+	t.wg.Add(len(httpConnections) + 1)
+
+	// Start handlers for all HTTP connections
+	for i, httpConn := range httpConnections {
+		go t.handleHTTPConnection(httpConn, i+1) // Pass connection index for logging
+	}
+
+	// Start handler for WebSocket connection
 	go t.handleWebSocketConnection(wsConn)
 
-	t.logger.Info("[DUAL TUNNEL DEBUG] Both tunnel handlers started")
+	t.logger.Info("[DUAL TUNNEL DEBUG] All tunnel handlers started (%d HTTP + 1 WebSocket)", len(httpConnections))
 	return nil
 }
 
@@ -332,16 +358,26 @@ func (t *Tunnel) performHandshake(conn net.Conn, token, connType string) (*Tunne
 }
 
 // handleHTTPConnection handles HTTP requests from the tunnel server
-func (t *Tunnel) handleHTTPConnection(conn net.Conn) {
+func (t *Tunnel) handleHTTPConnection(conn net.Conn, connIndex ...int) {
 	defer t.wg.Done()
 	defer func() {
 		if conn != nil {
 			conn.Close()
 		}
-		t.logger.Info("HTTP tunnel connection closed")
+		// Log with connection index if provided
+		if len(connIndex) > 0 {
+			t.logger.Info("HTTP tunnel connection %d closed", connIndex[0])
+		} else {
+			t.logger.Info("HTTP tunnel connection closed")
+		}
 	}()
 
-	t.logger.Info("Starting HTTP forwarding for tunnel connection")
+	// Log with connection index if provided
+	if len(connIndex) > 0 {
+		t.logger.Info("Starting HTTP forwarding for tunnel connection %d", connIndex[0])
+	} else {
+		t.logger.Info("Starting HTTP forwarding for tunnel connection")
+	}
 
 	// Create buffered reader for parsing HTTP
 	tunnelReader := bufio.NewReader(conn)

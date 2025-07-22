@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -38,6 +39,12 @@ type TunnelServer struct {
 	tunnelService interfaces.TunnelService
 	connections   *ConnectionManager
 	streamConfig  *StreamingConfig // Streaming configuration
+
+	// Performance monitoring
+	requestCount    int64    // Total requests handled
+	concurrentReqs  int64    // Current concurrent requests
+	poolHits        int64    // Successful pool connections
+	poolMisses      int64    // Failed pool connections
 }
 
 // NewServer creates a new tunnel server instance
@@ -226,15 +233,33 @@ func (s *TunnelServer) HasWebSocketConnection(domain string) bool {
 func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData []byte, requestBody io.Reader) {
 	defer conn.Close()
 
+	// Performance monitoring
+	atomic.AddInt64(&s.requestCount, 1)
+	concurrent := atomic.AddInt64(&s.concurrentReqs, 1)
+	defer atomic.AddInt64(&s.concurrentReqs, -1)
+
+	// Log performance metrics every 100 requests
+	if atomic.LoadInt64(&s.requestCount)%100 == 0 {
+		poolSize := s.connections.GetHTTPPoolSize(domain)
+		hits := atomic.LoadInt64(&s.poolHits)
+		misses := atomic.LoadInt64(&s.poolMisses)
+		s.logger.Info("[PERF] Requests: %d, Concurrent: %d, Pool Size: %d, Hits: %d, Misses: %d",
+			atomic.LoadInt64(&s.requestCount), concurrent, poolSize, hits, misses)
+	}
+
 	tunnelConn := s.connections.GetHTTPConnection(domain)
 	if tunnelConn == nil {
+		atomic.AddInt64(&s.poolMisses, 1)
 		s.logger.Error("No HTTP tunnel connection found for domain: %s", domain)
 		s.writeHTTPError(conn, 502, "Bad Gateway - HTTP tunnel not connected")
 		return
 	}
 
+	// Successfully got a connection from the pool
+	atomic.AddInt64(&s.poolHits, 1)
+
 	// Validate connection is still alive before using it
-	if tunnelConn.conn == nil {
+	if tunnelConn.GetConn() == nil {
 		s.logger.Error("HTTP tunnel connection is closed for domain: %s", domain)
 		s.writeHTTPError(conn, 502, "Bad Gateway - HTTP tunnel connection closed")
 		return
@@ -249,22 +274,23 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData
 		return
 	}
 
-	// Lock the tunnel connection to prevent concurrent access for regular requests
-	// This ensures only one HTTP request/response cycle happens at a time for non-media
-	tunnelConn.Lock()
-	defer tunnelConn.Unlock()
+	// NO LOCK - Allow concurrent requests for better performance!
+	// Each tunnel connection can handle multiple HTTP requests concurrently
 
 	// Write the HTTP request headers to the tunnel connection
-	if _, err := tunnelConn.conn.Write(requestData); err != nil {
+	if _, err := tunnelConn.GetConn().Write(requestData); err != nil {
 		s.logger.Error("[PROXY DEBUG] Error writing request headers to tunnel: %v", err)
+		// Connection might be dead, remove it from pool and try again
+		s.connections.RemoveSpecificHTTPConnection(domain, tunnelConn)
 		s.writeHTTPError(conn, 502, "Bad Gateway")
 		return
 	}
 
 	// Copy request body if present
 	if requestBody != nil {
-		if _, err := io.Copy(tunnelConn.conn, requestBody); err != nil {
+		if _, err := io.Copy(tunnelConn.GetConn(), requestBody); err != nil {
 			s.logger.Error("[PROXY DEBUG] Error writing request body to tunnel: %v", err)
+			s.connections.RemoveSpecificHTTPConnection(domain, tunnelConn)
 			s.writeHTTPError(conn, 502, "Bad Gateway")
 			return
 		}
@@ -272,25 +298,23 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData
 
 	// Set a read timeout for regular requests
 	regularTimeout := s.streamConfig.RegularTimeout
-	tunnelConn.conn.SetReadDeadline(time.Now().Add(regularTimeout))
-	defer tunnelConn.conn.SetReadDeadline(time.Time{}) // Clear timeout
+	tunnelConn.GetConn().SetReadDeadline(time.Now().Add(regularTimeout))
+	defer tunnelConn.GetConn().SetReadDeadline(time.Time{}) // Clear timeout
 
 	// Read the HTTP response from the tunnel
-	tunnelReader := bufio.NewReader(tunnelConn.conn)
+	tunnelReader := bufio.NewReader(tunnelConn.GetConn())
 
 	// Parse the response with retry logic for connection issues
 	response, err := http.ReadResponse(tunnelReader, nil)
 	if err != nil {
 		// Check if this is a connection issue that might resolve with retry
 		if isConnectionError(err) {
-			s.logger.Info("[PROXY DEBUG] Connection error during request, retrying once: %v", err)
+			s.logger.Info("[PROXY DEBUG] Connection error during request, removing dead connection: %v", err)
+			s.connections.RemoveSpecificHTTPConnection(domain, tunnelConn)
 
-			// Wait a moment for reconnection to complete
-			time.Sleep(100 * time.Millisecond)
-
-			// Try to get a fresh connection
+			// Try to get a fresh connection for retry
 			retryTunnelConn := s.connections.GetHTTPConnection(domain)
-			if retryTunnelConn != nil && retryTunnelConn.conn != nil {
+			if retryTunnelConn != nil && retryTunnelConn.GetConn() != nil {
 				// Retry the request with the new connection
 				s.retryRegularRequest(domain, conn, requestData, requestBody, retryTunnelConn)
 				return
@@ -298,6 +322,7 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData
 		}
 
 		s.logger.Error("[PROXY DEBUG] Error reading response from tunnel: %v", err)
+		s.connections.RemoveSpecificHTTPConnection(domain, tunnelConn)
 		s.writeHTTPError(conn, 502, "Bad Gateway")
 		return
 	}
@@ -358,7 +383,7 @@ func (s *TunnelServer) proxyMediaRequest(domain string, clientConn net.Conn, req
 	}
 
 	// Validate connection is still alive before using it
-	if tunnelConn.conn == nil {
+	if tunnelConn.GetConn() == nil {
 		s.logger.Error("Tunnel connection is closed for domain: %s", domain)
 		s.writeHTTPError(clientConn, 502, "Bad Gateway - Tunnel connection closed")
 		return
@@ -366,14 +391,10 @@ func (s *TunnelServer) proxyMediaRequest(domain string, clientConn net.Conn, req
 
 	s.logger.Info("[MEDIA PROXY] Starting media request for domain: %s", domain)
 
-	// Lock the tunnel connection to prevent response corruption
-	tunnelConn.Lock()
-	defer tunnelConn.Unlock()
-
-	s.logger.Info("[MEDIA PROXY] Acquired tunnel lock")
+	// NO LOCK for media requests - concurrent media streaming is now supported
 
 	// Write the HTTP request headers to the tunnel connection
-	if _, err := tunnelConn.conn.Write(requestData); err != nil {
+	if _, err := tunnelConn.GetConn().Write(requestData); err != nil {
 		s.logger.Error("[MEDIA PROXY] Error writing request headers to tunnel: %v", err)
 		s.writeHTTPError(clientConn, 502, "Bad Gateway")
 		return
@@ -383,7 +404,7 @@ func (s *TunnelServer) proxyMediaRequest(domain string, clientConn net.Conn, req
 
 	// Copy request body if present
 	if requestBody != nil {
-		if _, err := io.Copy(tunnelConn.conn, requestBody); err != nil {
+		if _, err := io.Copy(tunnelConn.GetConn(), requestBody); err != nil {
 			s.logger.Error("[MEDIA PROXY] Error writing request body to tunnel: %v", err)
 			s.writeHTTPError(clientConn, 502, "Bad Gateway")
 			return
@@ -397,11 +418,11 @@ func (s *TunnelServer) proxyMediaRequest(domain string, clientConn net.Conn, req
 
 	// Set a read timeout to prevent hanging - use configurable media timeout
 	mediaTimeout := s.streamConfig.MediaTimeout
-	tunnelConn.conn.SetReadDeadline(time.Now().Add(mediaTimeout))
-	defer tunnelConn.conn.SetReadDeadline(time.Time{}) // Clear timeout
+	tunnelConn.GetConn().SetReadDeadline(time.Now().Add(mediaTimeout))
+	defer tunnelConn.GetConn().SetReadDeadline(time.Time{}) // Clear timeout
 
 	// Read the HTTP response from the tunnel
-	tunnelReader := bufio.NewReader(tunnelConn.conn)
+	tunnelReader := bufio.NewReader(tunnelConn.GetConn())
 
 	// Parse the response with retry logic for connection issues
 	response, err := http.ReadResponse(tunnelReader, nil)
@@ -415,7 +436,7 @@ func (s *TunnelServer) proxyMediaRequest(domain string, clientConn net.Conn, req
 
 			// Try to get a fresh connection
 			retryTunnelConn := s.connections.GetHTTPConnection(domain)
-			if retryTunnelConn != nil && retryTunnelConn.conn != nil {
+			if retryTunnelConn != nil && retryTunnelConn.GetConn() != nil {
 				// Retry the request with the new connection
 				s.retryMediaRequest(domain, clientConn, requestData, requestBody, retryTunnelConn)
 				return
@@ -488,12 +509,10 @@ func isConnectionError(err error) bool {
 func (s *TunnelServer) retryMediaRequest(domain string, clientConn net.Conn, requestData []byte, requestBody io.Reader, tunnelConn *TunnelConnection) {
 	s.logger.Info("[MEDIA PROXY] Retrying media request with fresh connection")
 
-	// Lock the fresh tunnel connection
-	tunnelConn.Lock()
-	defer tunnelConn.Unlock()
+	// No lock needed - concurrent media streaming is supported
 
 	// Write the HTTP request headers to the tunnel connection
-	if _, err := tunnelConn.conn.Write(requestData); err != nil {
+	if _, err := tunnelConn.GetConn().Write(requestData); err != nil {
 		s.logger.Error("[MEDIA PROXY] Retry failed - error writing request headers: %v", err)
 		s.writeHTTPError(clientConn, 502, "Bad Gateway")
 		return
@@ -501,7 +520,7 @@ func (s *TunnelServer) retryMediaRequest(domain string, clientConn net.Conn, req
 
 	// Copy request body if present (note: this might be empty if already consumed)
 	if requestBody != nil {
-		if _, err := io.Copy(tunnelConn.conn, requestBody); err != nil {
+		if _, err := io.Copy(tunnelConn.GetConn(), requestBody); err != nil {
 			s.logger.Error("[MEDIA PROXY] Retry failed - error writing request body: %v", err)
 			s.writeHTTPError(clientConn, 502, "Bad Gateway")
 			return
@@ -510,11 +529,11 @@ func (s *TunnelServer) retryMediaRequest(domain string, clientConn net.Conn, req
 
 	// Set a read timeout - use configurable media timeout for retry
 	mediaTimeout := s.streamConfig.MediaTimeout
-	tunnelConn.conn.SetReadDeadline(time.Now().Add(mediaTimeout))
-	defer tunnelConn.conn.SetReadDeadline(time.Time{})
+	tunnelConn.GetConn().SetReadDeadline(time.Now().Add(mediaTimeout))
+	defer tunnelConn.GetConn().SetReadDeadline(time.Time{})
 
 	// Read the HTTP response from the tunnel
-	tunnelReader := bufio.NewReader(tunnelConn.conn)
+	tunnelReader := bufio.NewReader(tunnelConn.GetConn())
 
 	// Parse the response
 	response, err := http.ReadResponse(tunnelReader, nil)
@@ -545,12 +564,10 @@ func (s *TunnelServer) retryMediaRequest(domain string, clientConn net.Conn, req
 func (s *TunnelServer) retryRegularRequest(domain string, clientConn net.Conn, requestData []byte, requestBody io.Reader, tunnelConn *TunnelConnection) {
 	s.logger.Info("[PROXY DEBUG] Retrying regular request with fresh connection")
 
-	// Lock the fresh tunnel connection
-	tunnelConn.Lock()
-	defer tunnelConn.Unlock()
+	// No lock needed - concurrent requests are supported
 
 	// Write the HTTP request headers to the tunnel connection
-	if _, err := tunnelConn.conn.Write(requestData); err != nil {
+	if _, err := tunnelConn.GetConn().Write(requestData); err != nil {
 		s.logger.Error("[PROXY DEBUG] Retry failed - error writing request headers: %v", err)
 		s.writeHTTPError(clientConn, 502, "Bad Gateway")
 		return
@@ -558,7 +575,7 @@ func (s *TunnelServer) retryRegularRequest(domain string, clientConn net.Conn, r
 
 	// Copy request body if present
 	if requestBody != nil {
-		if _, err := io.Copy(tunnelConn.conn, requestBody); err != nil {
+		if _, err := io.Copy(tunnelConn.GetConn(), requestBody); err != nil {
 			s.logger.Error("[PROXY DEBUG] Retry failed - error writing request body: %v", err)
 			s.writeHTTPError(clientConn, 502, "Bad Gateway")
 			return
@@ -567,11 +584,11 @@ func (s *TunnelServer) retryRegularRequest(domain string, clientConn net.Conn, r
 
 	// Set a read timeout - use configurable regular timeout for retry
 	regularTimeout := s.streamConfig.RegularTimeout
-	tunnelConn.conn.SetReadDeadline(time.Now().Add(regularTimeout))
-	defer tunnelConn.conn.SetReadDeadline(time.Time{})
+	tunnelConn.GetConn().SetReadDeadline(time.Now().Add(regularTimeout))
+	defer tunnelConn.GetConn().SetReadDeadline(time.Time{})
 
 	// Read the HTTP response from the tunnel
-	tunnelReader := bufio.NewReader(tunnelConn.conn)
+	tunnelReader := bufio.NewReader(tunnelConn.GetConn())
 
 	// Parse the response
 	response, err := http.ReadResponse(tunnelReader, nil)
@@ -636,13 +653,9 @@ func (s *TunnelServer) ProxyWebSocketConnection(domain string, clientConn net.Co
 	requestBytes := []byte(requestData.String())
 	s.logger.Debug("[WEBSOCKET DEBUG] Forwarding WebSocket upgrade request:\n%s", requestData.String())
 
-	// Lock the tunnel connection only for the upgrade handshake
-	tunnelConn.Lock()
-
 	// Send the upgrade request to the tunnel
-	if _, err := tunnelConn.conn.Write(requestBytes); err != nil {
+	if _, err := tunnelConn.GetConn().Write(requestBytes); err != nil {
 		s.logger.Error("[WEBSOCKET DEBUG] Error writing upgrade request to tunnel: %v", err)
-		tunnelConn.Unlock()
 		s.writeHTTPError(clientConn, 502, "Bad Gateway")
 		return
 	}
@@ -650,11 +663,10 @@ func (s *TunnelServer) ProxyWebSocketConnection(domain string, clientConn net.Co
 	s.logger.Debug("[WEBSOCKET DEBUG] Sent WebSocket upgrade request to tunnel")
 
 	// Read the upgrade response from the tunnel
-	tunnelReader := bufio.NewReader(tunnelConn.conn)
+	tunnelReader := bufio.NewReader(tunnelConn.GetConn())
 	response, err := http.ReadResponse(tunnelReader, nil)
 	if err != nil {
 		s.logger.Error("[WEBSOCKET DEBUG] Error reading upgrade response from tunnel: %v", err)
-		tunnelConn.Unlock()
 		s.writeHTTPError(clientConn, 502, "Bad Gateway")
 		return
 	}
@@ -665,41 +677,34 @@ func (s *TunnelServer) ProxyWebSocketConnection(domain string, clientConn net.Co
 	clientWriter := bufio.NewWriter(clientConn)
 	if err := response.Write(clientWriter); err != nil {
 		s.logger.Error("[WEBSOCKET DEBUG] Error writing upgrade response to client: %v", err)
-		tunnelConn.Unlock()
 		return
 	}
 
 	if err := clientWriter.Flush(); err != nil {
 		s.logger.Error("[WEBSOCKET DEBUG] Error flushing upgrade response: %v", err)
-		tunnelConn.Unlock()
 		return
 	}
 
 	// Check if the upgrade was successful (101 Switching Protocols)
 	if response.StatusCode != 101 {
 		s.logger.Error("[WEBSOCKET DEBUG] WebSocket upgrade failed with status: %d", response.StatusCode)
-		tunnelConn.Unlock()
 		return
 	}
 
 	s.logger.Debug("[WEBSOCKET DEBUG] WebSocket upgrade successful, starting bidirectional forwarding")
-
-	// Unlock the tunnel connection after successful upgrade
-	// We don't need serialization for WebSocket data forwarding
-	tunnelConn.Unlock()
 
 	// Start bidirectional copying
 	errChan := make(chan error, 2)
 
 	// Copy from client to tunnel
 	go func() {
-		_, err := io.Copy(tunnelConn.conn, clientConn)
+		_, err := io.Copy(tunnelConn.GetConn(), clientConn)
 		errChan <- err
 	}()
 
 	// Copy from tunnel to client
 	go func() {
-		_, err := io.Copy(clientConn, tunnelConn.conn)
+		_, err := io.Copy(clientConn, tunnelConn.GetConn())
 		errChan <- err
 	}()
 

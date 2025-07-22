@@ -3,6 +3,7 @@ package tunnel
 import (
 	"net"
 	"sync"
+	"sync/atomic"
 )
 
 // ConnectionType represents the type of tunnel connection
@@ -13,11 +14,88 @@ const (
 	ConnectionTypeWebSocket ConnectionType = "websocket"
 )
 
-// DomainConnections holds both HTTP and WebSocket connections for a domain
+// TunnelConnectionPool manages a pool of HTTP tunnel connections for a domain
+type TunnelConnectionPool struct {
+	domain      string
+	targetPort  int
+	connections []*TunnelConnection
+	roundRobin  uint64 // Atomic counter for round-robin distribution
+	mu          sync.RWMutex
+}
+
+// NewTunnelConnectionPool creates a new connection pool
+func NewTunnelConnectionPool(domain string, targetPort int) *TunnelConnectionPool {
+	return &TunnelConnectionPool{
+		domain:      domain,
+		targetPort:  targetPort,
+		connections: make([]*TunnelConnection, 0),
+	}
+}
+
+// AddConnection adds a connection to the pool
+func (p *TunnelConnectionPool) AddConnection(conn net.Conn) *TunnelConnection {
+	tunnelConn := NewTunnelConnection(p.domain, conn, p.targetPort)
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.connections = append(p.connections, tunnelConn)
+	return tunnelConn
+}
+
+// GetConnection returns a connection using round-robin distribution
+func (p *TunnelConnectionPool) GetConnection() *TunnelConnection {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	if len(p.connections) == 0 {
+		return nil
+	}
+
+	// Use atomic round-robin to distribute load across connections
+	index := atomic.AddUint64(&p.roundRobin, 1) % uint64(len(p.connections))
+	return p.connections[index]
+}
+
+// RemoveConnection removes a specific connection from the pool
+func (p *TunnelConnectionPool) RemoveConnection(targetConn *TunnelConnection) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	for i, conn := range p.connections {
+		if conn == targetConn {
+			// Close the connection
+			conn.Close()
+			// Remove from slice
+			p.connections = append(p.connections[:i], p.connections[i+1:]...)
+			break
+		}
+	}
+}
+
+// Size returns the number of connections in the pool
+func (p *TunnelConnectionPool) Size() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return len(p.connections)
+}
+
+// Close closes all connections in the pool
+func (p *TunnelConnectionPool) Close() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	for _, conn := range p.connections {
+		conn.Close()
+	}
+	p.connections = p.connections[:0]
+}
+
+// DomainConnections holds both HTTP pool and WebSocket connections for a domain
 type DomainConnections struct {
 	domain     string
-	httpConn   *TunnelConnection
-	wsConn     *TunnelConnection
+	httpPool   *TunnelConnectionPool  // Pool of HTTP connections for concurrency
+	wsConn     *TunnelConnection      // Single WebSocket connection
 	targetPort int
 	mu         sync.RWMutex
 }
@@ -37,8 +115,6 @@ func NewConnectionManager() *ConnectionManager {
 
 // AddConnection adds a new connection for a domain with specified type
 func (m *ConnectionManager) AddConnection(domain string, conn net.Conn, targetPort int, connType ConnectionType) *TunnelConnection {
-	connection := NewTunnelConnection(domain, conn, targetPort)
-
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -48,21 +124,27 @@ func (m *ConnectionManager) AddConnection(domain string, conn net.Conn, targetPo
 		domainConns = &DomainConnections{
 			domain:     domain,
 			targetPort: targetPort,
+			httpPool:   NewTunnelConnectionPool(domain, targetPort),
 		}
 		m.connections[domain] = domainConns
 	}
 
 	// Set the appropriate connection type
 	domainConns.mu.Lock()
+	defer domainConns.mu.Unlock()
+
 	switch connType {
 	case ConnectionTypeHTTP:
-		domainConns.httpConn = connection
+		// Add to HTTP pool for concurrent handling
+		return domainConns.httpPool.AddConnection(conn)
 	case ConnectionTypeWebSocket:
+		// Single WebSocket connection (as before)
+		connection := NewTunnelConnection(domain, conn, targetPort)
 		domainConns.wsConn = connection
+		return connection
 	}
-	domainConns.mu.Unlock()
 
-	return connection
+	return nil
 }
 
 // RemoveConnection removes a connection for a domain with specified type
@@ -76,12 +158,12 @@ func (m *ConnectionManager) RemoveConnection(domain string, connType ConnectionT
 	}
 
 	domainConns.mu.Lock()
+	defer domainConns.mu.Unlock()
+
 	switch connType {
 	case ConnectionTypeHTTP:
-		if domainConns.httpConn != nil {
-			domainConns.httpConn.Close()
-			domainConns.httpConn = nil
-		}
+		// For HTTP, we don't remove the entire pool, just let individual connections handle cleanup
+		// The pool will be cleaned up when the domain is removed entirely
 	case ConnectionTypeWebSocket:
 		if domainConns.wsConn != nil {
 			domainConns.wsConn.Close()
@@ -90,10 +172,34 @@ func (m *ConnectionManager) RemoveConnection(domain string, connType ConnectionT
 	}
 
 	// Remove domain if no connections remain
-	if domainConns.httpConn == nil && domainConns.wsConn == nil {
+	if domainConns.httpPool.Size() == 0 && domainConns.wsConn == nil {
+		domainConns.httpPool.Close()
 		delete(m.connections, domain)
 	}
-	domainConns.mu.Unlock()
+}
+
+// RemoveSpecificHTTPConnection removes a specific HTTP connection from the pool
+func (m *ConnectionManager) RemoveSpecificHTTPConnection(domain string, targetConn *TunnelConnection) {
+	m.mu.RLock()
+	domainConns := m.connections[domain]
+	m.mu.RUnlock()
+
+	if domainConns == nil {
+		return
+	}
+
+	domainConns.mu.Lock()
+	defer domainConns.mu.Unlock()
+
+	domainConns.httpPool.RemoveConnection(targetConn)
+
+	// Check if we need to remove the domain entirely
+	if domainConns.httpPool.Size() == 0 && domainConns.wsConn == nil {
+		m.mu.Lock()
+		domainConns.httpPool.Close()
+		delete(m.connections, domain)
+		m.mu.Unlock()
+	}
 }
 
 // GetConnection returns the tunnel connection for a domain with specified type
@@ -111,7 +217,7 @@ func (m *ConnectionManager) GetConnection(domain string, connType ConnectionType
 
 	switch connType {
 	case ConnectionTypeHTTP:
-		return domainConns.httpConn
+		return domainConns.httpPool.GetConnection()
 	case ConnectionTypeWebSocket:
 		return domainConns.wsConn
 	default:
@@ -119,7 +225,7 @@ func (m *ConnectionManager) GetConnection(domain string, connType ConnectionType
 	}
 }
 
-// GetHTTPConnection returns the HTTP tunnel connection for a domain (backward compatibility)
+// GetHTTPConnection returns an HTTP tunnel connection for a domain using round-robin
 func (m *ConnectionManager) GetHTTPConnection(domain string) *TunnelConnection {
 	return m.GetConnection(domain, ConnectionTypeHTTP)
 }
@@ -142,17 +248,44 @@ func (m *ConnectionManager) HasDomain(domain string) bool {
 	domainConns.mu.RLock()
 	defer domainConns.mu.RUnlock()
 
-	return domainConns.httpConn != nil || domainConns.wsConn != nil
+	return domainConns.httpPool.Size() > 0 || domainConns.wsConn != nil
 }
 
-// HasHTTPConnection returns true if the domain has an active HTTP tunnel
+// HasHTTPConnection returns true if the domain has active HTTP tunnels
 func (m *ConnectionManager) HasHTTPConnection(domain string) bool {
-	return m.GetConnection(domain, ConnectionTypeHTTP) != nil
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	domainConns := m.connections[domain]
+	if domainConns == nil {
+		return false
+	}
+
+	domainConns.mu.RLock()
+	defer domainConns.mu.RUnlock()
+
+	return domainConns.httpPool.Size() > 0
 }
 
 // HasWebSocketConnection returns true if the domain has an active WebSocket tunnel
 func (m *ConnectionManager) HasWebSocketConnection(domain string) bool {
 	return m.GetConnection(domain, ConnectionTypeWebSocket) != nil
+}
+
+// GetHTTPPoolSize returns the number of HTTP connections for a domain
+func (m *ConnectionManager) GetHTTPPoolSize(domain string) int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	domainConns := m.connections[domain]
+	if domainConns == nil {
+		return 0
+	}
+
+	domainConns.mu.RLock()
+	defer domainConns.mu.RUnlock()
+
+	return domainConns.httpPool.Size()
 }
 
 // Close closes all connections and cleans up resources
@@ -162,9 +295,7 @@ func (m *ConnectionManager) Close() {
 
 	for domain, domainConns := range m.connections {
 		domainConns.mu.Lock()
-		if domainConns.httpConn != nil {
-			domainConns.httpConn.Close()
-		}
+		domainConns.httpPool.Close()
 		if domainConns.wsConn != nil {
 			domainConns.wsConn.Close()
 		}
