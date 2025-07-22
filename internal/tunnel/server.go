@@ -300,7 +300,7 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData
 	poolSize := s.connections.GetHTTPPoolSize(domain)
 	currentConcurrent := atomic.LoadInt64(&s.concurrentReqs)
 
-	if currentConcurrent >= int64(poolSize) && poolSize < 20 {
+	if currentConcurrent >= int64(poolSize) && poolSize < 40 { // Updated threshold for larger pools
 		s.logger.Info("[POOL STRESS] All %d connections busy (%d concurrent), need more capacity", poolSize, currentConcurrent)
 		// This will trigger client to establish more connections
 	}
@@ -618,15 +618,15 @@ func (s *TunnelServer) proxyMediaRequest(domain string, clientConn net.Conn, req
 	// Set a read timeout to prevent hanging - use adaptive timeout for media
 	// Under high load (stress), use much shorter timeouts to clear queue faster
 	currentConcurrent := atomic.LoadInt64(&s.concurrentReqs)
-	poolSize := int64(15) // Current pool size
+	poolSize := int64(s.connections.GetHTTPPoolSize(domain)) // Use actual pool size
 
 	var mediaTimeout time.Duration
-	if currentConcurrent > poolSize*2 { // If concurrent > 30, we're in overload
+	if currentConcurrent > poolSize*2 { // If concurrent > 2x pool size, we're in overload
 		mediaTimeout = 3 * time.Second // Very aggressive timeout under stress
-		s.logger.Debug("[MEDIA PROXY] System under stress (%d concurrent), using aggressive 3s timeout", currentConcurrent)
-	} else if currentConcurrent > poolSize { // If concurrent > 15, we're stressed
+		s.logger.Debug("[MEDIA PROXY] System under stress (%d concurrent vs %d pool), using aggressive 3s timeout", currentConcurrent, poolSize)
+	} else if currentConcurrent > poolSize { // If concurrent > pool size, we're stressed
 		mediaTimeout = 8 * time.Second // Moderate timeout under stress
-		s.logger.Debug("[MEDIA PROXY] System stressed (%d concurrent), using moderate 8s timeout", currentConcurrent)
+		s.logger.Debug("[MEDIA PROXY] System stressed (%d concurrent vs %d pool), using moderate 8s timeout", currentConcurrent, poolSize)
 	} else {
 		mediaTimeout = s.getAdaptiveTimeout(true) // Normal timeout
 	}
@@ -648,8 +648,9 @@ func (s *TunnelServer) proxyMediaRequest(domain string, clientConn net.Conn, req
 
 			// Under stress, don't retry timeouts - just fail fast to clear queue
 			currentConcurrent := atomic.LoadInt64(&s.concurrentReqs)
-			if currentConcurrent > 20 {
-				s.logger.Debug("[MEDIA PROXY] Under stress (%d concurrent), failing fast on timeout to clear queue", currentConcurrent)
+			poolSize := int64(s.connections.GetHTTPPoolSize(domain))
+			if currentConcurrent > poolSize { // If more concurrent than pool size
+				s.logger.Debug("[MEDIA PROXY] Under stress (%d concurrent vs %d pool), failing fast on timeout to clear queue", currentConcurrent, poolSize)
 				s.connections.RemoveSpecificHTTPConnection(domain, tunnelConn)
 				s.writeHTTPError(clientConn, 504, "Gateway Timeout - System overloaded")
 				return
