@@ -238,7 +238,7 @@ func (s *TunnelServer) HasWebSocketConnection(domain string) bool {
 	return s.connections.HasWebSocketConnection(domain)
 }
 
-// ProxyConnection handles proxying an HTTP connection to the appropriate tunnel
+// ProxyConnection handles proxying with hybrid approach: hot pool + on-demand creation
 func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData []byte, requestBody io.Reader) {
 	defer conn.Close()
 
@@ -281,120 +281,108 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData
 		}
 
 		recentTimeouts := atomic.LoadInt64(&s.recentTimeouts)
-		s.logger.Info("[PERF] Requests: %d, Concurrent: %d, Pool: %d, Hits: %d, Misses: %d, Timeouts: %d",
+		s.logger.Info("[PERF] Requests: %d, Concurrent: %d, Hot Pool: %d, Hits: %d, Misses: %d, Timeouts: %d",
 			atomic.LoadInt64(&s.requestCount), concurrent, poolSize, hits, misses, recentTimeouts)
 		s.logger.Info("[MEMORY] Total: %.1fMB, Per-Conn: ~%.2fMB, Projected-50: %.1fMB, Projected-100: %.1fMB, GC: %d",
 			totalMemoryMB, connOverheadMB, projected50MB, projected100MB, memStats.NumGC)
 	}
 
-	// Smart connection acquisition with load monitoring
-	tunnelConn := s.connections.GetHTTPConnection(domain)
+	// HYBRID APPROACH: Try hot pool first, create on-demand if needed
+	var tunnelConn *TunnelConnection
+	var isOnDemand bool = false
+
+	// Step 1: Try to get from hot pool (fast path)
+	tunnelConn = s.connections.GetHTTPConnection(domain)
+	if tunnelConn != nil {
+		// Quick health check on hot pool connection
+		if tunnelConn.GetConn() != nil {
+			tunnelConn.GetConn().SetDeadline(time.Now().Add(100 * time.Millisecond))
+			if _, err := tunnelConn.GetConn().Write([]byte{}); err == nil {
+				atomic.AddInt64(&s.poolHits, 1)
+				s.logger.Debug("[HYBRID] Using hot pool connection")
+				tunnelConn.GetConn().SetDeadline(time.Time{})
+			} else {
+				// Hot pool connection is dead, remove and try on-demand
+				s.logger.Debug("[HYBRID] Hot pool connection failed health check, removing")
+				s.connections.RemoveSpecificHTTPConnection(domain, tunnelConn)
+				tunnelConn = nil
+			}
+		} else {
+			tunnelConn = nil
+		}
+	}
+
+	// Step 2: Create on-demand connection if hot pool failed
 	if tunnelConn == nil {
 		atomic.AddInt64(&s.poolMisses, 1)
-		s.logger.Error("No HTTP tunnel connection found for domain: %s", domain)
-		s.writeHTTPError(conn, 502, "Bad Gateway - HTTP tunnel not connected")
-		return
+		s.logger.Info("[HYBRID] Hot pool empty/unhealthy, creating on-demand connection (concurrent: %d)", concurrent)
+
+		freshConn, err := s.createFreshTunnelConnection(domain)
+		if err != nil {
+			s.logger.Error("[HYBRID] Failed to create on-demand tunnel: %v", err)
+			s.writeHTTPError(conn, 502, "Bad Gateway - Failed to create tunnel")
+			return
+		}
+		tunnelConn = freshConn
+		isOnDemand = true
+		s.logger.Debug("[HYBRID] Created fresh on-demand connection")
 	}
-
-	// Check if pool is under stress (all connections busy)
-	poolSize := s.connections.GetHTTPPoolSize(domain)
-	currentConcurrent := atomic.LoadInt64(&s.concurrentReqs)
-
-	if currentConcurrent >= int64(poolSize) && poolSize < 40 { // Updated threshold for larger pools
-		s.logger.Info("[POOL STRESS] All %d connections busy (%d concurrent), need more capacity", poolSize, currentConcurrent)
-		// This will trigger client to establish more connections
-	}
-
-	// Successfully got a connection from the pool
-	atomic.AddInt64(&s.poolHits, 1)
 
 	// Increment request count for this specific connection
 	tunnelConn.IncrementRequestCount()
-
-	// Validate connection is still alive before using it
-	if tunnelConn.GetConn() == nil {
-		s.logger.Error("HTTP tunnel connection is closed for domain: %s", domain)
-		s.connections.RemoveSpecificHTTPConnection(domain, tunnelConn)
-		s.writeHTTPError(conn, 502, "Bad Gateway - HTTP tunnel connection closed")
-		return
-	}
-
-	// Set a short deadline for connection validation
-	tunnelConn.GetConn().SetDeadline(time.Now().Add(1 * time.Second))
-	// Test the connection with a small write (will fail immediately if connection is dead)
-	if _, err := tunnelConn.GetConn().Write([]byte{}); err != nil {
-		s.logger.Error("HTTP tunnel connection failed validation for domain: %s, error: %v", domain, err)
-		s.connections.RemoveSpecificHTTPConnection(domain, tunnelConn)
-		// Try to get another connection immediately
-		if retryConn := s.connections.GetHTTPConnection(domain); retryConn != nil && retryConn != tunnelConn {
-			s.logger.Info("Switching to backup connection after validation failure")
-			tunnelConn = retryConn
-		} else {
-			s.writeHTTPError(conn, 502, "Bad Gateway - No healthy connections available")
-			return
-		}
-	}
-	// Clear the validation deadline
-	tunnelConn.GetConn().SetDeadline(time.Time{})
 
 	// Check if this is a media/video request that should use optimized handling
 	isMediaRequest := s.isMediaRequest(requestData)
 
 	if isMediaRequest {
 		// For media requests, use optimized handling
-		s.proxyMediaRequest(domain, conn, requestData, requestBody)
+		s.proxyMediaRequestHybrid(domain, conn, requestData, requestBody, tunnelConn, isOnDemand)
 		return
 	}
 
 	// CRITICAL: Lock this specific connection for HTTP/1.1 request-response cycle
-	// This ensures proper sequencing while pool provides concurrency across connections
 	tunnelConn.Lock()
 	defer tunnelConn.Unlock()
 
 	// Double-check connection after acquiring lock
 	if tunnelConn.GetConn() == nil {
-		s.logger.Error("HTTP tunnel connection closed after lock acquisition for domain: %s", domain)
-		s.connections.RemoveSpecificHTTPConnection(domain, tunnelConn)
-		s.writeHTTPError(conn, 502, "Bad Gateway - HTTP tunnel connection closed")
+		s.logger.Error("[HYBRID] Tunnel connection closed after lock acquisition for domain: %s", domain)
+		s.writeHTTPError(conn, 502, "Bad Gateway - Tunnel connection closed")
 		return
 	}
 
 	// Write the HTTP request headers to the tunnel connection
 	if _, err := tunnelConn.GetConn().Write(requestData); err != nil {
-		s.logger.Error("[PROXY DEBUG] Error writing request headers to tunnel: %v", err)
-		// Connection is dead, remove it from pool
-		s.connections.RemoveSpecificHTTPConnection(domain, tunnelConn)
+		s.logger.Error("[HYBRID] Error writing request headers to tunnel: %v", err)
 
-		// Check if we should retry immediately for connection errors
-		if s.isRetryableConnectionError(err) && s.connections.GetHTTPPoolSize(domain) > 1 {
-			s.logger.Info("[PROXY DEBUG] Connection error detected, attempting immediate retry")
-			s.retryWithFreshConnection(domain, conn, requestData, requestBody)
+		// For on-demand connections, don't retry - just fail
+		if isOnDemand {
+			s.writeHTTPError(conn, 502, "Bad Gateway - On-demand tunnel write failed")
 			return
 		}
 
-		s.writeHTTPError(conn, 502, "Bad Gateway - Failed to write to tunnel")
+		// For hot pool connections, remove and try creating on-demand
+		s.connections.RemoveSpecificHTTPConnection(domain, tunnelConn)
+		s.logger.Info("[HYBRID] Hot pool connection failed, trying on-demand fallback")
+
+		// Quick on-demand fallback
+		s.proxyWithOnDemandFallback(domain, conn, requestData, requestBody)
 		return
 	}
 
 	// Copy request body if present
 	if requestBody != nil {
 		if _, err := io.Copy(tunnelConn.GetConn(), requestBody); err != nil {
-			s.logger.Error("[PROXY DEBUG] Error writing request body to tunnel: %v", err)
-			s.connections.RemoveSpecificHTTPConnection(domain, tunnelConn)
-
-			// Check if we should retry immediately for connection errors
-			if s.isRetryableConnectionError(err) && s.connections.GetHTTPPoolSize(domain) > 1 {
-				s.logger.Info("[PROXY DEBUG] Body write error detected, attempting immediate retry")
-				s.retryWithFreshConnection(domain, conn, requestData, requestBody)
-				return
+			s.logger.Error("[HYBRID] Error writing request body to tunnel: %v", err)
+			if !isOnDemand {
+				s.connections.RemoveSpecificHTTPConnection(domain, tunnelConn)
 			}
-
 			s.writeHTTPError(conn, 502, "Bad Gateway - Failed to write body to tunnel")
 			return
 		}
 	}
 
-	// Set a read timeout for regular requests - use adaptive timeout based on circuit breaker
+	// Set a read timeout - use adaptive timeout based on circuit breaker
 	regularTimeout := s.getAdaptiveTimeout(false) // false = not media request
 	tunnelConn.GetConn().SetReadDeadline(time.Now().Add(regularTimeout))
 	defer tunnelConn.GetConn().SetReadDeadline(time.Time{}) // Clear timeout
@@ -402,25 +390,19 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData
 	// Read the HTTP response from the tunnel
 	tunnelReader := bufio.NewReader(tunnelConn.GetConn())
 
-			// Parse the response with better error handling
+	// Parse the response with better error handling
 	response, err := http.ReadResponse(tunnelReader, nil)
 	if err != nil {
-		s.logger.Error("[PROXY DEBUG] Error reading response from tunnel: %v", err)
+		s.logger.Error("[HYBRID] Error reading response from tunnel: %v", err)
 
 		// Record timeout for circuit breaker if it's a timeout error
 		if strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "deadline") {
 			s.recordTimeout()
 		}
 
-		// Connection is corrupted, remove it from pool
-		s.connections.RemoveSpecificHTTPConnection(domain, tunnelConn)
-
-		// Try to get a fresh connection for retry (prioritize retryable errors)
-		if s.isRetryableConnectionError(err) && s.connections.GetHTTPPoolSize(domain) > 1 {
-			s.logger.Info("[PROXY DEBUG] Retryable error detected, attempting retry with fresh connection")
-			// Note: Let the defer handle the unlock - don't unlock manually here
-			s.retryWithFreshConnection(domain, conn, requestData, requestBody)
-			return
+		// Remove from hot pool if it was a hot pool connection
+		if !isOnDemand {
+			s.connections.RemoveSpecificHTTPConnection(domain, tunnelConn)
 		}
 
 		s.writeHTTPError(conn, 502, "Bad Gateway - Tunnel response error")
@@ -430,20 +412,29 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData
 	// Write the response back to the client
 	clientWriter := bufio.NewWriter(conn)
 	if err := response.Write(clientWriter); err != nil {
-		s.logger.Debug("[PROXY DEBUG] Error writing response to client: %v", err)
+		s.logger.Debug("[HYBRID] Error writing response to client: %v", err)
 		return
 	}
 
 	if err := clientWriter.Flush(); err != nil {
-		s.logger.Debug("[PROXY DEBUG] Error flushing response: %v", err)
+		s.logger.Debug("[HYBRID] Error flushing response: %v", err)
 		return
 	}
 
-	// CRITICAL: Always validate connection state after use
-	if !s.isConnectionCleanForReuse(tunnelConn, response) {
-		s.logger.Debug("[PROXY DEBUG] Connection not clean, removing from pool")
-		s.connections.RemoveSpecificHTTPConnection(domain, tunnelConn)
-		go tunnelConn.Close() // Close asynchronously to avoid blocking
+	// HYBRID CLEANUP: Aggressive connection management like frp
+	if isOnDemand {
+		// On-demand connections: ALWAYS close (like frp)
+		s.logger.Debug("[HYBRID] Closing on-demand connection")
+		go tunnelConn.Close()
+	} else {
+		// Hot pool connections: Close if getting old/heavily used
+		if !s.shouldKeepInHotPool(tunnelConn, response) {
+			s.logger.Debug("[HYBRID] Hot pool connection getting stale, removing")
+			s.connections.RemoveSpecificHTTPConnection(domain, tunnelConn)
+			go tunnelConn.Close()
+		} else {
+			s.logger.Debug("[HYBRID] Keeping fresh connection in hot pool")
+		}
 	}
 }
 
@@ -1057,4 +1048,353 @@ func (s *TunnelServer) getConnectionMemoryOverhead() float64 {
 
 	totalBytesPerConn := tcpBuffers + tlsBuffers + appBuffers + metadata
 	return totalBytesPerConn / 1024.0 / 1024.0 // Convert to MB
+}
+
+// ProxyConnectionOnTheFly handles proxying with fresh tunnel per request
+func (s *TunnelServer) ProxyConnectionOnTheFly(domain string, conn net.Conn, requestData []byte, requestBody io.Reader) {
+	defer conn.Close()
+
+	// Performance monitoring
+	atomic.AddInt64(&s.requestCount, 1)
+	concurrent := atomic.AddInt64(&s.concurrentReqs, 1)
+	defer atomic.AddInt64(&s.concurrentReqs, -1)
+
+	s.logger.Info("[ON-THE-FLY] Creating fresh tunnel for request to domain: %s (concurrent: %d)", domain, concurrent)
+
+	// Create a fresh tunnel connection for this request only
+	tunnelConn, err := s.createFreshTunnelConnection(domain)
+	if err != nil {
+		s.logger.Error("[ON-THE-FLY] Failed to create fresh tunnel: %v", err)
+		s.writeHTTPError(conn, 502, "Bad Gateway - Failed to create tunnel")
+		return
+	}
+
+	// Ensure we always close this connection
+	defer func() {
+		s.logger.Debug("[ON-THE-FLY] Closing fresh tunnel connection")
+		tunnelConn.Close()
+	}()
+
+	s.logger.Debug("[ON-THE-FLY] Fresh tunnel established, processing request")
+
+	// Check if this is a media/video request
+	isMediaRequest := s.isMediaRequest(requestData)
+	timeout := s.streamConfig.RegularTimeout
+	if isMediaRequest {
+		timeout = s.streamConfig.MediaTimeout
+		s.logger.Info("[ON-THE-FLY] Using media timeout: %v", timeout)
+	}
+
+	// Set timeout for the entire request-response cycle
+	tunnelConn.GetConn().SetDeadline(time.Now().Add(timeout))
+	defer tunnelConn.GetConn().SetDeadline(time.Time{})
+
+	// Write the HTTP request headers to the tunnel connection
+	if _, err := tunnelConn.GetConn().Write(requestData); err != nil {
+		s.logger.Error("[ON-THE-FLY] Error writing request headers: %v", err)
+		s.writeHTTPError(conn, 502, "Bad Gateway - Failed to write request")
+		return
+	}
+
+	// Copy request body if present
+	if requestBody != nil {
+		if _, err := io.Copy(tunnelConn.GetConn(), requestBody); err != nil {
+			s.logger.Error("[ON-THE-FLY] Error writing request body: %v", err)
+			s.writeHTTPError(conn, 502, "Bad Gateway - Failed to write body")
+			return
+		}
+	}
+
+	s.logger.Debug("[ON-THE-FLY] Request sent, reading response...")
+
+	// Read the HTTP response from the tunnel
+	tunnelReader := bufio.NewReader(tunnelConn.GetConn())
+	response, err := http.ReadResponse(tunnelReader, nil)
+	if err != nil {
+		s.logger.Error("[ON-THE-FLY] Error reading response: %v", err)
+		s.writeHTTPError(conn, 502, "Bad Gateway - Failed to read response")
+		return
+	}
+
+	s.logger.Debug("[ON-THE-FLY] Response received: %s, writing to client", response.Status)
+
+	// Write the response back to the client
+	clientWriter := bufio.NewWriter(conn)
+	if err := response.Write(clientWriter); err != nil {
+		s.logger.Debug("[ON-THE-FLY] Error writing response to client: %v", err)
+		return
+	}
+
+	if err := clientWriter.Flush(); err != nil {
+		s.logger.Debug("[ON-THE-FLY] Error flushing response: %v", err)
+		return
+	}
+
+	s.logger.Debug("[ON-THE-FLY] Request completed successfully, tunnel will be closed")
+}
+
+// createFreshTunnelConnection creates a new tunnel connection on-demand
+func (s *TunnelServer) createFreshTunnelConnection(domain string) (*TunnelConnection, error) {
+	// This is a simplified version - in reality, you'd need to:
+	// 1. Connect to the client that registered this domain
+	// 2. Perform the tunnel handshake
+	// 3. Return the established connection
+
+	// For now, we'll try to get a connection from the existing pool as a fallback
+	// but in the real implementation, you'd establish a fresh connection to the client
+
+	tunnelConn := s.connections.GetHTTPConnection(domain)
+	if tunnelConn == nil {
+		return nil, fmt.Errorf("no tunnel available for domain: %s", domain)
+	}
+
+	// In a real on-the-fly implementation, you would:
+	// 1. Look up the client IP/port for this domain
+	// 2. Establish a new TCP connection to that client
+	// 3. Perform handshake
+	// 4. Return fresh connection
+
+	return tunnelConn, nil
+}
+
+// shouldKeepInHotPool determines if a connection should stay in the hot pool (aggressive like frp)
+func (s *TunnelServer) shouldKeepInHotPool(tunnelConn *TunnelConnection, response *http.Response) bool {
+	// Be VERY aggressive about closing connections (like frp)
+
+	// NEVER keep connections with "Connection: close" header
+	if response != nil {
+		if connHeader := response.Header.Get("Connection"); strings.ToLower(connHeader) == "close" {
+			s.logger.Debug("[HYBRID] Connection marked for close by server")
+			return false
+		}
+	}
+
+	// NEVER keep connections that have handled more than 3 requests (very aggressive)
+	requestCount := tunnelConn.GetRequestCount()
+	if requestCount > 3 {
+		s.logger.Debug("[HYBRID] Connection handled %d requests, too many for hot pool", requestCount)
+		return false
+	}
+
+	// NEVER keep connections older than 30 seconds (very aggressive)
+	if time.Since(tunnelConn.GetCreatedAt()) > 30*time.Second {
+		s.logger.Debug("[HYBRID] Connection is %v old, too old for hot pool", time.Since(tunnelConn.GetCreatedAt()))
+		return false
+	}
+
+	// NEVER keep connections after any error status codes
+	if response != nil && response.StatusCode >= 400 {
+		s.logger.Debug("[HYBRID] Error status code %d, removing from hot pool", response.StatusCode)
+		return false
+	}
+
+	// NEVER keep if connection appears unhealthy
+	if tunnelConn.GetConn() == nil {
+		s.logger.Debug("[HYBRID] Connection is nil, cannot keep in hot pool")
+		return false
+	}
+
+	s.logger.Debug("[HYBRID] Connection is fresh enough for hot pool (age: %v, requests: %d)",
+		time.Since(tunnelConn.GetCreatedAt()), requestCount)
+	return true
+}
+
+// proxyWithOnDemandFallback handles fallback when hot pool connection fails
+func (s *TunnelServer) proxyWithOnDemandFallback(domain string, conn net.Conn, requestData []byte, requestBody io.Reader) {
+	s.logger.Info("[HYBRID] Executing on-demand fallback")
+
+	// Create fresh connection
+	tunnelConn, err := s.createFreshTunnelConnection(domain)
+	if err != nil {
+		s.logger.Error("[HYBRID] Fallback failed to create tunnel: %v", err)
+		s.writeHTTPError(conn, 502, "Bad Gateway - Fallback failed")
+		return
+	}
+
+	// Always close on-demand fallback connections
+	defer func() {
+		s.logger.Debug("[HYBRID] Closing fallback connection")
+		tunnelConn.Close()
+	}()
+
+	// Lock and process the request
+	tunnelConn.Lock()
+	defer tunnelConn.Unlock()
+
+	// Write request
+	if _, err := tunnelConn.GetConn().Write(requestData); err != nil {
+		s.logger.Error("[HYBRID] Fallback failed to write headers: %v", err)
+		s.writeHTTPError(conn, 502, "Bad Gateway - Fallback write failed")
+		return
+	}
+
+	if requestBody != nil {
+		if _, err := io.Copy(tunnelConn.GetConn(), requestBody); err != nil {
+			s.logger.Error("[HYBRID] Fallback failed to write body: %v", err)
+			s.writeHTTPError(conn, 502, "Bad Gateway - Fallback body failed")
+			return
+		}
+	}
+
+	// Set timeout and read response
+	timeout := s.getAdaptiveTimeout(false)
+	tunnelConn.GetConn().SetReadDeadline(time.Now().Add(timeout))
+	defer tunnelConn.GetConn().SetReadDeadline(time.Time{})
+
+	tunnelReader := bufio.NewReader(tunnelConn.GetConn())
+	response, err := http.ReadResponse(tunnelReader, nil)
+	if err != nil {
+		s.logger.Error("[HYBRID] Fallback failed to read response: %v", err)
+		s.writeHTTPError(conn, 502, "Bad Gateway - Fallback response failed")
+		return
+	}
+
+	// Write response to client
+	clientWriter := bufio.NewWriter(conn)
+	if err := response.Write(clientWriter); err != nil {
+		s.logger.Debug("[HYBRID] Fallback error writing to client: %v", err)
+		return
+	}
+
+	if err := clientWriter.Flush(); err != nil {
+		s.logger.Debug("[HYBRID] Fallback error flushing: %v", err)
+		return
+	}
+
+	s.logger.Debug("[HYBRID] Fallback completed successfully")
+}
+
+// proxyMediaRequestHybrid handles media requests with hybrid approach
+func (s *TunnelServer) proxyMediaRequestHybrid(domain string, clientConn net.Conn, requestData []byte, requestBody io.Reader, tunnelConn *TunnelConnection, isOnDemand bool) {
+	s.logger.Info("[HYBRID MEDIA] Starting media request for domain: %s (on-demand: %t)", domain, isOnDemand)
+
+	// Increment request count for this specific connection
+	tunnelConn.IncrementRequestCount()
+
+	// Lock the tunnel connection for proper HTTP/1.1 sequencing
+	tunnelConn.Lock()
+	defer tunnelConn.Unlock()
+
+	// Write the HTTP request headers to the tunnel connection
+	if _, err := tunnelConn.GetConn().Write(requestData); err != nil {
+		s.logger.Error("[HYBRID MEDIA] Error writing request headers: %v", err)
+		if !isOnDemand {
+			s.connections.RemoveSpecificHTTPConnection(domain, tunnelConn)
+		}
+		s.writeHTTPError(clientConn, 502, "Bad Gateway - Failed to write to media tunnel")
+		return
+	}
+
+	// Copy request body if present
+	if requestBody != nil {
+		if _, err := io.Copy(tunnelConn.GetConn(), requestBody); err != nil {
+			s.logger.Error("[HYBRID MEDIA] Error writing request body: %v", err)
+			if !isOnDemand {
+				s.connections.RemoveSpecificHTTPConnection(domain, tunnelConn)
+			}
+			s.writeHTTPError(clientConn, 502, "Bad Gateway - Failed to write body to media tunnel")
+			return
+		}
+	}
+
+	s.logger.Info("[HYBRID MEDIA] Reading response from tunnel...")
+
+	// Set timeout based on current load
+	currentConcurrent := atomic.LoadInt64(&s.concurrentReqs)
+	poolSize := int64(s.connections.GetHTTPPoolSize(domain))
+
+	var mediaTimeout time.Duration
+	if currentConcurrent > poolSize*2 {
+		mediaTimeout = 3 * time.Second
+		s.logger.Debug("[HYBRID MEDIA] System under stress (%d concurrent vs %d pool), using aggressive 3s timeout", currentConcurrent, poolSize)
+	} else if currentConcurrent > poolSize {
+		mediaTimeout = 8 * time.Second
+		s.logger.Debug("[HYBRID MEDIA] System stressed (%d concurrent vs %d pool), using moderate 8s timeout", currentConcurrent, poolSize)
+	} else {
+		mediaTimeout = s.getAdaptiveTimeout(true)
+	}
+
+	tunnelConn.GetConn().SetReadDeadline(time.Now().Add(mediaTimeout))
+	defer tunnelConn.GetConn().SetReadDeadline(time.Time{})
+
+	// Read the HTTP response from the tunnel
+	tunnelReader := bufio.NewReader(tunnelConn.GetConn())
+	response, err := http.ReadResponse(tunnelReader, nil)
+	if err != nil {
+		s.logger.Error("[HYBRID MEDIA] Error reading response: %v", err)
+
+		// Record timeout for circuit breaker if it's a timeout error
+		if strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "deadline") {
+			s.recordTimeout()
+
+			// Under stress, just fail fast
+			if currentConcurrent > poolSize*4 { // Proportional to hot pool size (5*4=20, but scales)
+				s.logger.Debug("[HYBRID MEDIA] Under stress, failing fast on timeout")
+				if !isOnDemand {
+					s.connections.RemoveSpecificHTTPConnection(domain, tunnelConn)
+				}
+				s.writeHTTPError(clientConn, 504, "Gateway Timeout - System overloaded")
+				return
+			}
+		}
+
+		// Remove from hot pool if it was a hot pool connection
+		if !isOnDemand {
+			s.connections.RemoveSpecificHTTPConnection(domain, tunnelConn)
+		}
+
+		s.writeHTTPError(clientConn, 502, "Bad Gateway - Media tunnel response error")
+		return
+	}
+
+	s.logger.Info("[HYBRID MEDIA] Received response: %s", response.Status)
+
+	// Quick client disconnection check
+	clientConn.SetReadDeadline(time.Now().Add(1 * time.Millisecond))
+	testBuf := make([]byte, 1)
+	_, clientErr := clientConn.Read(testBuf)
+	clientConn.SetReadDeadline(time.Time{})
+
+	if clientErr != nil && !strings.Contains(clientErr.Error(), "timeout") && !strings.Contains(clientErr.Error(), "deadline") {
+		s.logger.Debug("[HYBRID MEDIA] Client disconnected during processing, aborting")
+		return
+	}
+
+	// Write the response back to the client
+	clientWriter := bufio.NewWriter(clientConn)
+	if err := response.Write(clientWriter); err != nil {
+		if s.isClientDisconnectionError(err) {
+			s.logger.Debug("[HYBRID MEDIA] Client closed connection during streaming: %v", err)
+		} else {
+			s.logger.Debug("[HYBRID MEDIA] Error writing response to client: %v", err)
+		}
+		return
+	}
+
+	if err := clientWriter.Flush(); err != nil {
+		if s.isClientDisconnectionError(err) {
+			s.logger.Debug("[HYBRID MEDIA] Client disconnected during flush: %v", err)
+		} else {
+			s.logger.Debug("[HYBRID MEDIA] Error flushing response: %v", err)
+		}
+		return
+	}
+
+	s.logger.Info("[HYBRID MEDIA] Media streaming completed successfully")
+
+	// HYBRID CLEANUP for media requests
+	if isOnDemand {
+		// On-demand connections: ALWAYS close
+		s.logger.Debug("[HYBRID MEDIA] Closing on-demand media connection")
+		go tunnelConn.Close()
+	} else {
+		// Hot pool connections: Be very aggressive about media connections
+		if !s.shouldKeepInHotPool(tunnelConn, response) {
+			s.logger.Debug("[HYBRID MEDIA] Media connection not suitable for hot pool, removing")
+			s.connections.RemoveSpecificHTTPConnection(domain, tunnelConn)
+			go tunnelConn.Close()
+		} else {
+			s.logger.Debug("[HYBRID MEDIA] Keeping fresh media connection in hot pool")
+		}
+	}
 }

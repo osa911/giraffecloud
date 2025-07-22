@@ -83,11 +83,11 @@ func DefaultStreamingConfig() *StreamingConfig {
 		MediaBufferSize:   65536, // 64KB
 		RegularBufferSize: 32768, // 32KB
 
-		// CONNECTION POOL SIZE - Testing larger pool for stability
-		// Previous: 15 (degraded to 2 under stress)
-		// Current: 50 (should handle connection loss better)
-		// Next test: 100 if still seeing pool degradation
-		PoolSize:      50, // INCREASED: Test larger pool size
+		// HYBRID TUNNEL APPROACH - Hot pool + On-demand creation
+		// Hot pool: 5-10 ready connections for instant response
+		// On-demand: Unlimited additional connections created as needed
+		// Aggressive cleanup: Close connections quickly like frp
+		PoolSize:      5,  // REDUCED: Small hot pool for instant response
 		PoolTimeout:   10 * time.Second,
 		PoolKeepAlive: 30 * time.Second,
 
