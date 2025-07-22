@@ -599,7 +599,21 @@ func (s *TunnelServer) proxyMediaRequest(domain string, clientConn net.Conn, req
 	s.logger.Info("[MEDIA PROXY] Reading response from tunnel...")
 
 	// Set a read timeout to prevent hanging - use adaptive timeout for media
-	mediaTimeout := s.getAdaptiveTimeout(true) // true = media request
+	// Under high load (stress), use much shorter timeouts to clear queue faster
+	currentConcurrent := atomic.LoadInt64(&s.concurrentReqs)
+	poolSize := int64(15) // Current pool size
+
+	var mediaTimeout time.Duration
+	if currentConcurrent > poolSize*2 { // If concurrent > 30, we're in overload
+		mediaTimeout = 3 * time.Second // Very aggressive timeout under stress
+		s.logger.Debug("[MEDIA PROXY] System under stress (%d concurrent), using aggressive 3s timeout", currentConcurrent)
+	} else if currentConcurrent > poolSize { // If concurrent > 15, we're stressed
+		mediaTimeout = 8 * time.Second // Moderate timeout under stress
+		s.logger.Debug("[MEDIA PROXY] System stressed (%d concurrent), using moderate 8s timeout", currentConcurrent)
+	} else {
+		mediaTimeout = s.getAdaptiveTimeout(true) // Normal timeout
+	}
+
 	tunnelConn.GetConn().SetReadDeadline(time.Now().Add(mediaTimeout))
 	defer tunnelConn.GetConn().SetReadDeadline(time.Time{}) // Clear timeout
 
@@ -614,6 +628,15 @@ func (s *TunnelServer) proxyMediaRequest(domain string, clientConn net.Conn, req
 		// Record timeout for circuit breaker if it's a timeout error
 		if strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "deadline") {
 			s.recordTimeout()
+
+			// Under stress, don't retry timeouts - just fail fast to clear queue
+			currentConcurrent := atomic.LoadInt64(&s.concurrentReqs)
+			if currentConcurrent > 20 {
+				s.logger.Debug("[MEDIA PROXY] Under stress (%d concurrent), failing fast on timeout to clear queue", currentConcurrent)
+				s.connections.RemoveSpecificHTTPConnection(domain, tunnelConn)
+				s.writeHTTPError(clientConn, 504, "Gateway Timeout - System overloaded")
+				return
+			}
 		}
 
 		// Connection is corrupted, remove it from pool
@@ -633,14 +656,20 @@ func (s *TunnelServer) proxyMediaRequest(domain string, clientConn net.Conn, req
 
 	s.logger.Info("[MEDIA PROXY] Received response: %s", response.Status)
 
-	// Write the response back to the client with optimized streaming and client disconnection detection
-	clientWriter := bufio.NewWriter(clientConn)
+	// CRITICAL: Check if client disconnected during media processing (fast clicking scenario)
+	clientConn.SetReadDeadline(time.Now().Add(1 * time.Millisecond))
+	testBuf := make([]byte, 1)
+	_, clientErr := clientConn.Read(testBuf)
+	clientConn.SetReadDeadline(time.Time{}) // Clear deadline
 
-	// Check if client is still connected before writing large response
-	if s.isClientDisconnected(clientConn) {
-		s.logger.Debug("[MEDIA PROXY] Client disconnected before response write, aborting media stream")
+	// If client disconnected, abort immediately to free up the connection
+	if clientErr != nil && !strings.Contains(clientErr.Error(), "timeout") && !strings.Contains(clientErr.Error(), "deadline") {
+		s.logger.Debug("[MEDIA PROXY] Client disconnected during processing, aborting to free connection")
 		return
 	}
+
+	// Write the response back to the client with optimized streaming
+	clientWriter := bufio.NewWriter(clientConn)
 
 	if err := response.Write(clientWriter); err != nil {
 		// This is often normal - client may close connection early during gallery navigation
