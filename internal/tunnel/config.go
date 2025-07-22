@@ -84,10 +84,10 @@ func DefaultStreamingConfig() *StreamingConfig {
 		RegularBufferSize: 32768, // 32KB
 
 		// HYBRID TUNNEL APPROACH - Hot pool + On-demand creation
-		// Hot pool: 5-10 ready connections for instant response
+		// Hot pool: 10 ready connections for instant response (increased for stability)
 		// On-demand: Unlimited additional connections created as needed
-		// Aggressive cleanup: Close connections quickly like frp
-		PoolSize:      5,  // REDUCED: Small hot pool for instant response
+		// Less aggressive cleanup: Keep connections longer to maintain pool stability
+		PoolSize:      10,  // INCREASED: Larger hot pool for better stability
 		PoolTimeout:   10 * time.Second,
 		PoolKeepAlive: 30 * time.Second,
 

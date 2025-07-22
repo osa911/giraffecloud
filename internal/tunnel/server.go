@@ -320,12 +320,27 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData
 		freshConn, err := s.createFreshTunnelConnection(domain)
 		if err != nil {
 			s.logger.Error("[HYBRID] Failed to create on-demand tunnel: %v", err)
-			s.writeHTTPError(conn, 502, "Bad Gateway - Failed to create tunnel")
-			return
+
+			// Enhanced fallback: Try one more time after a brief delay
+			s.logger.Info("[HYBRID] Attempting enhanced fallback after brief delay...")
+			time.Sleep(50 * time.Millisecond)
+
+			// Check if any new connections have appeared
+			retryConn := s.connections.GetHTTPConnection(domain)
+			if retryConn != nil {
+				s.logger.Info("[HYBRID] Enhanced fallback successful - found new connection")
+				tunnelConn = retryConn
+				isOnDemand = false
+			} else {
+				s.logger.Error("[HYBRID] Enhanced fallback failed - no connections available")
+				s.writeHTTPError(conn, 502, "Bad Gateway - No tunnel connections available")
+				return
+			}
+		} else {
+			tunnelConn = freshConn
+			isOnDemand = true
+			s.logger.Debug("[HYBRID] Created fresh on-demand connection")
 		}
-		tunnelConn = freshConn
-		isOnDemand = true
-		s.logger.Debug("[HYBRID] Created fresh on-demand connection")
 	}
 
 	// Increment request count for this specific connection
@@ -1135,31 +1150,41 @@ func (s *TunnelServer) ProxyConnectionOnTheFly(domain string, conn net.Conn, req
 
 // createFreshTunnelConnection creates a new tunnel connection on-demand
 func (s *TunnelServer) createFreshTunnelConnection(domain string) (*TunnelConnection, error) {
-	// This is a simplified version - in reality, you'd need to:
-	// 1. Connect to the client that registered this domain
-	// 2. Perform the tunnel handshake
-	// 3. Return the established connection
+	// CURRENT LIMITATION: This is still a fallback to existing pool
+	// TODO: Implement true on-demand connection creation by connecting back to client
 
-	// For now, we'll try to get a connection from the existing pool as a fallback
-	// but in the real implementation, you'd establish a fresh connection to the client
-
+	// Try to get from pool first
 	tunnelConn := s.connections.GetHTTPConnection(domain)
-	if tunnelConn == nil {
-		return nil, fmt.Errorf("no tunnel available for domain: %s", domain)
+	if tunnelConn != nil {
+		s.logger.Debug("[HYBRID] Got existing connection from pool for on-demand request")
+		return tunnelConn, nil
 	}
 
-	// In a real on-the-fly implementation, you would:
-	// 1. Look up the client IP/port for this domain
-	// 2. Establish a new TCP connection to that client
-	// 3. Perform handshake
-	// 4. Return fresh connection
+	// Pool is empty - wait a brief moment for new connections to be established
+	s.logger.Info("[HYBRID] Pool empty, waiting briefly for new connections...")
+	time.Sleep(100 * time.Millisecond)
 
-	return tunnelConn, nil
+	// Try again after brief wait
+	tunnelConn = s.connections.GetHTTPConnection(domain)
+	if tunnelConn != nil {
+		s.logger.Debug("[HYBRID] Got connection after brief wait")
+		return tunnelConn, nil
+	}
+
+	// Still no connections available
+	// In a real on-the-fly implementation, you would:
+	// 1. Look up the client IP/port for this domain from tunnel repository
+	// 2. Establish a new TCP connection to that client
+	// 3. Perform handshake with client to create fresh tunnel
+	// 4. Return the fresh connection (not added to pool)
+
+	s.logger.Error("[HYBRID] No connections available and true on-demand not yet implemented")
+	return nil, fmt.Errorf("no tunnel available for domain: %s (pool empty, true on-demand not implemented)", domain)
 }
 
-// shouldKeepInHotPool determines if a connection should stay in the hot pool (aggressive like frp)
+// shouldKeepInHotPool determines if a connection should stay in the hot pool (less aggressive to maintain stability)
 func (s *TunnelServer) shouldKeepInHotPool(tunnelConn *TunnelConnection, response *http.Response) bool {
-	// Be VERY aggressive about closing connections (like frp)
+	// Be LESS aggressive to maintain hot pool stability until true on-demand is implemented
 
 	// NEVER keep connections with "Connection: close" header
 	if response != nil {
@@ -1169,22 +1194,22 @@ func (s *TunnelServer) shouldKeepInHotPool(tunnelConn *TunnelConnection, respons
 		}
 	}
 
-	// NEVER keep connections that have handled more than 3 requests (very aggressive)
+	// NEVER keep connections that have handled too many requests (increased from 3 to 15)
 	requestCount := tunnelConn.GetRequestCount()
-	if requestCount > 3 {
+	if requestCount > 15 {
 		s.logger.Debug("[HYBRID] Connection handled %d requests, too many for hot pool", requestCount)
 		return false
 	}
 
-	// NEVER keep connections older than 30 seconds (very aggressive)
-	if time.Since(tunnelConn.GetCreatedAt()) > 30*time.Second {
+	// NEVER keep connections older than 5 minutes (increased from 30 seconds)
+	if time.Since(tunnelConn.GetCreatedAt()) > 5*time.Minute {
 		s.logger.Debug("[HYBRID] Connection is %v old, too old for hot pool", time.Since(tunnelConn.GetCreatedAt()))
 		return false
 	}
 
-	// NEVER keep connections after any error status codes
-	if response != nil && response.StatusCode >= 400 {
-		s.logger.Debug("[HYBRID] Error status code %d, removing from hot pool", response.StatusCode)
+	// NEVER keep connections after server error status codes (4xx errors are OK)
+	if response != nil && response.StatusCode >= 500 {
+		s.logger.Debug("[HYBRID] Server error status code %d, removing from hot pool", response.StatusCode)
 		return false
 	}
 
@@ -1194,7 +1219,7 @@ func (s *TunnelServer) shouldKeepInHotPool(tunnelConn *TunnelConnection, respons
 		return false
 	}
 
-	s.logger.Debug("[HYBRID] Connection is fresh enough for hot pool (age: %v, requests: %d)",
+	s.logger.Debug("[HYBRID] Connection is suitable for hot pool (age: %v, requests: %d)",
 		time.Since(tunnelConn.GetCreatedAt()), requestCount)
 	return true
 }
