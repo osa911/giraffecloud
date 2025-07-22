@@ -248,13 +248,16 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData
 		hits := atomic.LoadInt64(&s.poolHits)
 		misses := atomic.LoadInt64(&s.poolMisses)
 
-		// Perform periodic cleanup every 2 minutes (more frequent)
+		// Perform periodic cleanup every 1 minute (more aggressive)
 		now := time.Now()
-		if now.Sub(s.lastCleanup) > 2*time.Minute {
+		if now.Sub(s.lastCleanup) > 1*time.Minute {
 			cleanupStats := s.connections.CleanupDeadConnections()
 			if len(cleanupStats) > 0 {
 				s.logger.Info("[CLEANUP] Removed dead connections: %v", cleanupStats)
 			}
+
+			// Also proactively recycle old connections
+			s.recycleOldConnections(domain)
 			s.lastCleanup = now
 		}
 
@@ -272,6 +275,9 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData
 
 	// Successfully got a connection from the pool
 	atomic.AddInt64(&s.poolHits, 1)
+
+	// Increment request count for this specific connection
+	tunnelConn.IncrementRequestCount()
 
 	// Validate connection is still alive before using it
 	if tunnelConn.GetConn() == nil {
@@ -393,6 +399,13 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData
 	if err := clientWriter.Flush(); err != nil {
 		s.logger.Debug("[PROXY DEBUG] Error flushing response: %v", err)
 		return
+	}
+
+	// CRITICAL: Check if we should recycle this connection
+	if s.shouldRecycleConnection(tunnelConn, response) {
+		s.logger.Debug("[PROXY DEBUG] Recycling tunnel connection after request completion")
+		s.connections.RemoveSpecificHTTPConnection(domain, tunnelConn)
+		go tunnelConn.Close() // Close asynchronously to avoid blocking
 	}
 }
 
@@ -531,6 +544,9 @@ func (s *TunnelServer) proxyMediaRequest(domain string, clientConn net.Conn, req
 
 	s.logger.Info("[MEDIA PROXY] Starting media request for domain: %s", domain)
 
+	// Increment request count for this specific connection
+	tunnelConn.IncrementRequestCount()
+
 	// Lock the tunnel connection for proper HTTP/1.1 sequencing
 	tunnelConn.Lock()
 	defer tunnelConn.Unlock()
@@ -598,6 +614,13 @@ func (s *TunnelServer) proxyMediaRequest(domain string, clientConn net.Conn, req
 	}
 
 	s.logger.Info("[MEDIA PROXY] Media streaming completed successfully")
+
+	// CRITICAL: Check if we should recycle this connection after media streaming
+	if s.shouldRecycleConnection(tunnelConn, response) {
+		s.logger.Debug("[MEDIA PROXY] Recycling tunnel connection after media request completion")
+		s.connections.RemoveSpecificHTTPConnection(domain, tunnelConn)
+		go tunnelConn.Close() // Close asynchronously to avoid blocking
+	}
 }
 
 // writeHTTPError writes a proper HTTP error response
@@ -643,6 +666,59 @@ func (s *TunnelServer) isRetryableConnectionError(err error) bool {
 	}
 
 	return false
+}
+
+// shouldRecycleConnection determines if a tunnel connection should be closed and recycled
+func (s *TunnelServer) shouldRecycleConnection(tunnelConn *TunnelConnection, response *http.Response) bool {
+	// Always recycle on connection close header
+	if response != nil {
+		if connHeader := response.Header.Get("Connection"); strings.ToLower(connHeader) == "close" {
+			return true
+		}
+	}
+
+	// Recycle connections that have handled many requests to prevent staleness
+	// This is a simple counter-based approach - in production you might want more sophisticated logic
+	requestCount := tunnelConn.GetRequestCount()
+	if requestCount > 50 { // Recycle after 50 requests
+		return true
+	}
+
+	// Recycle connections that have been alive for too long
+	if time.Since(tunnelConn.GetCreatedAt()) > 10*time.Minute {
+		return true
+	}
+
+	// Recycle on certain HTTP status codes that might indicate connection issues
+	if response != nil {
+		switch response.StatusCode {
+		case 502, 503, 504: // Bad Gateway, Service Unavailable, Gateway Timeout
+			return true
+		}
+	}
+
+	return false
+}
+
+// recycleOldConnections proactively recycles connections that might be getting stuck
+func (s *TunnelServer) recycleOldConnections(domain string) {
+	connections := s.connections.GetAllHTTPConnections(domain)
+	recycledCount := 0
+
+	for _, conn := range connections {
+		// Recycle connections older than 5 minutes or with many requests
+		if time.Since(conn.GetCreatedAt()) > 5*time.Minute || conn.GetRequestCount() > 30 {
+			s.logger.Info("[RECYCLE] Proactively recycling stale connection (age: %v, requests: %d)",
+				time.Since(conn.GetCreatedAt()), conn.GetRequestCount())
+			s.connections.RemoveSpecificHTTPConnection(domain, conn)
+			go conn.Close()
+			recycledCount++
+		}
+	}
+
+	if recycledCount > 0 {
+		s.logger.Info("[RECYCLE] Proactively recycled %d connections for domain %s", recycledCount, domain)
+	}
 }
 
 // Connection error handling is now done through connection pool management

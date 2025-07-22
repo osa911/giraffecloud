@@ -88,6 +88,17 @@ func (p *TunnelConnectionPool) CleanupDeadConnections() int {
 	return removedCount
 }
 
+// GetAllConnections returns a copy of all connections in the pool
+func (p *TunnelConnectionPool) GetAllConnections() []*TunnelConnection {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	// Return a copy to avoid race conditions
+	connections := make([]*TunnelConnection, len(p.connections))
+	copy(connections, p.connections)
+	return connections
+}
+
 // GetConnection returns a connection using round-robin distribution
 func (p *TunnelConnectionPool) GetConnection() *TunnelConnection {
 	p.mu.RLock()
@@ -360,6 +371,17 @@ func (m *ConnectionManager) CleanupDeadConnections() map[string]int {
 	}
 
 	return cleanupStats
+}
+
+// GetAllHTTPConnections returns all HTTP connections for a domain
+func (m *ConnectionManager) GetAllHTTPConnections(domain string) []*TunnelConnection {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if domainConns, exists := m.connections[domain]; exists && domainConns.httpPool != nil {
+		return domainConns.httpPool.GetAllConnections()
+	}
+	return nil
 }
 
 // Close closes all connections and cleans up resources

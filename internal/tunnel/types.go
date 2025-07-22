@@ -3,6 +3,7 @@ package tunnel
 import (
 	"net"
 	"sync"
+	"time"
 )
 
 // TunnelHandshakeRequest represents the initial handshake message
@@ -23,19 +24,23 @@ type TunnelHandshakeResponse struct {
 // TunnelConnection represents an active tunnel connection with per-connection synchronization
 // Each connection maintains HTTP/1.1 request-response ordering while the pool enables concurrency
 type TunnelConnection struct {
-	conn       net.Conn    // The underlying network connection
-	domain     string      // The domain this tunnel serves
-	targetPort int         // The target port on the client side
-	mu         sync.Mutex  // Mutex to serialize HTTP request/response cycles PER CONNECTION
+	conn         net.Conn    // The underlying network connection
+	domain       string      // The domain this tunnel serves
+	targetPort   int         // The target port on the client side
+	mu           sync.Mutex  // Mutex to serialize HTTP request/response cycles PER CONNECTION
+	requestCount int64       // Number of requests handled by this connection
+	createdAt    time.Time   // When this connection was created
 	// Pool-level concurrency is achieved by having multiple connections
 }
 
 // NewTunnelConnection creates a new tunnel connection
 func NewTunnelConnection(domain string, conn net.Conn, targetPort int) *TunnelConnection {
 	return &TunnelConnection{
-		conn:       conn,
-		domain:     domain,
-		targetPort: targetPort,
+		conn:         conn,
+		domain:       domain,
+		targetPort:   targetPort,
+		requestCount: 0,
+		createdAt:    time.Now(),
 	}
 }
 
@@ -70,4 +75,19 @@ func (tc *TunnelConnection) Lock() {
 // Unlock unlocks this specific tunnel connection
 func (tc *TunnelConnection) Unlock() {
 	tc.mu.Unlock()
+}
+
+// GetRequestCount returns the number of requests handled by this connection
+func (tc *TunnelConnection) GetRequestCount() int64 {
+	return tc.requestCount
+}
+
+// GetCreatedAt returns when this connection was created
+func (tc *TunnelConnection) GetCreatedAt() time.Time {
+	return tc.createdAt
+}
+
+// IncrementRequestCount increments the request counter for this connection
+func (tc *TunnelConnection) IncrementRequestCount() {
+	tc.requestCount++
 }
