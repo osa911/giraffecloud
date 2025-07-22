@@ -600,16 +600,31 @@ func (s *TunnelServer) proxyMediaRequest(domain string, clientConn net.Conn, req
 
 	s.logger.Info("[MEDIA PROXY] Received response: %s", response.Status)
 
-	// Write the response back to the client with optimized streaming
+	// Write the response back to the client with optimized streaming and client disconnection detection
 	clientWriter := bufio.NewWriter(clientConn)
+
+	// Check if client is still connected before writing large response
+	if s.isClientDisconnected(clientConn) {
+		s.logger.Debug("[MEDIA PROXY] Client disconnected before response write, aborting media stream")
+		return
+	}
+
 	if err := response.Write(clientWriter); err != nil {
-		// This is often normal - client may close connection early during video streaming
-		s.logger.Debug("[MEDIA PROXY] Client closed connection during streaming: %v", err)
+		// This is often normal - client may close connection early during gallery navigation
+		if s.isClientDisconnectionError(err) {
+			s.logger.Debug("[MEDIA PROXY] Client closed connection during streaming (likely navigated away): %v", err)
+		} else {
+			s.logger.Debug("[MEDIA PROXY] Error writing response to client: %v", err)
+		}
 		return
 	}
 
 	if err := clientWriter.Flush(); err != nil {
-		s.logger.Debug("[MEDIA PROXY] Error flushing response (client likely disconnected): %v", err)
+		if s.isClientDisconnectionError(err) {
+			s.logger.Debug("[MEDIA PROXY] Client disconnected during flush (likely navigated away): %v", err)
+		} else {
+			s.logger.Debug("[MEDIA PROXY] Error flushing response: %v", err)
+		}
 		return
 	}
 
@@ -678,14 +693,15 @@ func (s *TunnelServer) shouldRecycleConnection(tunnelConn *TunnelConnection, res
 	}
 
 	// Recycle connections that have handled many requests to prevent staleness
-	// This is a simple counter-based approach - in production you might want more sophisticated logic
+	// Be more aggressive for media requests to handle gallery navigation better
 	requestCount := tunnelConn.GetRequestCount()
-	if requestCount > 50 { // Recycle after 50 requests
+	if requestCount > 30 { // Recycle after 30 requests (more aggressive)
 		return true
 	}
 
 	// Recycle connections that have been alive for too long
-	if time.Since(tunnelConn.GetCreatedAt()) > 10*time.Minute {
+	// Be more aggressive for media connections
+	if time.Since(tunnelConn.GetCreatedAt()) > 5*time.Minute {
 		return true
 	}
 
@@ -700,16 +716,31 @@ func (s *TunnelServer) shouldRecycleConnection(tunnelConn *TunnelConnection, res
 	return false
 }
 
-// recycleOldConnections proactively recycles connections that might be getting stuck
+	// recycleOldConnections proactively recycles connections that might be getting stuck
 func (s *TunnelServer) recycleOldConnections(domain string) {
 	connections := s.connections.GetAllHTTPConnections(domain)
 	recycledCount := 0
 
 	for _, conn := range connections {
-		// Recycle connections older than 5 minutes or with many requests
-		if time.Since(conn.GetCreatedAt()) > 5*time.Minute || conn.GetRequestCount() > 30 {
-			s.logger.Info("[RECYCLE] Proactively recycling stale connection (age: %v, requests: %d)",
-				time.Since(conn.GetCreatedAt()), conn.GetRequestCount())
+		// Be more aggressive for potentially stuck connections
+		// Especially important for image gallery navigation where connections can get stuck
+		age := time.Since(conn.GetCreatedAt())
+		requests := conn.GetRequestCount()
+
+		shouldRecycle := false
+		reason := ""
+
+		if age > 3*time.Minute {
+			shouldRecycle = true
+			reason = "age"
+		} else if requests > 20 {
+			shouldRecycle = true
+			reason = "request_count"
+		}
+
+		if shouldRecycle {
+			s.logger.Info("[RECYCLE] Proactively recycling %s connection (age: %v, requests: %d)",
+				reason, age, requests)
 			s.connections.RemoveSpecificHTTPConnection(domain, conn)
 			go conn.Close()
 			recycledCount++
@@ -719,6 +750,41 @@ func (s *TunnelServer) recycleOldConnections(domain string) {
 	if recycledCount > 0 {
 		s.logger.Info("[RECYCLE] Proactively recycled %d connections for domain %s", recycledCount, domain)
 	}
+}
+
+// isClientDisconnected checks if the client connection is still active (simplified for HTTP)
+func (s *TunnelServer) isClientDisconnected(conn net.Conn) bool {
+	// For HTTP requests, we can't reliably test without interfering with the stream
+	// Just return false and rely on write error detection instead
+	return false
+}
+
+// isClientDisconnectionError checks if an error indicates client disconnection
+func (s *TunnelServer) isClientDisconnectionError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errStr := err.Error()
+
+	// Common client disconnection error patterns
+	disconnectionErrors := []string{
+		"broken pipe",
+		"connection reset by peer",
+		"write: connection reset by peer",
+		"use of closed network connection",
+		"client disconnected",
+		"connection closed",
+		"EOF",
+	}
+
+	for _, disconnectionErr := range disconnectionErrors {
+		if strings.Contains(errStr, disconnectionErr) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // Connection error handling is now done through connection pool management
