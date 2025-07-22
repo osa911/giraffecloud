@@ -330,7 +330,7 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData
 	// Read the HTTP response from the tunnel
 	tunnelReader := bufio.NewReader(tunnelConn.GetConn())
 
-	// Parse the response with better error handling
+		// Parse the response with better error handling
 	response, err := http.ReadResponse(tunnelReader, nil)
 	if err != nil {
 		s.logger.Error("[PROXY DEBUG] Error reading response from tunnel: %v", err)
@@ -340,9 +340,7 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData
 		// Try to get a fresh connection for retry (only if we have other connections)
 		if s.connections.GetHTTPPoolSize(domain) > 1 {
 			s.logger.Info("[PROXY DEBUG] Attempting retry with fresh connection")
-			// Release the lock on the current connection before retry
-			tunnelConn.Unlock()
-			// Note: We exit here, so the defer unlock won't execute twice
+			// Note: Let the defer handle the unlock - don't unlock manually here
 			s.retryWithFreshConnection(domain, conn, requestData, requestBody)
 			return
 		}
@@ -514,7 +512,7 @@ func (s *TunnelServer) proxyMediaRequest(domain string, clientConn net.Conn, req
 	// Read the HTTP response from the tunnel
 	tunnelReader := bufio.NewReader(tunnelConn.GetConn())
 
-	// Parse the response with error handling
+		// Parse the response with error handling
 	response, err := http.ReadResponse(tunnelReader, nil)
 	if err != nil {
 		s.logger.Error("[MEDIA PROXY] Error reading response from tunnel: %v", err)
@@ -524,9 +522,7 @@ func (s *TunnelServer) proxyMediaRequest(domain string, clientConn net.Conn, req
 		// Try to get a fresh connection for retry (only if we have other connections)
 		if s.connections.GetHTTPPoolSize(domain) > 1 {
 			s.logger.Info("[MEDIA PROXY] Attempting retry with fresh connection")
-			// Release the lock on the current connection before retry
-			tunnelConn.Unlock()
-			// Note: We exit here, so the defer unlock won't execute twice
+			// Note: Let the defer handle the unlock - don't unlock manually here
 			s.retryWithFreshConnection(domain, clientConn, requestData, requestBody)
 			return
 		}
