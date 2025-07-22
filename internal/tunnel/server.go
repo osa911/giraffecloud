@@ -605,7 +605,7 @@ func (s *TunnelServer) ProxyWebSocketConnection(domain string, clientConn net.Co
 
 	// Get the request as bytes
 	requestBytes := []byte(requestData.String())
-	s.logger.Debug("[WEBSOCKET DEBUG] Forwarding WebSocket upgrade request:\n%s", requestData.String())
+	// s.logger.Debug("[WEBSOCKET DEBUG] Forwarding WebSocket upgrade request:\n%s", requestData.String())
 
 	// Lock the tunnel connection for the upgrade handshake
 	tunnelConn.Lock()
