@@ -37,6 +37,7 @@ type GRPCTunnelClient struct {
 	// State management
 	connected     bool
 	connecting    bool
+	stopping      bool // Prevent auto-reconnection during shutdown
 	mu            sync.RWMutex
 	stopChan      chan struct{}
 	ctx           context.Context
@@ -111,6 +112,7 @@ func NewGRPCTunnelClient(serverAddr, domain, token string, targetPort int32, con
 		stopChan:         make(chan struct{}),
 		ctx:              ctx,
 		cancel:           cancel,
+		stopping:         false, // Initialize stopping flag
 		responseChannels: make(map[string]chan *proto.TunnelMessage),
 		config:           config,
 		logger:           logging.GetGlobalLogger(),
@@ -160,6 +162,9 @@ func (c *GRPCTunnelClient) Stop() error {
 	}
 
 	c.logger.Info("Stopping gRPC tunnel for domain: %s", c.domain)
+
+	// CRITICAL: Set stopping flag to prevent auto-reconnection race conditions
+	c.stopping = true
 
 	// Signal stop
 	close(c.stopChan)
@@ -367,6 +372,15 @@ func (c *GRPCTunnelClient) handleIncomingMessages() {
 			case <-c.stopChan:
 				return
 			default:
+				// CRITICAL: Check if client is being stopped to prevent duplicate gRPC clients
+				c.mu.RLock()
+				if c.stopping {
+					c.logger.Info("[PROTECTION] 🛡️  Skipping auto-reconnection - client is being stopped")
+					c.mu.RUnlock()
+					return
+				}
+				c.mu.RUnlock()
+
 				go c.reconnect()
 				return
 			}
@@ -786,8 +800,9 @@ func (c *GRPCTunnelClient) reconnect() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if !c.connected {
-		return // Already disconnected
+	if !c.connected || c.stopping {
+		c.logger.Info("[PROTECTION] 🛡️  Skipping reconnection - client disconnected or stopping")
+		return // Already disconnected or being stopped
 	}
 
 	c.logger.Warn("Attempting to reconnect gRPC tunnel for domain: %s", c.domain)
