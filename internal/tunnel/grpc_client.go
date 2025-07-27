@@ -573,6 +573,15 @@ func (c *GRPCTunnelClient) streamResponseInChunks(requestID string, response *ht
 			chunkData := make([]byte, n)
 			copy(chunkData, buffer[:n])
 
+			// Determine chunk ID (mark final chunk appropriately)
+			var chunkId string
+			isFinalChunk := (err == io.EOF)
+			if isFinalChunk {
+				chunkId = fmt.Sprintf("chunk-%d_final", chunkNum)
+			} else {
+				chunkId = fmt.Sprintf("chunk-%d", chunkNum)
+			}
+
 			// Send chunk response
 			chunkResponse := &proto.TunnelMessage{
 				RequestId: requestID,
@@ -584,12 +593,12 @@ func (c *GRPCTunnelClient) streamResponseInChunks(requestID string, response *ht
 						Headers:    headers,
 						Body:       chunkData,
 						IsChunked:  true,
-						ChunkId:    fmt.Sprintf("chunk-%d", chunkNum),
+						ChunkId:    chunkId,
 					},
 				},
 			}
 
-			c.logger.Debug("[CHUNKED CLIENT] ✅ Sending chunk %d (%d bytes)", chunkNum, len(chunkData))
+			c.logger.Debug("[CHUNKED CLIENT] ✅ Sending chunk %d (%d bytes), final: %v", chunkNum, len(chunkData), isFinalChunk)
 
 			if sendErr := c.stream.Send(chunkResponse); sendErr != nil {
 				c.logger.Error("[CHUNKED CLIENT] Failed to send chunk %d: %v", chunkNum, sendErr)

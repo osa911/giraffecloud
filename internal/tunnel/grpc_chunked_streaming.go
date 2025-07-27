@@ -1,10 +1,12 @@
 package tunnel
 
 import (
+	"bytes"
 	"fmt"
 	"giraffecloud/internal/tunnel/proto"
 	"io"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -18,7 +20,7 @@ const (
 	// MaxChunkSize is the maximum allowed chunk size (4MB)
 	MaxChunkSize = 4 * 1024 * 1024
 	// ChunkedStreamingThreshold - files larger than this use chunked streaming
-	// PERFECTLY ALIGNED with gRPC 16MB message limit - NO GAPS!
+	// BINARY SPLIT: ≤16MB = Regular gRPC, >16MB = Unlimited Chunked Streaming
 	ChunkedStreamingThreshold = 16 * 1024 * 1024 // 16MB
 )
 
@@ -295,7 +297,7 @@ func (s *GRPCTunnelServer) ProxyHTTPRequestWithChunking(domain string, httpReq *
 		s.logger.Info("[CHUNKED] 🚀 Large file (>16MB) detected → UNLIMITED chunked streaming: %s %s",
 			httpReq.Method, httpReq.URL.Path)
 
-		// Route to chunked streaming for unlimited file size support
+		// Route to TRUE chunked streaming for unlimited file size support
 		return s.handleLargeFileWithChunking(domain, httpReq, clientIP)
 	}
 
@@ -304,68 +306,201 @@ func (s *GRPCTunnelServer) ProxyHTTPRequestWithChunking(domain string, httpReq *
 	return s.ProxyHTTPRequest(domain, httpReq, clientIP)
 }
 
-// handleLargeFileWithChunking processes large files using chunked streaming
+// handleLargeFileWithChunking processes large files using TRUE chunked streaming
 func (s *GRPCTunnelServer) handleLargeFileWithChunking(domain string, httpReq *http.Request, clientIP string) (*http.Response, error) {
+	s.logger.Info("[CHUNKED] 🚀 Implementing TRUE chunked streaming for unlimited file sizes")
+
+	// Get tunnel stream for domain
+	s.tunnelStreamsMux.RLock()
+	tunnelStream, exists := s.tunnelStreams[domain]
+	s.tunnelStreamsMux.RUnlock()
+
+	if !exists || !tunnelStream.connected {
+		return nil, fmt.Errorf("no active tunnel for domain: %s", domain)
+	}
+
 	// Convert HTTP request to protobuf
 	protoReq, err := s.httpToGRPC(httpReq, clientIP)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert HTTP request: %w", err)
 	}
 
-	// Mark as large file
+	// Mark as large file for client-side chunked streaming
 	protoReq.GetHttpRequest().IsLargeFile = true
 
-	// Create large file request for chunked streaming
+	// Create large file request
 	largeFileReq := &proto.LargeFileRequest{
 		RequestId:         fmt.Sprintf("chunk-%d", time.Now().UnixNano()),
 		HttpRequest:       protoReq.GetHttpRequest(),
-		ChunkSize:         DefaultChunkSize,
+		ChunkSize:         DefaultChunkSize, // 1MB chunks
 		EnableCompression: true,
 	}
 
-	s.logger.Debug("[CHUNKED] Initiating chunked stream for: %s", httpReq.URL.Path)
+	s.logger.Debug("[CHUNKED] Sending large file request to client: %s", httpReq.URL.Path)
 
-	// Create a streaming client to handle the chunked response
-	return s.handleChunkedStreamResponse(largeFileReq)
+	// Send large file request to client and collect chunked response
+	return s.collectChunkedResponse(tunnelStream, largeFileReq)
 }
 
-// handleChunkedStreamResponse handles the chunked streaming response
-func (s *GRPCTunnelServer) handleChunkedStreamResponse(req *proto.LargeFileRequest) (*http.Response, error) {
-	s.logger.Warn("[CHUNKED] 🚧 Server-side chunked reassembly not yet fully implemented")
-	s.logger.Info("[CHUNKED] 🔄 Falling back to client-side chunked streaming (still UNLIMITED) for: %s", req.HttpRequest.Path)
+// collectChunkedResponse sends large file request to client and reassembles chunked response
+func (s *GRPCTunnelServer) collectChunkedResponse(tunnelStream *TunnelStream, req *proto.LargeFileRequest) (*http.Response, error) {
+	s.logger.Debug("[CHUNKED] 📦 Starting chunk collection for request: %s", req.RequestId)
 
-	// For now, fall back to the regular proxy
-	// The client will still do chunked streaming, server will reassemble
-	httpReq, err := s.protoToHTTP(req.HttpRequest)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert proto back to HTTP: %w", err)
+	// Send the large file HTTP request to the client (marked as large file)
+	requestMsg := &proto.TunnelMessage{
+		RequestId: req.RequestId,
+		Timestamp: time.Now().Unix(),
+		MessageType: &proto.TunnelMessage_HttpRequest{
+			HttpRequest: req.HttpRequest,
+		},
 	}
 
-	// Extract domain from the request
-	domain := s.extractDomainFromRequest(req.HttpRequest)
+	if err := tunnelStream.Stream.Send(requestMsg); err != nil {
+		return nil, fmt.Errorf("failed to send large file request: %w", err)
+	}
 
-	// Use regular proxy - but the client will still stream chunks back to us
-	return s.ProxyHTTPRequest(domain, httpReq, req.HttpRequest.ClientIp)
+	s.logger.Debug("[CHUNKED] ✅ Large file request sent, waiting for chunked response...")
+
+	// Initialize chunk collection
+	responseChunks := make(map[string][]byte) // chunk_id -> data
+	var firstChunk *proto.HTTPResponse
+	var lastChunkReceived bool
+
+	// Set timeout for chunk collection
+	timeout := time.After(120 * time.Second) // 2 minutes for large files
+
+	for {
+		select {
+		case <-timeout:
+			return nil, fmt.Errorf("timeout waiting for chunked response after 2 minutes")
+
+		default:
+			// Wait for chunks from client
+			response, err := tunnelStream.Stream.Recv()
+			if err != nil {
+				return nil, fmt.Errorf("failed to receive chunk: %w", err)
+			}
+
+			// Check if this is our response
+			if response.RequestId != req.RequestId {
+				s.logger.Warn("[CHUNKED] Received response for different request ID: %s (expected: %s)",
+					response.RequestId, req.RequestId)
+				continue
+			}
+
+			// Handle different message types
+			switch msgType := response.MessageType.(type) {
+			case *proto.TunnelMessage_HttpResponse:
+				chunk := msgType.HttpResponse
+
+				s.logger.Debug("[CHUNKED] 📥 Received HTTP response chunk: %s, size: %d bytes, chunked: %v",
+					chunk.ChunkId, len(chunk.Body), chunk.IsChunked)
+
+				// Store the first chunk for headers and status
+				if firstChunk == nil {
+					firstChunk = chunk
+					s.logger.Debug("[CHUNKED] 📋 Response metadata: status=%d, content-type=%s",
+						chunk.StatusCode, chunk.Headers["Content-Type"])
+				}
+
+				// If this is a chunked response, collect the chunks
+				if chunk.IsChunked {
+					if len(chunk.Body) > 0 {
+						responseChunks[chunk.ChunkId] = chunk.Body
+					}
+
+					// Check if this is the final chunk (chunk_id ends with "_final")
+					if strings.HasSuffix(chunk.ChunkId, "_final") {
+						lastChunkReceived = true
+					}
+				} else {
+					// Non-chunked response - return immediately
+					s.logger.Info("[CHUNKED] ✅ Received non-chunked response")
+					return s.assembleHttpResponse(chunk)
+				}
+
+				// If we have the final chunk, reassemble the response
+				if lastChunkReceived && firstChunk != nil {
+					s.logger.Info("[CHUNKED] ✅ All chunks received, reassembling response...")
+					return s.assembleChunkedHttpResponse(firstChunk, responseChunks)
+				}
+
+			case *proto.TunnelMessage_Error:
+				errorMsg := msgType.Error
+				return nil, fmt.Errorf("client error during chunked streaming: %s", errorMsg.Message)
+
+			default:
+				s.logger.Warn("[CHUNKED] Unexpected message type during chunk collection: %T", msgType)
+			}
+		}
+	}
 }
 
-// protoToHTTP converts a proto HTTP request back to a regular HTTP request
-func (s *GRPCTunnelServer) protoToHTTP(protoReq *proto.HTTPRequest) (*http.Request, error) {
-	// This is a simplified conversion - in practice you'd need to handle more cases
-	req, err := http.NewRequest(protoReq.Method, protoReq.Path, strings.NewReader(string(protoReq.Body)))
-	if err != nil {
-		return nil, err
+// assembleHttpResponse converts a single HTTPResponse proto back to http.Response
+func (s *GRPCTunnelServer) assembleHttpResponse(protoResp *proto.HTTPResponse) (*http.Response, error) {
+	s.logger.Debug("[CHUNKED] 🔧 Assembling single HTTP response")
+
+	response := &http.Response{
+		StatusCode: int(protoResp.StatusCode),
+		Status:     protoResp.StatusText,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(bytes.NewReader(protoResp.Body)),
 	}
 
 	// Set headers
-	for key, value := range protoReq.Headers {
-		req.Header.Set(key, value)
+	for key, value := range protoResp.Headers {
+		response.Header.Set(key, value)
 	}
 
-	// Set URL path and query
-	req.URL.Path = protoReq.Path
-	if protoReq.Query != "" {
-		req.URL.RawQuery = protoReq.Query
+	// Set content length
+	response.ContentLength = int64(len(protoResp.Body))
+
+	return response, nil
+}
+
+// assembleChunkedHttpResponse reassembles chunked HTTP responses into a single response
+func (s *GRPCTunnelServer) assembleChunkedHttpResponse(firstChunk *proto.HTTPResponse, chunks map[string][]byte) (*http.Response, error) {
+	s.logger.Debug("[CHUNKED] 🔧 Assembling chunked HTTP response from %d chunks", len(chunks))
+
+	// Sort chunks by ID to ensure proper order
+	var sortedChunkIds []string
+	for chunkId := range chunks {
+		sortedChunkIds = append(sortedChunkIds, chunkId)
 	}
 
-	return req, nil
+	// Sort chunk IDs (assuming format like "chunk_1", "chunk_2", etc.)
+	sort.Slice(sortedChunkIds, func(i, j int) bool {
+		return sortedChunkIds[i] < sortedChunkIds[j]
+	})
+
+	// Reassemble the response body
+	var totalSize int64
+	var responseBody bytes.Buffer
+
+	for _, chunkId := range sortedChunkIds {
+		chunkData := chunks[chunkId]
+		responseBody.Write(chunkData)
+		totalSize += int64(len(chunkData))
+	}
+
+	s.logger.Info("[CHUNKED] ✅ Reassembled response: %d chunks, %d total bytes", len(chunks), totalSize)
+
+	// Create the final HTTP response
+	response := &http.Response{
+		StatusCode:    int(firstChunk.StatusCode),
+		Status:        firstChunk.StatusText,
+		Header:        make(http.Header),
+		Body:          io.NopCloser(&responseBody),
+		ContentLength: totalSize,
+	}
+
+	// Set headers from the first chunk
+	for key, value := range firstChunk.Headers {
+		response.Header.Set(key, value)
+	}
+
+	// Update Content-Length header to reflect actual assembled size
+	response.Header.Set("Content-Length", strconv.FormatInt(totalSize, 10))
+
+	return response, nil
 }
