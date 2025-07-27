@@ -76,6 +76,21 @@ func (s *caddyService) ConfigureRoute(domain string, targetIP string, targetPort
 		"@id": domain,
 		"handle": []map[string]interface{}{
 			{
+				"handler": "headers",
+				"response": map[string]interface{}{
+					"set": map[string]interface{}{
+						"Strict-Transport-Security": []string{"max-age=31536000; includeSubDomains; preload"},
+						"X-Content-Type-Options":    []string{"nosniff"},
+						"X-Frame-Options":           []string{"DENY"},
+						"X-XSS-Protection":          []string{"1; mode=block"},
+						"Content-Security-Policy":   []string{"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src 'self'"},
+						"Referrer-Policy":           []string{"strict-origin-when-cross-origin"},
+						"Permissions-Policy":        []string{"geolocation=(), microphone=(), camera=()"},
+					},
+					"delete": []string{"Server", "X-Powered-By"},
+				},
+			},
+			{
 				"handler": "reverse_proxy",
 				"upstreams": []map[string]interface{}{
 					{
