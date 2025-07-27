@@ -344,9 +344,18 @@ func (r *HybridTunnelRouter) routeToTCPForLargeFile(domain string, conn net.Conn
 
 	// Check if TCP tunnel is available
 	if !r.tcpTunnel.IsTunnelDomain(domain) {
-		r.logger.Error("[HYBRID→TCP] No active TCP tunnel for domain: %s", domain)
+		r.logger.Warn("[HYBRID→TCP] No active TCP tunnel for domain: %s, falling back to gRPC", domain)
+
+		// Fallback to gRPC tunnel for large files if TCP is unavailable
+		if r.grpcTunnel.IsTunnelActive(domain) {
+			r.logger.Info("[HYBRID→TCP→gRPC] Fallback: Routing large file via gRPC: %s %s", method, path)
+			r.routeToGRPCTunnel(domain, conn, requestData, requestBody, clientIP, method, path)
+			return
+		}
+
+		r.logger.Error("[HYBRID→TCP] No tunnel available for domain: %s", domain)
 		atomic.AddInt64(&r.routingErrors, 1)
-		r.writeHTTPError(conn, 502, "Bad Gateway - TCP tunnel not available")
+		r.writeHTTPError(conn, 502, "Bad Gateway - No tunnel connections available")
 		return
 	}
 

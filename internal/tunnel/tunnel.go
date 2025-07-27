@@ -99,6 +99,9 @@ type Tunnel struct {
 	// WebSocket connection
 	wsConn net.Conn
 
+	// HTTP connections for large file streaming in hybrid mode
+	httpConnections []net.Conn
+
 	// Reconnection coordination
 	reconnectMutex sync.Mutex
 	isReconnecting bool
@@ -271,8 +274,8 @@ func (t *Tunnel) attemptDualConnections(serverAddr string, tlsConfig *tls.Config
 	t.logger.Info("🔌 Establishing TCP tunnel for WebSocket traffic...")
 
 	if t.grpcEnabled {
-		// In hybrid mode, we only need one TCP connection for WebSocket
-		t.logger.Info("Hybrid mode: Establishing minimal TCP connections for WebSocket support...")
+		// In hybrid mode, establish TCP connections for WebSocket + large file streaming
+		t.logger.Info("Hybrid mode: Establishing TCP connections for WebSocket + large file streaming...")
 
 		// Establish WebSocket tunnel connection
 		wsConn, err := t.establishConnection(serverAddr, tlsConfig, "websocket")
@@ -289,7 +292,33 @@ func (t *Tunnel) attemptDualConnections(serverAddr string, tlsConfig *tls.Config
 			go t.handleWebSocketConnection(wsConn)
 		}
 
-		t.logger.Info("🎯 HYBRID MODE ACTIVE: gRPC (HTTP) + TCP (WebSocket)")
+		// Establish additional TCP connections for large file streaming (3 connections)
+		largeFilePoolSize := 3
+		t.logger.Info("Establishing %d additional TCP connections for large file streaming...", largeFilePoolSize)
+
+		httpConnections := make([]net.Conn, 0, largeFilePoolSize)
+		for i := 0; i < largeFilePoolSize; i++ {
+			httpConn, err := t.establishConnection(serverAddr, tlsConfig, "http")
+			if err != nil {
+				t.logger.Error("Failed to establish TCP connection %d for large files: %v", i+1, err)
+				continue
+			}
+
+			httpConnections = append(httpConnections, httpConn)
+
+			// Start HTTP handler for this connection
+			t.wg.Add(1)
+			go t.handleHTTPConnection(httpConn, i+1)
+		}
+
+		if len(httpConnections) > 0 {
+			t.httpConnections = httpConnections
+			t.logger.Info("✅ %d TCP connections established for large file streaming", len(httpConnections))
+		} else {
+			t.logger.Warn("⚠️  No TCP connections available for large files - large files will fail until connections are available")
+		}
+
+		t.logger.Info("🎯 HYBRID MODE ACTIVE: gRPC (HTTP) + TCP (WebSocket + Large Files)")
 		return nil
 	}
 
@@ -814,6 +843,16 @@ func (t *Tunnel) coordinatedReconnectWithContext(isIntentional bool) {
 		t.wsConn = nil
 	}
 
+	// Close HTTP connections for large file streaming during reconnect
+	if len(t.httpConnections) > 0 {
+		for _, httpConn := range t.httpConnections {
+			if httpConn != nil {
+				httpConn.Close()
+			}
+		}
+		t.httpConnections = nil
+	}
+
 	// Stop health monitoring
 	if t.healthTicker != nil {
 		t.healthTicker.Stop()
@@ -893,6 +932,22 @@ func (t *Tunnel) Disconnect() error {
 		if err == nil {
 			err = wsErr
 		}
+	}
+
+	// Close HTTP connections for large file streaming
+	if len(t.httpConnections) > 0 {
+		t.logger.Info("Closing %d HTTP connections for large file streaming...", len(t.httpConnections))
+		for i, httpConn := range t.httpConnections {
+			if httpConn != nil {
+				httpConn.SetDeadline(time.Now().Add(5 * time.Second))
+				if closeErr := httpConn.Close(); closeErr != nil && err == nil {
+					err = closeErr
+				}
+				t.logger.Debug("Closed HTTP connection %d for large files", i+1)
+			}
+		}
+		t.httpConnections = nil
+		t.logger.Info("✅ All HTTP connections for large files closed")
 	}
 
 	// Wait for all goroutines to finish with timeout
