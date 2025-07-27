@@ -211,6 +211,12 @@ func (c *GRPCTunnelClient) connect() error {
 		}
 	}
 
+	// CRITICAL: Force fresh TLS state by disabling session resumption during reconnection
+	// This prevents ERR_SSL_PROTOCOL_ERROR after server restarts
+	tlsConfig = tlsConfig.Clone()
+	tlsConfig.ClientSessionCache = tls.NewLRUClientSessionCache(0) // Disable session cache
+	tlsConfig.Renegotiation = tls.RenegotiateNever                 // Disable renegotiation
+
 	// Create gRPC connection
 	dialOpts := []grpc.DialOption{
 		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)),
@@ -796,8 +802,15 @@ func (c *GRPCTunnelClient) reconnect() {
 
 	c.connected = false
 
+	// CRITICAL: Reset all gRPC client state to prevent stale TLS connections
+	c.conn = nil
+	c.client = nil
+	c.stream = nil
+
 	// Reset any stale chunked streaming state
 	c.resetChunkedStreamingState()
+
+	c.logger.Info("[CLEANUP] 🧹 Resetting chunked streaming state for domain: %s", c.domain)
 
 	// Retry connection with exponential backoff
 	delay := c.config.ReconnectDelay

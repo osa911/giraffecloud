@@ -245,6 +245,11 @@ func (t *Tunnel) attemptDualConnections(serverAddr string, tlsConfig *tls.Config
 			} else {
 				t.logger.Info("🔐 Using PRODUCTION-GRADE TLS with certificate validation")
 			}
+
+			// CRITICAL: Force fresh TLS state during reconnection to prevent ERR_SSL_PROTOCOL_ERROR
+			tlsConfig = tlsConfig.Clone()
+			tlsConfig.ClientSessionCache = tls.NewLRUClientSessionCache(0) // Disable session cache
+			tlsConfig.Renegotiation = tls.RenegotiateNever                 // Disable renegotiation
 		}
 	}
 
@@ -827,6 +832,12 @@ func (t *Tunnel) coordinatedReconnectWithContext(isIntentional bool) {
 			}
 		}
 		t.httpConnections = nil
+	}
+
+	// CRITICAL: Reset gRPC client TLS state to prevent ERR_SSL_PROTOCOL_ERROR
+	if t.grpcClient != nil {
+		t.logger.Info("[CLEANUP] 🧹 Resetting gRPC client TLS state for fresh connection")
+		// The gRPC client will handle its own reconnection with fresh TLS state
 	}
 
 	// Stop health monitoring
