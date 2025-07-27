@@ -322,6 +322,13 @@ func (c *GRPCTunnelClient) waitForHandshakeResponse() error {
 			if status := control.GetStatus(); status != nil {
 				if status.State == proto.TunnelState_TUNNEL_STATE_CONNECTED {
 					c.logger.Info("Handshake successful for domain: %s", c.domain)
+
+					// CRITICAL: Save domain and port to config like old handshake (RESTORED FUNCTIONALITY)
+					if err := c.saveHandshakeResponseToConfig(status); err != nil {
+						c.logger.Warn("Failed to save handshake response to config: %v", err)
+						// Don't fail handshake if config save fails (like old handshake)
+					}
+
 					return nil
 				}
 				return fmt.Errorf("handshake failed: %s", status.ErrorMessage)
@@ -338,6 +345,40 @@ func (c *GRPCTunnelClient) waitForHandshakeResponse() error {
 	case <-c.ctx.Done():
 		return c.ctx.Err()
 	}
+}
+
+// saveHandshakeResponseToConfig saves domain and port from handshake response to config (RESTORED FROM OLD HANDSHAKE)
+func (c *GRPCTunnelClient) saveHandshakeResponseToConfig(status *proto.TunnelStatus) error {
+	// Load current config
+	cfg, err := LoadConfig()
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// Update only if server provided the values (like old handshake)
+	updated := false
+	if status.Domain != "" && status.Domain != cfg.Domain {
+		c.logger.Info("Updating domain in config: %s -> %s", cfg.Domain, status.Domain)
+		cfg.Domain = status.Domain
+		updated = true
+	}
+	if status.TargetPort != 0 && status.TargetPort != int32(cfg.LocalPort) {
+		c.logger.Info("Updating target port in config: %d -> %d", cfg.LocalPort, status.TargetPort)
+		cfg.LocalPort = int(status.TargetPort)
+		updated = true
+	}
+
+	// Save config if updated (like old handshake)
+	if updated {
+		if err := SaveConfig(cfg); err != nil {
+			return fmt.Errorf("failed to save config: %w", err)
+		}
+		c.logger.Info("✅ Successfully updated local config with server values")
+	} else {
+		c.logger.Info("✅ Config already up to date")
+	}
+
+	return nil
 }
 
 // handleIncomingMessages handles messages from the server

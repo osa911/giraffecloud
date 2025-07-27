@@ -264,6 +264,19 @@ func (s *GRPCTunnelServer) EstablishTunnel(stream proto.TunnelService_EstablishT
 
 	s.logger.Info("Authenticated tunnel for domain: %s, user: %d", tunnel.Domain, tunnel.UserID)
 
+	// CRITICAL: Update client IP and trigger Caddy configuration (RESTORED FROM OLD HANDSHAKE)
+	clientIP := getPeerIP(ctx)
+	if s.tunnelService != nil {
+		s.logger.Info("🔧 Updating client IP and configuring Caddy for domain: %s -> %s", tunnel.Domain, clientIP)
+		if err := s.tunnelService.UpdateClientIP(ctx, uint32(tunnel.ID), clientIP); err != nil {
+			s.logger.Error("Failed to update client IP and configure Caddy: %v", err)
+			return status.Errorf(codes.Internal, "failed to configure tunnel: %v", err)
+		}
+		s.logger.Info("✅ Successfully configured Caddy route for domain: %s", tunnel.Domain)
+	} else {
+		s.logger.Warn("⚠️  Tunnel service not available - Caddy configuration skipped")
+	}
+
 	// Create tunnel stream
 	tunnelStream := &TunnelStream{
 		Domain:          tunnel.Domain,
@@ -289,10 +302,20 @@ func (s *GRPCTunnelServer) EstablishTunnel(stream proto.TunnelService_EstablishT
 		// Clean up all pending requests and chunked streaming state
 		s.cleanupTunnelStreamState(tunnelStream)
 
+		// CRITICAL: Remove Caddy route when tunnel disconnects (RESTORED FROM OLD HANDSHAKE)
+		if s.tunnelService != nil {
+			s.logger.Info("🔧 Removing Caddy route for disconnected tunnel: %s", tunnel.Domain)
+			if err := s.tunnelService.UpdateClientIP(ctx, uint32(tunnel.ID), ""); err != nil {
+				s.logger.Error("Failed to remove Caddy route: %v", err)
+			} else {
+				s.logger.Info("✅ Successfully removed Caddy route for domain: %s", tunnel.Domain)
+			}
+		}
+
 		s.logger.Info("Tunnel disconnected for domain: %s (all state cleaned up)", tunnel.Domain)
 	}()
 
-	// Send handshake response
+	// Send handshake response (ENHANCED: Include success confirmation like old handshake)
 	handshakeResponse := &proto.TunnelMessage{
 		RequestId: handshakeMsg.RequestId,
 		Timestamp: time.Now().Unix(),
@@ -300,9 +323,12 @@ func (s *GRPCTunnelServer) EstablishTunnel(stream proto.TunnelService_EstablishT
 			Control: &proto.TunnelControl{
 				ControlType: &proto.TunnelControl_Status{
 					Status: &proto.TunnelStatus{
-						State:            proto.TunnelState_TUNNEL_STATE_CONNECTED,
+						State:             proto.TunnelState_TUNNEL_STATE_CONNECTED,
+						Domain:            tunnel.Domain,
+						TargetPort:        handshake.TargetPort,
+						ConnectedAt:       time.Now().Unix(),
 						ActiveConnections: 1,
-						LastActivity:     time.Now().Unix(),
+						LastActivity:      time.Now().Unix(),
 					},
 				},
 			},
