@@ -548,7 +548,7 @@ func (c *GRPCTunnelClient) makeLocalServiceRequest(httpReq *proto.HTTPRequest) (
 
 // streamResponseInChunks streams large responses in chunks for unlimited file size
 func (c *GRPCTunnelClient) streamResponseInChunks(requestID string, response *http.Response) error {
-	const ChunkSize = 1024 * 1024 // 1MB chunks
+	const ChunkSize = 4 * 1024 * 1024 // 4MB chunks for faster streaming
 
 	c.logger.Info("[CHUNKED CLIENT] 📡 Streaming response in %dKB chunks (UNLIMITED SIZE)", ChunkSize/1024)
 
@@ -616,7 +616,9 @@ func (c *GRPCTunnelClient) streamResponseInChunks(requestID string, response *ht
 
 		// Check for end of file
 		if err == io.EOF {
-			c.logger.Info("[CHUNKED CLIENT] 🎉 Completed streaming %d chunks for large file", chunkNum)
+			// Calculate and log streaming performance
+	totalMB := float64(chunkNum * ChunkSize) / (1024 * 1024)
+	c.logger.Info("[CHUNKED CLIENT] 🎉 Completed streaming %d chunks (%.1f MB) for large file", chunkNum, totalMB)
 			break
 		} else if err != nil {
 			c.logger.Error("[CHUNKED CLIENT] Error reading response: %v", err)

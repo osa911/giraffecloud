@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	// DefaultChunkSize is the default chunk size for streaming (1MB)
-	DefaultChunkSize = 1024 * 1024
+	// DefaultChunkSize is the default chunk size for streaming (4MB for faster transfers)
+	DefaultChunkSize = 4 * 1024 * 1024
 	// MaxChunkSize is the maximum allowed chunk size (4MB)
 	MaxChunkSize = 4 * 1024 * 1024
 	// ChunkedStreamingThreshold - files larger than this use chunked streaming
@@ -168,10 +168,8 @@ func (s *GRPCTunnelServer) streamResponseInChunks(
 
 		s.logger.Debug("[CHUNKED] ✅ Sent chunk %d/%d (%d bytes)", i+1, numChunks, len(chunkData))
 
-		// Small delay for very large files to prevent overwhelming
-		if totalSize > 100*1024*1024 && numChunks > 100 { // 100MB+ files with 100+ chunks
-			time.Sleep(1 * time.Millisecond)
-		}
+		// Removed artificial delay for faster streaming
+		// With 4MB chunks, even large files stream efficiently without delays
 	}
 
 	s.logger.Info("[CHUNKED] 🎉 Successfully streamed %d chunks for large file", numChunks)
@@ -345,7 +343,7 @@ func (s *GRPCTunnelServer) collectChunkedResponse(tunnelStream *TunnelStream, re
 	s.logger.Debug("[CHUNKED] 📦 Starting MEMORY-EFFICIENT chunk collection for request: %s", req.RequestId)
 
 		// Create response channel and register it in pendingRequests (CRITICAL!)
-	responseChan := make(chan *proto.TunnelMessage, 100) // Buffer for chunks
+	responseChan := make(chan *proto.TunnelMessage, 250) // Larger buffer for faster streaming
 
 	tunnelStream.requestsMux.Lock()
 	tunnelStream.pendingRequests[req.RequestId] = responseChan
@@ -518,9 +516,9 @@ func (s *GRPCTunnelServer) collectChunkedResponse(tunnelStream *TunnelStream, re
 		s.logger.Warn("[CHUNKED] ❌ Chunked streaming failed: %v", err)
 		return nil, err
 
-	case <-time.After(30 * time.Second):
+	case <-time.After(60 * time.Second):
 		pipeReader.Close()
-		s.logger.Error("[CHUNKED] ⏰ Timeout waiting for chunked response metadata after 30s")
+		s.logger.Error("[CHUNKED] ⏰ Timeout waiting for chunked response metadata after 60s")
 		return nil, fmt.Errorf("timeout waiting for chunked response metadata")
 	}
 }
