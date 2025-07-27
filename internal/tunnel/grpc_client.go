@@ -610,6 +610,8 @@ func (c *GRPCTunnelClient) streamResponseInChunks(requestID string, response *ht
 					c.logger.Warn("[CHUNKED CLIENT] 🔌 Stream error detected, triggering reconnection")
 				}
 
+				// Send error response to clean up server state
+				c.sendErrorResponse(requestID, fmt.Sprintf("Chunked streaming failed: %v", sendErr))
 				return sendErr
 			}
 		}
