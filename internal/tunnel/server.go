@@ -344,8 +344,8 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData
 			} else {
 				s.logger.Error("[HYBRID] Enhanced fallback failed - no connections available")
 				s.writeHTTPError(conn, 502, "Bad Gateway - No tunnel connections available")
-				return
-			}
+		return
+	}
 		} else {
 			tunnelConn = freshConn
 			isOnDemand = true
@@ -465,12 +465,12 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData
 
 // retryWithFreshConnection attempts to retry the request with a fresh connection from the pool
 func (s *TunnelServer) retryWithFreshConnection(domain string, clientConn net.Conn, requestData []byte, requestBody io.Reader) {
-	retryTunnelConn := s.connections.GetHTTPConnection(domain)
+			retryTunnelConn := s.connections.GetHTTPConnection(domain)
 	if retryTunnelConn == nil || retryTunnelConn.GetConn() == nil {
 		s.logger.Error("[PROXY DEBUG] No fresh connection available for retry")
 		s.writeHTTPError(clientConn, 502, "Bad Gateway - No connections available")
-		return
-	}
+				return
+			}
 
 	s.logger.Info("[PROXY DEBUG] Retrying request with fresh connection from pool")
 
@@ -492,8 +492,8 @@ func (s *TunnelServer) retryWithFreshConnection(domain string, clientConn net.Co
 			s.logger.Error("[PROXY DEBUG] Retry failed - error writing request body: %v", err)
 			s.connections.RemoveSpecificHTTPConnection(domain, retryTunnelConn)
 			s.writeHTTPError(clientConn, 502, "Bad Gateway - Retry failed")
-			return
-		}
+		return
+	}
 	}
 
 	// Set a read timeout for retry - use adaptive timeout

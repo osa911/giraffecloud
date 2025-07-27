@@ -230,7 +230,7 @@ func (t *Tunnel) attemptDualConnections(serverAddr string, tlsConfig *tls.Config
 		if err != nil {
 			t.logger.Warn("Failed to load config for certificates, using insecure connection: %v", err)
 			// Fallback to insecure configuration for compatibility
-			tlsConfig = &tls.Config{
+		tlsConfig = &tls.Config{
 				InsecureSkipVerify: true,
 			}
 		} else {
@@ -241,7 +241,7 @@ func (t *Tunnel) attemptDualConnections(serverAddr string, tlsConfig *tls.Config
 				// Fallback to insecure configuration
 				tlsConfig = &tls.Config{
 					InsecureSkipVerify: true,
-				}
+		}
 			} else {
 				t.logger.Info("🔐 Using PRODUCTION-GRADE TLS with certificate validation")
 			}
@@ -313,15 +313,15 @@ func (t *Tunnel) attemptDualConnections(serverAddr string, tlsConfig *tls.Config
 	httpConnections := make([]net.Conn, 0, poolSize)
 	for i := 0; i < poolSize; i++ {
 		t.logger.Info("Establishing TCP HTTP tunnel %d/%d...", i+1, poolSize)
-		httpConn, err := t.establishConnection(serverAddr, tlsConfig, "http")
-		if err != nil {
+	httpConn, err := t.establishConnection(serverAddr, tlsConfig, "http")
+	if err != nil {
 			// Clean up previously established connections
 			for _, conn := range httpConnections {
 				conn.Close()
 			}
 			t.logger.Error("Failed to establish TCP HTTP tunnel %d: %v", i+1, err)
 			return fmt.Errorf("failed to establish TCP HTTP tunnel %d: %w", i+1, err)
-		}
+	}
 		httpConnections = append(httpConnections, httpConn)
 		t.logger.Info("TCP HTTP tunnel %d/%d established successfully", i+1, poolSize)
 	}
@@ -444,7 +444,7 @@ func (t *Tunnel) handleHTTPConnection(conn net.Conn, connIndex ...int) {
 		if len(connIndex) > 0 {
 			t.logger.Info("HTTP tunnel connection %d closed", connIndex[0])
 		} else {
-			t.logger.Info("HTTP tunnel connection closed")
+		t.logger.Info("HTTP tunnel connection closed")
 		}
 	}()
 
@@ -452,7 +452,7 @@ func (t *Tunnel) handleHTTPConnection(conn net.Conn, connIndex ...int) {
 	if len(connIndex) > 0 {
 		t.logger.Info("Starting HTTP forwarding for tunnel connection %d", connIndex[0])
 	} else {
-		t.logger.Info("Starting HTTP forwarding for tunnel connection")
+	t.logger.Info("Starting HTTP forwarding for tunnel connection")
 	}
 
 	// Create buffered reader for parsing HTTP
