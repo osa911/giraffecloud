@@ -57,8 +57,8 @@ func DefaultHybridRouterConfig() *HybridRouterConfig {
 	return &HybridRouterConfig{
 		GRPCAddress:       ":4444", // Different port for gRPC
 		TCPAddress:        ":4443", // Original port for TCP/WebSocket
-		ForceGRPCPaths:    []string{"/api/", "/assets/", "/media/", "/static/"},
-		ForceTCPPaths:     []string{"/ws/", "/websocket/", "/socket.io/"},
+		ForceGRPCPaths:    []string{"/assets/", "/media/", "/static/"}, // Removed /api/ to allow WebSocket routing
+		ForceTCPPaths:     []string{"/ws/", "/websocket/", "/socket.io/", "socket.io", "transport=websocket"}, // Enhanced WebSocket patterns
 		EnableMetrics:     true,
 		MetricsInterval:   1 * time.Minute,
 		EnableRateLimit:   true,
@@ -257,17 +257,21 @@ func (r *HybridTunnelRouter) analyzeRequest(requestData []byte) (isWebSocket boo
 	isWebSocket = strings.Contains(requestLower, "upgrade: websocket") ||
 		strings.Contains(requestLower, "connection: upgrade")
 
-	// Force routing based on configuration
+	// Force routing based on configuration - TCP paths take priority over gRPC paths
+	// Check TCP paths first (more specific WebSocket patterns)
 	for _, forcePath := range r.config.ForceTCPPaths {
 		if strings.Contains(path, forcePath) {
 			isWebSocket = true
-			break
+			r.logger.Debug("[HYBRID] Path %s matched ForceTCPPaths pattern: %s", path, forcePath)
+			return isWebSocket, method, path
 		}
 	}
 
+	// Then check gRPC paths (only if not already matched by TCP)
 	for _, forcePath := range r.config.ForceGRPCPaths {
 		if strings.Contains(path, forcePath) {
 			isWebSocket = false
+			r.logger.Debug("[HYBRID] Path %s matched ForceGRPCPaths pattern: %s", path, forcePath)
 			break
 		}
 	}

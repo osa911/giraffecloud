@@ -425,18 +425,26 @@ func (c *GRPCTunnelClient) forwardToLocalService(msg *proto.TunnelMessage) error
 		req.Header.Set(key, value)
 	}
 
-	// Make request to local service
+	// Make request to local service with generous timeout
+	// Set longer than server timeout to ensure client can always respond
 	client := &http.Client{
-		Timeout: c.config.RequestTimeout,
+		// Timeout: c.config.RequestTimeout,
+		Timeout: 120 * time.Second, // 2 minutes - much longer than server's 30s timeout
 	}
 
 	startTime := time.Now()
+	c.logger.Debug("[gRPC CLIENT] Forwarding request to local service: %s %s", httpReq.Method, httpReq.Path)
+
 	resp, err := client.Do(req)
 	processingTime := time.Since(startTime)
 
 	if err != nil {
+		c.logger.Error("[gRPC CLIENT] Local service request failed after %v: %v", processingTime, err)
 		return c.sendErrorResponse(msg.RequestId, fmt.Sprintf("Request failed: %v", err))
 	}
+
+	c.logger.Debug("[gRPC CLIENT] Local service responded in %v: %d %s",
+		processingTime, resp.StatusCode, httpReq.Path)
 	defer resp.Body.Close()
 
 	// Read response body
