@@ -170,21 +170,10 @@ func (s *GRPCTunnelServer) handleRegularHTTPResponse(tunnelStream *TunnelStream,
 		s.logger.Warn("Timeout delivering response for request ID: %s", msg.RequestId)
 	}
 
-	// CRITICAL: Only clean up NON-CHUNKED requests immediately
-	// Chunked requests are cleaned up by collectChunkedResponse when final chunk arrives
+	// Note: Chunked requests are cleaned up by their goroutines
+	// Only clean up non-chunked requests here
 	httpResponse := msg.GetHttpResponse()
-	if httpResponse != nil && httpResponse.IsChunked {
-		// For chunked responses, check if this is the final chunk
-		if strings.HasSuffix(httpResponse.ChunkId, "_final") {
-			s.logger.Debug("[CHUNKED] 🧹 Final chunk received, cleaning up request: %s", msg.RequestId)
-			tunnelStream.requestsMux.Lock()
-			delete(tunnelStream.pendingRequests, msg.RequestId)
-			// Don't close channel here - collectChunkedResponse will handle it
-			tunnelStream.requestsMux.Unlock()
-		}
-		// For non-final chunks, keep the request active
-		s.logger.Debug("[CHUNKED] 📥 Chunk received, keeping request active: %s", msg.RequestId)
-	} else {
+	if httpResponse == nil || !httpResponse.IsChunked {
 		// Clean up non-chunked requests immediately
 		tunnelStream.requestsMux.Lock()
 		delete(tunnelStream.pendingRequests, msg.RequestId)

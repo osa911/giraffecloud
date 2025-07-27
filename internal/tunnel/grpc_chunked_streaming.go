@@ -351,29 +351,8 @@ func (s *GRPCTunnelServer) collectChunkedResponse(tunnelStream *TunnelStream, re
 	tunnelStream.pendingRequests[req.RequestId] = responseChan
 	tunnelStream.requestsMux.Unlock()
 
-	// Ensure cleanup on exit with safe channel closing
-	defer func() {
-		// Recover from potential panic when closing channels
-		if r := recover(); r != nil {
-			s.logger.Warn("[CHUNKED] 🚧 Recovered from cleanup panic (likely double-close): %v", r)
-		}
-
-		tunnelStream.requestsMux.Lock()
-		if ch, exists := tunnelStream.pendingRequests[req.RequestId]; exists {
-			delete(tunnelStream.pendingRequests, req.RequestId)
-
-			// Safely close channel - use defer+recover to handle double-close
-			func() {
-				defer func() {
-					if r := recover(); r != nil {
-						s.logger.Debug("[CHUNKED] Channel already closed for request: %s", req.RequestId)
-					}
-				}()
-				close(ch)
-			}()
-		}
-		tunnelStream.requestsMux.Unlock()
-	}()
+	// Note: Channel cleanup is handled by the goroutine when streaming completes
+	// We don't clean up here because the streaming response needs the channel to stay open
 
 	// Send the large file HTTP request to the client (marked as large file)
 	requestMsg := &proto.TunnelMessage{
@@ -405,6 +384,25 @@ func (s *GRPCTunnelServer) collectChunkedResponse(tunnelStream *TunnelStream, re
 	// Start goroutine to collect chunks and stream them directly to pipe
 	go func() {
 		defer pipeWriter.Close()
+
+		// CRITICAL: Clean up request when goroutine exits
+		defer func() {
+			s.logger.Debug("[CHUNKED] 🧹 Goroutine exiting, cleaning up request: %s", req.RequestId)
+			tunnelStream.requestsMux.Lock()
+			if ch, exists := tunnelStream.pendingRequests[req.RequestId]; exists {
+				delete(tunnelStream.pendingRequests, req.RequestId)
+				// Safely close channel
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							s.logger.Debug("[CHUNKED] Channel already closed for request: %s", req.RequestId)
+						}
+					}()
+					close(ch)
+				}()
+			}
+			tunnelStream.requestsMux.Unlock()
+		}()
 
 		var firstChunk *proto.HTTPResponse
 		chunkCount := 0
