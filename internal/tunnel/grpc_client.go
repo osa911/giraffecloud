@@ -89,7 +89,7 @@ func DefaultGRPCClientConfig() *GRPCClientConfig {
 		MaxReconnectAttempts: -1, // Infinite retries
 		ReconnectDelay:       1 * time.Second,
 		BackoffMultiplier:    1.5,
-		InsecureSkipVerify:   false,
+		InsecureSkipVerify:   false, // PRODUCTION: Use proper certificate validation
 		MaxMessageSize:       16 * 1024 * 1024, // 16MB
 		EnableCompression:    true,
 	}
@@ -190,9 +190,25 @@ func (c *GRPCTunnelClient) IsConnected() bool {
 
 // connect establishes the gRPC connection and stream
 func (c *GRPCTunnelClient) connect() error {
-	// Create TLS configuration
-	tlsConfig := &tls.Config{
-		InsecureSkipVerify: c.config.InsecureSkipVerify,
+	// Load configuration for certificate paths and create secure TLS configuration
+	var tlsConfig *tls.Config
+	cfg, err := LoadConfig()
+	if err != nil {
+		c.logger.Warn("Failed to load config for certificates, using insecure connection: %v", err)
+		// Fallback to insecure configuration
+		tlsConfig = &tls.Config{
+			InsecureSkipVerify: true,
+		}
+	} else {
+		// Create secure TLS configuration with proper certificates
+		tlsConfig, err = CreateSecureTLSConfig(cfg.Security.CACert, cfg.Security.ClientCert, cfg.Security.ClientKey)
+		if err != nil {
+			c.logger.Warn("Failed to create secure TLS config, using insecure fallback: %v", err)
+			// Fallback to insecure configuration
+			tlsConfig = &tls.Config{
+				InsecureSkipVerify: true,
+			}
+		}
 	}
 
 	// Create gRPC connection

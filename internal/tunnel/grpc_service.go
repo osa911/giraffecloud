@@ -141,21 +141,28 @@ func NewGRPCTunnelServer(
 
 // Start starts the gRPC tunnel server
 func (s *GRPCTunnelServer) Start(addr string) error {
-	// Create TLS configuration for production security
-	tlsConfig := &tls.Config{
-		GetCertificate: func(info *tls.ClientHelloInfo) (*tls.Certificate, error) {
-			cert, err := tls.LoadX509KeyPair("/app/certs/tunnel.crt", "/app/certs/tunnel.key")
-			if err != nil {
-				return nil, fmt.Errorf("failed to load certificate: %w", err)
-			}
-			return &cert, nil
-		},
-		MinVersion: tls.VersionTLS12,
-		CipherSuites: []uint16{
-			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-			tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
-			tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
-		},
+	// Create secure TLS configuration with mutual authentication
+	tlsConfig, err := CreateSecureServerTLSConfig("/app/certs/tunnel.crt", "/app/certs/tunnel.key", "/app/certs/ca.crt")
+	if err != nil {
+		s.logger.Warn("Failed to create secure TLS config, using fallback: %v", err)
+		// Fallback configuration for compatibility
+		tlsConfig = &tls.Config{
+			GetCertificate: func(info *tls.ClientHelloInfo) (*tls.Certificate, error) {
+				cert, err := tls.LoadX509KeyPair("/app/certs/tunnel.crt", "/app/certs/tunnel.key")
+				if err != nil {
+					return nil, fmt.Errorf("failed to load certificate: %w", err)
+				}
+				return &cert, nil
+			},
+			MinVersion: tls.VersionTLS12,
+			CipherSuites: []uint16{
+				tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+				tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
+				tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+			},
+		}
+	} else {
+		s.logger.Info("🔐 gRPC Server using PRODUCTION-GRADE TLS with mutual authentication")
 	}
 
 	creds := credentials.NewTLS(tlsConfig)

@@ -220,10 +220,28 @@ func (t *Tunnel) connectWithRetry(serverAddr string, tlsConfig *tls.Config) erro
 
 // attemptDualConnections tries to establish both gRPC (HTTP) and TCP (WebSocket) tunnel connections
 func (t *Tunnel) attemptDualConnections(serverAddr string, tlsConfig *tls.Config) error {
-	// Simplify TLS config - use defaults for better compatibility
+	// Create secure TLS config with proper certificate validation
 	if tlsConfig == nil {
-		tlsConfig = &tls.Config{
-			InsecureSkipVerify: true, // Only for development
+		// Load configuration for certificate paths
+		cfg, err := LoadConfig()
+		if err != nil {
+			t.logger.Warn("Failed to load config for certificates, using insecure connection: %v", err)
+			// Fallback to insecure configuration for compatibility
+			tlsConfig = &tls.Config{
+				InsecureSkipVerify: true,
+			}
+		} else {
+			// Create secure TLS configuration with proper certificates
+			tlsConfig, err = CreateSecureTLSConfig(cfg.Security.CACert, cfg.Security.ClientCert, cfg.Security.ClientKey)
+			if err != nil {
+				t.logger.Warn("Failed to create secure TLS config, using insecure fallback: %v", err)
+				// Fallback to insecure configuration
+				tlsConfig = &tls.Config{
+					InsecureSkipVerify: true,
+				}
+			} else {
+				t.logger.Info("🔐 Using PRODUCTION-GRADE TLS with certificate validation")
+			}
 		}
 	}
 

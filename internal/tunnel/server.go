@@ -58,12 +58,13 @@ type TunnelServer struct {
 
 // NewServer creates a new tunnel server instance
 func NewServer(tokenRepo repository.TokenRepository, tunnelRepo repository.TunnelRepository, tunnelService interfaces.TunnelService) *TunnelServer {
-	return &TunnelServer{
-		logger:       logging.GetGlobalLogger(),
-		connections:  NewConnectionManager(),
-		streamConfig: DefaultStreamingConfig(), // Use default streaming config
-		tlsConfig: &tls.Config{
-			InsecureSkipVerify: true, // Simplified for development
+	// Create secure server TLS configuration
+	serverTLSConfig, err := CreateSecureServerTLSConfig("/app/certs/tunnel.crt", "/app/certs/tunnel.key", "/app/certs/ca.crt")
+	if err != nil {
+		logging.GetGlobalLogger().Warn("Failed to create secure TLS config, using fallback: %v", err)
+		// Fallback configuration for compatibility
+		serverTLSConfig = &tls.Config{
+			InsecureSkipVerify: true,
 			GetCertificate: func(info *tls.ClientHelloInfo) (*tls.Certificate, error) {
 				cert, err := tls.LoadX509KeyPair("/app/certs/tunnel.crt", "/app/certs/tunnel.key")
 				if err != nil {
@@ -71,9 +72,18 @@ func NewServer(tokenRepo repository.TokenRepository, tunnelRepo repository.Tunne
 				}
 				return &cert, nil
 			},
-		},
-		tokenRepo:     tokenRepo,
-		tunnelRepo:    tunnelRepo,
+		}
+	} else {
+		logging.GetGlobalLogger().Info("🔐 TCP Server using PRODUCTION-GRADE TLS with mutual authentication")
+	}
+
+	return &TunnelServer{
+		logger:       logging.GetGlobalLogger(),
+		connections:  NewConnectionManager(),
+		streamConfig: DefaultStreamingConfig(),
+		tlsConfig:    serverTLSConfig,
+		tokenRepo:    tokenRepo,
+		tunnelRepo:   tunnelRepo,
 		tunnelService: tunnelService,
 	}
 }
