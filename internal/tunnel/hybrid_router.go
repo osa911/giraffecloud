@@ -172,8 +172,8 @@ func (r *HybridTunnelRouter) ProxyConnection(domain string, conn net.Conn, reque
 		if isActualWebSocket {
 			r.routeToTCPTunnel(domain, conn, requestData, requestBody, clientIP)
 		} else {
-			// Large file - route to TCP for streaming but handle as HTTP request
-			r.routeToTCPForLargeFile(domain, conn, requestData, requestBody, clientIP, httpMethod, requestPath)
+			// Large file - route to gRPC chunked streaming for unlimited concurrency
+			r.routeToGRPCChunkedStreaming(domain, conn, requestData, requestBody, clientIP, httpMethod, requestPath)
 		}
 	} else {
 		r.routeToGRPCTunnel(domain, conn, requestData, requestBody, clientIP, httpMethod, requestPath)
@@ -364,6 +364,53 @@ func (r *HybridTunnelRouter) routeToTCPForLargeFile(domain string, conn net.Conn
 	r.tcpTunnel.ProxyConnection(domain, conn, requestData, requestBody)
 
 	r.logger.Debug("[HYBRID→TCP] Large file streaming completed")
+}
+
+// routeToGRPCChunkedStreaming routes large files to gRPC chunked streaming for unlimited concurrency
+func (r *HybridTunnelRouter) routeToGRPCChunkedStreaming(domain string, conn net.Conn, requestData []byte, requestBody io.Reader, clientIP, method, path string) {
+	atomic.AddInt64(&r.grpcRequests, 1)
+
+	r.logger.Debug("[HYBRID→gRPC-CHUNKED] 🚀 Routing large file via gRPC chunked streaming: %s %s", method, path)
+
+	// Check if gRPC tunnel is available
+	if !r.grpcTunnel.IsTunnelActive(domain) {
+		r.logger.Error("[HYBRID→gRPC-CHUNKED] No active gRPC tunnel for domain: %s", domain)
+		atomic.AddInt64(&r.routingErrors, 1)
+		r.writeHTTPError(conn, 502, "Bad Gateway - gRPC tunnel not available for large file")
+		return
+	}
+
+	// Parse HTTP request
+	httpReq, err := r.parseHTTPRequest(requestData, requestBody)
+	if err != nil {
+		r.logger.Error("[HYBRID→gRPC-CHUNKED] Failed to parse large file request: %v", err)
+		atomic.AddInt64(&r.routingErrors, 1)
+		r.writeHTTPError(conn, 400, "Bad Request - Invalid HTTP request")
+		return
+	}
+
+	// Use the enhanced gRPC proxy with chunking support
+	response, err := r.grpcTunnel.ProxyHTTPRequestWithChunking(domain, httpReq, clientIP)
+	if err != nil {
+		r.logger.Error("[HYBRID→gRPC-CHUNKED] gRPC chunked proxy error: %v", err)
+		atomic.AddInt64(&r.routingErrors, 1)
+		r.writeHTTPError(conn, 502, fmt.Sprintf("Bad Gateway - %v", err))
+		return
+	}
+
+	// Write response back to client
+	writer := bufio.NewWriter(conn)
+	if err := response.Write(writer); err != nil {
+		r.logger.Error("[HYBRID→gRPC-CHUNKED] Error writing response: %v", err)
+		return
+	}
+
+	if err := writer.Flush(); err != nil {
+		r.logger.Error("[HYBRID→gRPC-CHUNKED] Error flushing response: %v", err)
+		return
+	}
+
+	r.logger.Debug("[HYBRID→gRPC-CHUNKED] ✅ Large file streaming completed via gRPC")
 }
 
 // parseHTTPRequest parses raw HTTP request data into http.Request

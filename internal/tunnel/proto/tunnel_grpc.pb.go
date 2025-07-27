@@ -20,6 +20,7 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	TunnelService_EstablishTunnel_FullMethodName = "/tunnel.TunnelService/EstablishTunnel"
+	TunnelService_StreamLargeFile_FullMethodName = "/tunnel.TunnelService/StreamLargeFile"
 	TunnelService_HealthCheck_FullMethodName     = "/tunnel.TunnelService/HealthCheck"
 )
 
@@ -27,13 +28,13 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// TunnelService handles bidirectional tunnel communication
-// Designed for production-grade performance and reliability
+// TunnelService provides high-performance tunneling with unlimited concurrency
 type TunnelServiceClient interface {
-	// EstablishTunnel creates a bidirectional stream for tunnel communication
-	// Single stream handles unlimited concurrent HTTP requests via multiplexing
+	// EstablishTunnel creates a bidirectional streaming tunnel for regular HTTP traffic
 	EstablishTunnel(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[TunnelMessage, TunnelMessage], error)
-	// HealthCheck for monitoring tunnel health
+	// StreamLargeFile handles large file streaming with chunked transfer for memory efficiency
+	StreamLargeFile(ctx context.Context, in *LargeFileRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[LargeFileChunk], error)
+	// HealthCheck provides tunnel health monitoring
 	HealthCheck(ctx context.Context, in *HealthCheckRequest, opts ...grpc.CallOption) (*HealthCheckResponse, error)
 }
 
@@ -58,6 +59,25 @@ func (c *tunnelServiceClient) EstablishTunnel(ctx context.Context, opts ...grpc.
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type TunnelService_EstablishTunnelClient = grpc.BidiStreamingClient[TunnelMessage, TunnelMessage]
 
+func (c *tunnelServiceClient) StreamLargeFile(ctx context.Context, in *LargeFileRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[LargeFileChunk], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &TunnelService_ServiceDesc.Streams[1], TunnelService_StreamLargeFile_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[LargeFileRequest, LargeFileChunk]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type TunnelService_StreamLargeFileClient = grpc.ServerStreamingClient[LargeFileChunk]
+
 func (c *tunnelServiceClient) HealthCheck(ctx context.Context, in *HealthCheckRequest, opts ...grpc.CallOption) (*HealthCheckResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(HealthCheckResponse)
@@ -72,13 +92,13 @@ func (c *tunnelServiceClient) HealthCheck(ctx context.Context, in *HealthCheckRe
 // All implementations must embed UnimplementedTunnelServiceServer
 // for forward compatibility.
 //
-// TunnelService handles bidirectional tunnel communication
-// Designed for production-grade performance and reliability
+// TunnelService provides high-performance tunneling with unlimited concurrency
 type TunnelServiceServer interface {
-	// EstablishTunnel creates a bidirectional stream for tunnel communication
-	// Single stream handles unlimited concurrent HTTP requests via multiplexing
+	// EstablishTunnel creates a bidirectional streaming tunnel for regular HTTP traffic
 	EstablishTunnel(grpc.BidiStreamingServer[TunnelMessage, TunnelMessage]) error
-	// HealthCheck for monitoring tunnel health
+	// StreamLargeFile handles large file streaming with chunked transfer for memory efficiency
+	StreamLargeFile(*LargeFileRequest, grpc.ServerStreamingServer[LargeFileChunk]) error
+	// HealthCheck provides tunnel health monitoring
 	HealthCheck(context.Context, *HealthCheckRequest) (*HealthCheckResponse, error)
 	mustEmbedUnimplementedTunnelServiceServer()
 }
@@ -92,6 +112,9 @@ type UnimplementedTunnelServiceServer struct{}
 
 func (UnimplementedTunnelServiceServer) EstablishTunnel(grpc.BidiStreamingServer[TunnelMessage, TunnelMessage]) error {
 	return status.Errorf(codes.Unimplemented, "method EstablishTunnel not implemented")
+}
+func (UnimplementedTunnelServiceServer) StreamLargeFile(*LargeFileRequest, grpc.ServerStreamingServer[LargeFileChunk]) error {
+	return status.Errorf(codes.Unimplemented, "method StreamLargeFile not implemented")
 }
 func (UnimplementedTunnelServiceServer) HealthCheck(context.Context, *HealthCheckRequest) (*HealthCheckResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method HealthCheck not implemented")
@@ -123,6 +146,17 @@ func _TunnelService_EstablishTunnel_Handler(srv interface{}, stream grpc.ServerS
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type TunnelService_EstablishTunnelServer = grpc.BidiStreamingServer[TunnelMessage, TunnelMessage]
+
+func _TunnelService_StreamLargeFile_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(LargeFileRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(TunnelServiceServer).StreamLargeFile(m, &grpc.GenericServerStream[LargeFileRequest, LargeFileChunk]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type TunnelService_StreamLargeFileServer = grpc.ServerStreamingServer[LargeFileChunk]
 
 func _TunnelService_HealthCheck_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(HealthCheckRequest)
@@ -160,6 +194,11 @@ var TunnelService_ServiceDesc = grpc.ServiceDesc{
 			Handler:       _TunnelService_EstablishTunnel_Handler,
 			ServerStreams: true,
 			ClientStreams: true,
+		},
+		{
+			StreamName:    "StreamLargeFile",
+			Handler:       _TunnelService_StreamLargeFile_Handler,
+			ServerStreams: true,
 		},
 	},
 	Metadata: "proto/tunnel.proto",

@@ -90,7 +90,7 @@ func DefaultGRPCClientConfig() *GRPCClientConfig {
 		ReconnectDelay:       1 * time.Second,
 		BackoffMultiplier:    1.5,
 		InsecureSkipVerify:   false, // PRODUCTION: Use proper certificate validation
-		MaxMessageSize:       100 * 1024 * 1024, // 100MB - handle large images/videos
+		MaxMessageSize:       16 * 1024 * 1024, // 16MB - small files only, large files use chunked streaming
 		EnableCompression:    true,
 	}
 }
@@ -278,7 +278,12 @@ func (c *GRPCTunnelClient) sendHandshake() error {
 						Token:          c.token,
 						Domain:         c.domain,
 						TargetPort:     c.targetPort,
-						Capabilities:   []string{"http", "compression"},
+						Capabilities: &proto.TunnelCapabilities{
+							SupportsChunkedStreaming: true,
+							SupportsCompression:      true,
+							MaxChunkSize:            1024 * 1024, // 1MB chunks
+							SupportedEncodings:      []string{"gzip", "deflate"},
+						},
 						ClientVersion:  "1.0.0",
 					},
 				},
@@ -411,13 +416,107 @@ func (c *GRPCTunnelClient) forwardToLocalService(msg *proto.TunnelMessage) error
 		return fmt.Errorf("invalid HTTP request message")
 	}
 
+	// Check if this is a large file request that should use chunked streaming
+	if httpReq.IsLargeFile && c.shouldUseChunkedStreaming(httpReq) {
+		c.logger.Info("[CHUNKED CLIENT] 🚀 Processing large file with chunked streaming: %s %s",
+			httpReq.Method, httpReq.Path)
+		return c.forwardLargeFileWithChunking(msg, httpReq)
+	}
+
+	// Regular processing for small files
+	return c.forwardRegularRequest(msg, httpReq)
+}
+
+// shouldUseChunkedStreaming determines if we should use chunked streaming
+// PERFECT BINARY RULE: Files >16MB = Chunked Streaming (UNLIMITED), Files ≤16MB = Regular gRPC (16MB)
+func (c *GRPCTunnelClient) shouldUseChunkedStreaming(httpReq *proto.HTTPRequest) bool {
+	// Always use chunked streaming when explicitly marked as large file
+	if httpReq.IsLargeFile {
+		c.logger.Debug("[CHUNKED CLIENT] Explicitly marked as large file → UNLIMITED STREAMING")
+		return true
+	}
+
+		// Check file extensions that are typically large (>16MB)
+	path := strings.ToLower(httpReq.Path)
+	typicallyLargeExtensions := []string{
+		// Video files - almost always >16MB
+		".mp4", ".avi", ".mov", ".mkv", ".webm", ".m4v", ".flv", ".wmv", ".mpg", ".mpeg", ".m2v",
+		// Archives - often >16MB
+		".zip", ".rar", ".7z", ".tar", ".gz", ".bz2", ".xz",
+		// Large binaries and disk images - usually >16MB
+		".iso", ".img", ".dmg", ".exe", ".msi", ".deb", ".rpm", ".appimage",
+		// Large audio files - often >16MB
+		".wav", ".flac", ".ape",
+	}
+
+	for _, ext := range typicallyLargeExtensions {
+		if strings.HasSuffix(path, ext) {
+			c.logger.Debug("[CHUNKED CLIENT] Large file extension: %s → UNLIMITED STREAMING", ext)
+			return true
+		}
+	}
+
+	// Check path patterns that typically serve large files
+	largeFilePaths := []string{
+		"/video/", "/videos/", "/movie/", "/movies/", "/playback",
+		"/download/", "/downloads/", "/file/", "/files/",
+		"/original/", "/raw/", "/backup/", "/archive/",
+		"/media/large/", "/assets/large/", "/content/large/",
+	}
+	for _, largePath := range largeFilePaths {
+		if strings.Contains(path, largePath) {
+			c.logger.Debug("[CHUNKED CLIENT] Large file path: %s → UNLIMITED STREAMING", largePath)
+			return true
+		}
+	}
+
+	// Default: Use regular gRPC for small files
+	c.logger.Debug("[REGULAR CLIENT] Small file → Regular gRPC (16MB limit)")
+	return false
+}
+
+// forwardLargeFileWithChunking handles large file requests with streaming
+func (c *GRPCTunnelClient) forwardLargeFileWithChunking(msg *proto.TunnelMessage, httpReq *proto.HTTPRequest) error {
+	c.logger.Info("[CHUNKED CLIENT] 📦 Implementing chunked response streaming for unlimited file size")
+
+	// Make request to local service
+	response, err := c.makeLocalServiceRequest(httpReq)
+	if err != nil {
+		return c.sendErrorResponse(msg.RequestId, fmt.Sprintf("Local service request failed: %v", err))
+	}
+	defer response.Body.Close()
+
+	// Stream the response back in chunks for unlimited file size support
+	return c.streamResponseInChunks(msg.RequestId, response)
+}
+
+// forwardRegularRequest handles regular (small file) requests
+func (c *GRPCTunnelClient) forwardRegularRequest(msg *proto.TunnelMessage, httpReq *proto.HTTPRequest) error {
+	response, err := c.makeLocalServiceRequest(httpReq)
+	if err != nil {
+		return c.sendErrorResponse(msg.RequestId, fmt.Sprintf("Local service request failed: %v", err))
+	}
+	defer response.Body.Close()
+
+	// Read entire response for regular files
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		return c.sendErrorResponse(msg.RequestId, fmt.Sprintf("Failed to read response: %v", err))
+	}
+
+	// Send single response back to server
+	return c.sendCompleteResponse(msg.RequestId, response, body)
+}
+
+// makeLocalServiceRequest makes the actual HTTP request to the local service
+func (c *GRPCTunnelClient) makeLocalServiceRequest(httpReq *proto.HTTPRequest) (*http.Response, error) {
 	// Build URL for local service
 	url := fmt.Sprintf("http://127.0.0.1:%d%s", c.targetPort, httpReq.Path)
 
 	// Create HTTP request
 	req, err := http.NewRequest(httpReq.Method, url, strings.NewReader(string(httpReq.Body)))
 	if err != nil {
-		return c.sendErrorResponse(msg.RequestId, fmt.Sprintf("Failed to create request: %v", err))
+		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	// Set headers
@@ -426,10 +525,8 @@ func (c *GRPCTunnelClient) forwardToLocalService(msg *proto.TunnelMessage) error
 	}
 
 	// Make request to local service with generous timeout
-	// Set longer than server timeout to ensure client can always respond
 	client := &http.Client{
-		// Timeout: c.config.RequestTimeout,
-		Timeout: 120 * time.Second, // 2 minutes - much longer than server's 30s timeout
+		Timeout: 120 * time.Second, // 2 minutes for large files
 	}
 
 	startTime := time.Now()
@@ -440,39 +537,102 @@ func (c *GRPCTunnelClient) forwardToLocalService(msg *proto.TunnelMessage) error
 
 	if err != nil {
 		c.logger.Error("[gRPC CLIENT] Local service request failed after %v: %v", processingTime, err)
-		return c.sendErrorResponse(msg.RequestId, fmt.Sprintf("Request failed: %v", err))
+		return nil, err
 	}
 
 	c.logger.Debug("[gRPC CLIENT] Local service responded in %v: %d %s",
 		processingTime, resp.StatusCode, httpReq.Path)
-	defer resp.Body.Close()
 
-	// Read response body
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return c.sendErrorResponse(msg.RequestId, fmt.Sprintf("Failed to read response: %v", err))
-	}
+	return resp, nil
+}
+
+// streamResponseInChunks streams large responses in chunks for unlimited file size
+func (c *GRPCTunnelClient) streamResponseInChunks(requestID string, response *http.Response) error {
+	const ChunkSize = 1024 * 1024 // 1MB chunks
+
+	c.logger.Info("[CHUNKED CLIENT] 📡 Streaming response in %dKB chunks (UNLIMITED SIZE)", ChunkSize/1024)
 
 	// Convert headers
 	headers := make(map[string]string)
-	for key, values := range resp.Header {
+	for key, values := range response.Header {
+		if len(values) > 0 {
+			headers[key] = values[0]
+		}
+	}
+
+	chunkNum := 0
+	buffer := make([]byte, ChunkSize)
+
+	for {
+		// Read chunk from response
+		n, err := response.Body.Read(buffer)
+		if n > 0 {
+			chunkNum++
+
+			// Create chunk data
+			chunkData := make([]byte, n)
+			copy(chunkData, buffer[:n])
+
+			// Send chunk response
+			chunkResponse := &proto.TunnelMessage{
+				RequestId: requestID,
+				Timestamp: time.Now().Unix(),
+				MessageType: &proto.TunnelMessage_HttpResponse{
+					HttpResponse: &proto.HTTPResponse{
+						StatusCode: int32(response.StatusCode),
+						StatusText: response.Status,
+						Headers:    headers,
+						Body:       chunkData,
+						IsChunked:  true,
+						ChunkId:    fmt.Sprintf("chunk-%d", chunkNum),
+					},
+				},
+			}
+
+			c.logger.Debug("[CHUNKED CLIENT] ✅ Sending chunk %d (%d bytes)", chunkNum, len(chunkData))
+
+			if sendErr := c.stream.Send(chunkResponse); sendErr != nil {
+				c.logger.Error("[CHUNKED CLIENT] Failed to send chunk %d: %v", chunkNum, sendErr)
+				return sendErr
+			}
+		}
+
+		// Check for end of file
+		if err == io.EOF {
+			c.logger.Info("[CHUNKED CLIENT] 🎉 Completed streaming %d chunks for large file", chunkNum)
+			break
+		} else if err != nil {
+			c.logger.Error("[CHUNKED CLIENT] Error reading response: %v", err)
+			return c.sendErrorResponse(requestID, fmt.Sprintf("Failed to read response: %v", err))
+		}
+	}
+
+	atomic.AddInt64(&c.totalResponses, 1)
+	return nil
+}
+
+// sendCompleteResponse sends a complete response for regular files
+func (c *GRPCTunnelClient) sendCompleteResponse(requestID string, response *http.Response, body []byte) error {
+	// Convert headers
+	headers := make(map[string]string)
+	for key, values := range response.Header {
 		if len(values) > 0 {
 			headers[key] = values[0]
 		}
 	}
 
 	// Send response back to server
-	response := &proto.TunnelMessage{
-		RequestId: msg.RequestId,
+	responseMsg := &proto.TunnelMessage{
+		RequestId: requestID,
 		Timestamp: time.Now().Unix(),
 		MessageType: &proto.TunnelMessage_HttpResponse{
 			HttpResponse: &proto.HTTPResponse{
-				StatusCode: int32(resp.StatusCode),
-				StatusText: resp.Status,
+				StatusCode: int32(response.StatusCode),
+				StatusText: response.Status,
 				Headers:    headers,
 				Body:       body,
 				Metadata: &proto.ResponseMetadata{
-					ProcessingTimeMs: processingTime.Milliseconds(),
+					ProcessingTimeMs: 0, // We can add timing if needed
 					ResponseSize:     int64(len(body)),
 					CacheStatus:      proto.CacheStatus_CACHE_STATUS_MISS,
 				},
@@ -481,7 +641,7 @@ func (c *GRPCTunnelClient) forwardToLocalService(msg *proto.TunnelMessage) error
 	}
 
 	atomic.AddInt64(&c.totalResponses, 1)
-	return c.stream.Send(response)
+	return c.stream.Send(responseMsg)
 }
 
 // sendErrorResponse sends an error response back to the server

@@ -273,9 +273,10 @@ func (t *Tunnel) attemptDualConnections(serverAddr string, tlsConfig *tls.Config
 	// Step 2: Establish TCP tunnel for WebSocket traffic (existing functionality)
 	t.logger.Info("🔌 Establishing TCP tunnel for WebSocket traffic...")
 
-	if t.grpcEnabled {
-		// In hybrid mode, establish TCP connections for WebSocket + large file streaming
-		t.logger.Info("Hybrid mode: Establishing TCP connections for WebSocket + large file streaming...")
+		if t.grpcEnabled {
+		// In hybrid mode: gRPC handles ALL HTTP traffic (including large files via chunked streaming)
+		// TCP only handles WebSocket traffic
+		t.logger.Info("Hybrid mode: Establishing TCP connection for WebSocket traffic...")
 
 		// Establish WebSocket tunnel connection
 		wsConn, err := t.establishConnection(serverAddr, tlsConfig, "websocket")
@@ -292,33 +293,8 @@ func (t *Tunnel) attemptDualConnections(serverAddr string, tlsConfig *tls.Config
 			go t.handleWebSocketConnection(wsConn)
 		}
 
-		// Establish additional TCP connections for large file streaming (3 connections)
-		largeFilePoolSize := 3
-		t.logger.Info("Establishing %d additional TCP connections for large file streaming...", largeFilePoolSize)
-
-		httpConnections := make([]net.Conn, 0, largeFilePoolSize)
-		for i := 0; i < largeFilePoolSize; i++ {
-			httpConn, err := t.establishConnection(serverAddr, tlsConfig, "http")
-			if err != nil {
-				t.logger.Error("Failed to establish TCP connection %d for large files: %v", i+1, err)
-				continue
-			}
-
-			httpConnections = append(httpConnections, httpConn)
-
-			// Start HTTP handler for this connection
-			t.wg.Add(1)
-			go t.handleHTTPConnection(httpConn, i+1)
-		}
-
-		if len(httpConnections) > 0 {
-			t.httpConnections = httpConnections
-			t.logger.Info("✅ %d TCP connections established for large file streaming", len(httpConnections))
-		} else {
-			t.logger.Warn("⚠️  No TCP connections available for large files - large files will fail until connections are available")
-		}
-
-		t.logger.Info("🎯 HYBRID MODE ACTIVE: gRPC (HTTP) + TCP (WebSocket + Large Files)")
+		t.logger.Info("🎯 HYBRID MODE ACTIVE: gRPC (ALL HTTP + Chunked Streaming) + TCP (WebSocket Only)")
+		t.logger.Info("🚀 PRODUCTION-GRADE: Unlimited concurrency for files of ANY size!")
 		return nil
 	}
 

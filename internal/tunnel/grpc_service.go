@@ -21,6 +21,19 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// ChunkedResponseBuffer holds chunks for a large file response
+type ChunkedResponseBuffer struct {
+	RequestID     string
+	StatusCode    int32
+	StatusText    string
+	Headers       map[string]string
+	Chunks        [][]byte
+	TotalSize     int64
+	StartTime     time.Time
+	LastChunkTime time.Time
+	mu            sync.Mutex
+}
+
 // GRPCTunnelServer implements the production-grade gRPC tunnel service
 // Designed for high-performance, unlimited concurrency, and Cloudflare-level reliability
 type GRPCTunnelServer struct {
@@ -68,6 +81,9 @@ type TunnelStream struct {
 	pendingRequests map[string]chan *proto.TunnelMessage
 	requestsMux     sync.RWMutex
 
+	// Chunked response handling for unlimited file sizes
+	chunkedResponses map[string]*ChunkedResponseBuffer
+
 	// Stream state
 	connected     bool
 	lastActivity  time.Time
@@ -102,12 +118,12 @@ type GRPCTunnelConfig struct {
 func DefaultGRPCTunnelConfig() *GRPCTunnelConfig {
 	return &GRPCTunnelConfig{
 		MaxConcurrentStreams:  1000,
-		MaxMessageSize:        100 * 1024 * 1024, // 100MB - handle large images/videos
+		MaxMessageSize:        16 * 1024 * 1024, // 16MB - small files only, large files use chunked streaming
 		KeepAliveTimeout:      30 * time.Second,
 		KeepAliveInterval:     5 * time.Second,
 		RequestTimeout:        30 * time.Second,
-		MaxRequestSize:        100 * 1024 * 1024, // 100MB - consistent with MaxMessageSize
-		MaxResponseSize:       100 * 1024 * 1024, // 100MB - consistent with MaxMessageSize
+		MaxRequestSize:        16 * 1024 * 1024, // 16MB - small files only
+		MaxResponseSize:       16 * 1024 * 1024, // 16MB - small files only
 		RequireAuthentication: true,
 		RateLimitRPM:          1000, // 1000 requests per minute per tunnel
 		RateLimitBurst:        100,

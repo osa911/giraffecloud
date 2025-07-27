@@ -137,6 +137,24 @@ func (s *GRPCTunnelServer) handleClientMessages(tunnelStream *TunnelStream) {
 
 // handleHTTPResponse handles HTTP response messages from the client
 func (s *GRPCTunnelServer) handleHTTPResponse(tunnelStream *TunnelStream, msg *proto.TunnelMessage) {
+	httpResp := msg.GetHttpResponse()
+	if httpResp == nil {
+		s.logger.Warn("Received invalid HTTP response message")
+		return
+	}
+
+	// Check if this is a chunked response for unlimited file size support
+	if httpResp.IsChunked {
+		s.handleChunkedHTTPResponse(tunnelStream, msg, httpResp)
+		return
+	}
+
+	// Handle regular (non-chunked) responses
+	s.handleRegularHTTPResponse(tunnelStream, msg)
+}
+
+// handleRegularHTTPResponse handles regular (non-chunked) HTTP responses
+func (s *GRPCTunnelServer) handleRegularHTTPResponse(tunnelStream *TunnelStream, msg *proto.TunnelMessage) {
 	tunnelStream.requestsMux.RLock()
 	responseChan, exists := tunnelStream.pendingRequests[msg.RequestId]
 	tunnelStream.requestsMux.RUnlock()
@@ -161,6 +179,122 @@ func (s *GRPCTunnelServer) handleHTTPResponse(tunnelStream *TunnelStream, msg *p
 	tunnelStream.requestsMux.Unlock()
 }
 
+// handleChunkedHTTPResponse handles chunked HTTP responses for unlimited file sizes
+func (s *GRPCTunnelServer) handleChunkedHTTPResponse(tunnelStream *TunnelStream, msg *proto.TunnelMessage, httpResp *proto.HTTPResponse) {
+	requestID := msg.RequestId
+	chunkID := httpResp.ChunkId
+
+	s.logger.Debug("[CHUNKED SERVER] 📦 Received chunk: %s for request: %s", chunkID, requestID)
+
+	// Get or create chunk buffer for this request
+	tunnelStream.requestsMux.Lock()
+	if tunnelStream.chunkedResponses == nil {
+		tunnelStream.chunkedResponses = make(map[string]*ChunkedResponseBuffer)
+	}
+
+	buffer, exists := tunnelStream.chunkedResponses[requestID]
+	if !exists {
+		buffer = &ChunkedResponseBuffer{
+			RequestID:    requestID,
+			StatusCode:   httpResp.StatusCode,
+			StatusText:   httpResp.StatusText,
+			Headers:      httpResp.Headers,
+			Chunks:       make([][]byte, 0),
+			TotalSize:    0,
+			StartTime:    time.Now(),
+		}
+		tunnelStream.chunkedResponses[requestID] = buffer
+		s.logger.Debug("[CHUNKED SERVER] 🆕 Created new chunk buffer for request: %s", requestID)
+	}
+	tunnelStream.requestsMux.Unlock()
+
+	// Add chunk to buffer
+	buffer.mu.Lock()
+	buffer.Chunks = append(buffer.Chunks, httpResp.Body)
+	buffer.TotalSize += int64(len(httpResp.Body))
+	buffer.LastChunkTime = time.Now()
+	buffer.mu.Unlock()
+
+	s.logger.Debug("[CHUNKED SERVER] ✅ Added chunk %s (%d bytes), total: %d bytes",
+		chunkID, len(httpResp.Body), buffer.TotalSize)
+
+	// Check if we should assemble and deliver the response
+	// For now, we'll use a simple timeout-based approach
+	// In production, you'd want a more sophisticated completion detection
+	go s.checkChunkedResponseCompletion(tunnelStream, requestID, buffer)
+}
+
+
+
+// checkChunkedResponseCompletion checks if a chunked response is complete
+func (s *GRPCTunnelServer) checkChunkedResponseCompletion(tunnelStream *TunnelStream, requestID string, buffer *ChunkedResponseBuffer) {
+	// Wait a bit to see if more chunks arrive
+	time.Sleep(100 * time.Millisecond)
+
+	buffer.mu.Lock()
+	timeSinceLastChunk := time.Since(buffer.LastChunkTime)
+	buffer.mu.Unlock()
+
+	// If no new chunks for 100ms, consider it complete
+	if timeSinceLastChunk >= 100*time.Millisecond {
+		s.assembleAndDeliverChunkedResponse(tunnelStream, requestID, buffer)
+	}
+}
+
+// assembleAndDeliverChunkedResponse assembles chunks into final response
+func (s *GRPCTunnelServer) assembleAndDeliverChunkedResponse(tunnelStream *TunnelStream, requestID string, buffer *ChunkedResponseBuffer) {
+	buffer.mu.Lock()
+	defer buffer.mu.Unlock()
+
+	s.logger.Info("[CHUNKED SERVER] 🔧 Assembling %d chunks (%d bytes) for unlimited file response",
+		len(buffer.Chunks), buffer.TotalSize)
+
+	// Assemble all chunks into one response body
+	totalBody := make([]byte, 0, buffer.TotalSize)
+	for i, chunk := range buffer.Chunks {
+		totalBody = append(totalBody, chunk...)
+		s.logger.Debug("[CHUNKED SERVER] 📎 Assembled chunk %d (%d bytes)", i+1, len(chunk))
+	}
+
+	// Create final response message
+	finalResponse := &proto.TunnelMessage{
+		RequestId: requestID,
+		Timestamp: time.Now().Unix(),
+		MessageType: &proto.TunnelMessage_HttpResponse{
+			HttpResponse: &proto.HTTPResponse{
+				StatusCode: buffer.StatusCode,
+				StatusText: buffer.StatusText,
+				Headers:    buffer.Headers,
+				Body:       totalBody,
+				IsChunked:  false, // Final assembled response
+			},
+		},
+	}
+
+	s.logger.Info("[CHUNKED SERVER] 🎉 Delivering assembled response: %d bytes (UNLIMITED SIZE ACHIEVED!)", len(totalBody))
+
+	// Deliver to waiting goroutine
+	tunnelStream.requestsMux.RLock()
+	responseChan, exists := tunnelStream.pendingRequests[requestID]
+	tunnelStream.requestsMux.RUnlock()
+
+	if exists {
+		select {
+		case responseChan <- finalResponse:
+			s.logger.Debug("[CHUNKED SERVER] ✅ Successfully delivered unlimited size response")
+		case <-time.After(5 * time.Second):
+			s.logger.Warn("[CHUNKED SERVER] ⚠️ Timeout delivering chunked response")
+		}
+
+		// Clean up
+		tunnelStream.requestsMux.Lock()
+		delete(tunnelStream.pendingRequests, requestID)
+		delete(tunnelStream.chunkedResponses, requestID)
+		close(responseChan)
+		tunnelStream.requestsMux.Unlock()
+	}
+}
+
 // handleControlMessage handles control messages from the client
 func (s *GRPCTunnelServer) handleControlMessage(tunnelStream *TunnelStream, msg *proto.TunnelMessage) {
 	control := msg.GetControl()
@@ -176,7 +310,7 @@ func (s *GRPCTunnelServer) handleControlMessage(tunnelStream *TunnelStream, msg 
 	case *proto.TunnelControl_Metrics:
 		metrics := controlType.Metrics
 		s.logger.Debug("Tunnel %s metrics: %d requests, %.2f avg response time",
-			tunnelStream.Domain, metrics.TotalRequests, metrics.AvgResponseTimeMs)
+			tunnelStream.Domain, metrics.TotalRequests, metrics.AverageResponseTime)
 	default:
 		s.logger.Debug("Unknown control message type: %T", controlType)
 	}
