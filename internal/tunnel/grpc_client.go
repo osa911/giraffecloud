@@ -549,8 +549,12 @@ func (c *GRPCTunnelClient) makeLocalServiceRequest(httpReq *proto.HTTPRequest) (
 // streamResponseInChunks streams large responses in chunks for unlimited file size
 func (c *GRPCTunnelClient) streamResponseInChunks(requestID string, response *http.Response) error {
 	const ChunkSize = 4 * 1024 * 1024 // 4MB chunks for faster streaming
+	const MaxStreamingTime = 10 * time.Minute // Maximum time for entire streaming
 
 	c.logger.Info("[CHUNKED CLIENT] 📡 Streaming response in %dKB chunks (UNLIMITED SIZE)", ChunkSize/1024)
+
+	// Set overall timeout for chunked streaming
+	startTime := time.Now()
 
 	// Convert headers
 	headers := make(map[string]string)
@@ -564,8 +568,23 @@ func (c *GRPCTunnelClient) streamResponseInChunks(requestID string, response *ht
 	buffer := make([]byte, ChunkSize)
 
 	for {
+		// Check for overall timeout
+		if time.Since(startTime) > MaxStreamingTime {
+			c.logger.Error("[CHUNKED CLIENT] ⏰ Streaming timeout after %v, stopping", MaxStreamingTime)
+			c.sendErrorResponse(requestID, "Streaming timeout exceeded")
+			return fmt.Errorf("streaming timeout exceeded")
+		}
+
 		// Read chunk from response
 		n, err := response.Body.Read(buffer)
+
+		// If read fails, send error and stop immediately
+		if err != nil && err != io.EOF {
+			c.logger.Error("[CHUNKED CLIENT] ❌ Failed to read from local service: %v", err)
+			c.sendErrorResponse(requestID, fmt.Sprintf("Local service read failed: %v", err))
+			return err
+		}
+
 		if n > 0 {
 			chunkNum++
 
@@ -599,6 +618,13 @@ func (c *GRPCTunnelClient) streamResponseInChunks(requestID string, response *ht
 			}
 
 			c.logger.Debug("[CHUNKED CLIENT] ✅ Sending chunk %d (%d bytes), final: %v", chunkNum, len(chunkData), isFinalChunk)
+
+			// Check if stream is still healthy before sending
+			if c.stream == nil {
+				c.logger.Error("[CHUNKED CLIENT] ❌ Stream is nil, stopping chunk streaming")
+				c.sendErrorResponse(requestID, "Stream connection lost")
+				return fmt.Errorf("stream connection lost")
+			}
 
 			if sendErr := c.stream.Send(chunkResponse); sendErr != nil {
 				c.logger.Error("[CHUNKED CLIENT] Failed to send chunk %d: %v", chunkNum, sendErr)

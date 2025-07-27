@@ -1,7 +1,6 @@
 package tunnel
 
 import (
-	"context"
 	"fmt"
 	"giraffecloud/internal/tunnel/proto"
 	"io"
@@ -13,19 +12,7 @@ import (
 	"google.golang.org/grpc"
 )
 
-// cancellableReader wraps a reader and cancels context when closed
-type cancellableReader struct {
-	io.Reader
-	cancel context.CancelFunc
-}
 
-func (r *cancellableReader) Close() error {
-	r.cancel() // Cancel context when reader is closed
-	if closer, ok := r.Reader.(io.Closer); ok {
-		return closer.Close()
-	}
-	return nil
-}
 
 const (
 	// DefaultChunkSize is the default chunk size for streaming (4MB for faster transfers)
@@ -357,10 +344,6 @@ func (s *GRPCTunnelServer) handleLargeFileWithChunking(domain string, httpReq *h
 func (s *GRPCTunnelServer) collectChunkedResponse(tunnelStream *TunnelStream, req *proto.LargeFileRequest) (*http.Response, error) {
 	s.logger.Debug("[CHUNKED] 📦 Starting MEMORY-EFFICIENT chunk collection for request: %s", req.RequestId)
 
-	// Create cancellation context to stop goroutine if connection fails
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel() // Ensure cleanup
-
 		// Create response channel and register it in pendingRequests (CRITICAL!)
 	responseChan := make(chan *proto.TunnelMessage, 250) // Larger buffer for faster streaming
 
@@ -393,12 +376,6 @@ func (s *GRPCTunnelServer) collectChunkedResponse(tunnelStream *TunnelStream, re
 
 	// Create a streaming pipe for memory-efficient processing
 	pipeReader, pipeWriter := io.Pipe()
-
-	// Wrap pipe reader to cancel context when closed (client disconnects)
-	cancellablePipeReader := &cancellableReader{
-		Reader: pipeReader,
-		cancel: cancel,
-	}
 
 	// Channel to receive response metadata from first chunk
 	metadataCh := make(chan *proto.HTTPResponse, 1)
@@ -435,11 +412,6 @@ func (s *GRPCTunnelServer) collectChunkedResponse(tunnelStream *TunnelStream, re
 
 		for {
 			select {
-			case <-ctx.Done():
-				s.logger.Info("[CHUNKED] 🚫 Context cancelled, stopping chunk collection for: %s", req.RequestId)
-				errorCh <- fmt.Errorf("chunked streaming cancelled")
-				return
-
 			case <-timeout:
 				errorCh <- fmt.Errorf("timeout waiting for chunked response after 2 minutes")
 				return
@@ -521,13 +493,13 @@ func (s *GRPCTunnelServer) collectChunkedResponse(tunnelStream *TunnelStream, re
 	// Wait for first chunk to get response metadata
 	select {
 	case firstChunk := <-metadataCh:
-		// Create streaming HTTP response with the cancellable pipe reader
+		// Create streaming HTTP response with the pipe reader
 		response := &http.Response{
 			StatusCode:    int(firstChunk.StatusCode),
 			Status:        firstChunk.StatusText,
 			Header:        make(http.Header),
-			Body:          cancellablePipeReader, // MEMORY EFFICIENT: Stream directly from pipe with cancellation
-			ContentLength: -1,                   // Unknown length for streaming
+			Body:          pipeReader, // MEMORY EFFICIENT: Stream directly from pipe
+			ContentLength: -1,         // Unknown length for streaming
 		}
 
 		// Set headers from the first chunk
@@ -542,12 +514,12 @@ func (s *GRPCTunnelServer) collectChunkedResponse(tunnelStream *TunnelStream, re
 		return response, nil
 
 	case err := <-errorCh:
-		cancellablePipeReader.Close() // This will also cancel the context
+		pipeReader.Close()
 		s.logger.Warn("[CHUNKED] ❌ Chunked streaming failed: %v", err)
 		return nil, err
 
 	case <-time.After(60 * time.Second):
-		cancellablePipeReader.Close() // This will also cancel the context
+		pipeReader.Close()
 		s.logger.Error("[CHUNKED] ⏰ Timeout waiting for chunked response metadata after 60s")
 		return nil, fmt.Errorf("timeout waiting for chunked response metadata")
 	}
