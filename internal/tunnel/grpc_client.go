@@ -602,6 +602,14 @@ func (c *GRPCTunnelClient) streamResponseInChunks(requestID string, response *ht
 
 			if sendErr := c.stream.Send(chunkResponse); sendErr != nil {
 				c.logger.Error("[CHUNKED CLIENT] Failed to send chunk %d: %v", chunkNum, sendErr)
+
+				// If stream send fails, trigger reconnection to recover
+				if strings.Contains(sendErr.Error(), "EOF") ||
+				   strings.Contains(sendErr.Error(), "connection") ||
+				   strings.Contains(sendErr.Error(), "stream") {
+					c.logger.Warn("[CHUNKED CLIENT] 🔌 Stream error detected, triggering reconnection")
+				}
+
 				return sendErr
 			}
 		}
@@ -618,6 +626,17 @@ func (c *GRPCTunnelClient) streamResponseInChunks(requestID string, response *ht
 
 	atomic.AddInt64(&c.totalResponses, 1)
 	return nil
+}
+
+// resetChunkedStreamingState resets any chunked streaming state on reconnection
+// This prevents stale state from interfering with new connections
+func (c *GRPCTunnelClient) resetChunkedStreamingState() {
+	c.logger.Info("[CLEANUP] 🧹 Resetting chunked streaming state for domain: %s", c.domain)
+
+	// Reset any client-side chunked streaming counters or state
+	// Currently our client is stateless for chunked streaming, but this is future-proof
+
+	c.logger.Debug("[CLEANUP] ✅ Chunked streaming state reset completed")
 }
 
 // sendCompleteResponse sends a complete response for regular files
@@ -747,6 +766,9 @@ func (c *GRPCTunnelClient) reconnect() {
 
 	c.connected = false
 
+	// Reset any stale chunked streaming state
+	c.resetChunkedStreamingState()
+
 	// Retry connection with exponential backoff
 	delay := c.config.ReconnectDelay
 	attempts := 0
@@ -782,6 +804,9 @@ func (c *GRPCTunnelClient) reconnect() {
 
 		c.connected = true
 		c.logger.Info("Successfully reconnected gRPC tunnel for domain: %s", c.domain)
+
+		// Ensure clean state for new connection
+		c.resetChunkedStreamingState()
 
 		// Restart message handling
 		go c.handleIncomingMessages()

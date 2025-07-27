@@ -397,9 +397,10 @@ func (s *GRPCTunnelServer) collectChunkedResponse(tunnelStream *TunnelStream, re
 				errorCh <- fmt.Errorf("timeout waiting for chunked response after 2 minutes")
 				return
 
-			case response, ok := <-responseChan:
+						case response, ok := <-responseChan:
 				if !ok {
-					errorCh <- fmt.Errorf("response channel closed unexpectedly")
+					s.logger.Info("[CHUNKED] 🔌 Response channel closed during tunnel disconnection - stopping chunk collection")
+					errorCh <- fmt.Errorf("tunnel disconnected during chunked response collection")
 					return
 				}
 
@@ -485,11 +486,13 @@ func (s *GRPCTunnelServer) collectChunkedResponse(tunnelStream *TunnelStream, re
 
 	case err := <-errorCh:
 		pipeReader.Close()
+		s.logger.Warn("[CHUNKED] ❌ Chunked streaming failed: %v", err)
 		return nil, err
 
 	case <-time.After(30 * time.Second):
 		pipeReader.Close()
-		return nil, fmt.Errorf("timeout waiting for response metadata")
+		s.logger.Error("[CHUNKED] ⏰ Timeout waiting for chunked response metadata after 30s")
+		return nil, fmt.Errorf("timeout waiting for chunked response metadata")
 	}
 }
 

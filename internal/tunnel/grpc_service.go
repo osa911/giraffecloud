@@ -285,7 +285,11 @@ func (s *GRPCTunnelServer) EstablishTunnel(stream proto.TunnelService_EstablishT
 		s.tunnelStreamsMux.Lock()
 		delete(s.tunnelStreams, tunnel.Domain)
 		s.tunnelStreamsMux.Unlock()
-		s.logger.Info("Tunnel disconnected for domain: %s", tunnel.Domain)
+
+		// Clean up all pending requests and chunked streaming state
+		s.cleanupTunnelStreamState(tunnelStream)
+
+		s.logger.Info("Tunnel disconnected for domain: %s (all state cleaned up)", tunnel.Domain)
 	}()
 
 	// Send handshake response
@@ -382,6 +386,36 @@ func (s *GRPCTunnelServer) ProxyHTTPRequest(domain string, req *http.Request, cl
 
 	atomic.AddInt64(&s.totalResponses, 1)
 	return response, nil
+}
+
+// cleanupTunnelStreamState cleans up all state associated with a tunnel stream
+// This prevents stale state from interfering with reconnections
+func (s *GRPCTunnelServer) cleanupTunnelStreamState(tunnelStream *TunnelStream) {
+	s.logger.Info("[CLEANUP] 🧹 Cleaning up tunnel stream state for domain: %s", tunnelStream.Domain)
+
+	// Clean up all pending requests to prevent goroutine leaks
+	tunnelStream.requestsMux.Lock()
+	pendingCount := len(tunnelStream.pendingRequests)
+
+	// Close all response channels and clear pending requests
+	for requestID, responseChan := range tunnelStream.pendingRequests {
+		s.logger.Debug("[CLEANUP] 🚮 Cleaning up pending request: %s", requestID)
+
+		// Close the channel to signal any waiting goroutines
+		close(responseChan)
+
+		// Remove from pending requests
+		delete(tunnelStream.pendingRequests, requestID)
+	}
+
+	tunnelStream.requestsMux.Unlock()
+
+	if pendingCount > 0 {
+		s.logger.Info("[CLEANUP] ✅ Cleaned up %d pending requests for domain: %s", pendingCount, tunnelStream.Domain)
+		s.logger.Info("[CLEANUP] 🔄 Ready for clean reconnection - no stale state")
+	} else {
+		s.logger.Debug("[CLEANUP] ✅ No pending requests to clean up for domain: %s", tunnelStream.Domain)
+	}
 }
 
 // Helper methods continue in next part...
