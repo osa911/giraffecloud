@@ -90,7 +90,7 @@ func DefaultGRPCClientConfig() *GRPCClientConfig {
 		ReconnectDelay:       1 * time.Second,
 		BackoffMultiplier:    1.5,
 		InsecureSkipVerify:   false, // PRODUCTION: Use proper certificate validation
-		MaxMessageSize:       16 * 1024 * 1024, // 16MB
+		MaxMessageSize:       100 * 1024 * 1024, // 100MB - handle large images/videos
 		EnableCompression:    true,
 	}
 }

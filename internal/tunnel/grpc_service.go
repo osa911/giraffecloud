@@ -102,12 +102,12 @@ type GRPCTunnelConfig struct {
 func DefaultGRPCTunnelConfig() *GRPCTunnelConfig {
 	return &GRPCTunnelConfig{
 		MaxConcurrentStreams:  1000,
-		MaxMessageSize:        16 * 1024 * 1024, // 16MB
+		MaxMessageSize:        100 * 1024 * 1024, // 100MB - handle large images/videos
 		KeepAliveTimeout:      30 * time.Second,
 		KeepAliveInterval:     5 * time.Second,
 		RequestTimeout:        30 * time.Second,
-		MaxRequestSize:        100 * 1024 * 1024, // 100MB
-		MaxResponseSize:       100 * 1024 * 1024, // 100MB
+		MaxRequestSize:        100 * 1024 * 1024, // 100MB - consistent with MaxMessageSize
+		MaxResponseSize:       100 * 1024 * 1024, // 100MB - consistent with MaxMessageSize
 		RequireAuthentication: true,
 		RateLimitRPM:          1000, // 1000 requests per minute per tunnel
 		RateLimitBurst:        100,
