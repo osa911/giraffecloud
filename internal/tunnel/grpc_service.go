@@ -21,18 +21,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// ChunkedResponseBuffer holds chunks for a large file response
-type ChunkedResponseBuffer struct {
-	RequestID     string
-	StatusCode    int32
-	StatusText    string
-	Headers       map[string]string
-	Chunks        [][]byte
-	TotalSize     int64
-	StartTime     time.Time
-	LastChunkTime time.Time
-	mu            sync.Mutex
-}
+// Legacy ChunkedResponseBuffer removed - now using memory-efficient streaming via io.Pipe()
 
 // GRPCTunnelServer implements the production-grade gRPC tunnel service
 // Designed for high-performance, unlimited concurrency, and Cloudflare-level reliability
@@ -81,8 +70,7 @@ type TunnelStream struct {
 	pendingRequests map[string]chan *proto.TunnelMessage
 	requestsMux     sync.RWMutex
 
-	// Chunked response handling for unlimited file sizes
-	chunkedResponses map[string]*ChunkedResponseBuffer
+	// Note: Chunked response handling now uses memory-efficient streaming via io.Pipe()
 
 	// Stream state
 	connected     bool
