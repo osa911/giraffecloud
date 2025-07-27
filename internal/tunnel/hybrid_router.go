@@ -43,6 +43,11 @@ type HybridRouterConfig struct {
 	ForceGRPCPaths    []string // Paths that must use gRPC
 	ForceTCPPaths     []string // Paths that must use TCP
 
+	// Large file handling
+	LargeFileExtensions []string // File extensions for large files (videos, etc.)
+	MaxGRPCFileSize     int64    // Max file size for gRPC (bytes), larger files use TCP streaming
+	LargeFilePaths      []string // URL patterns that likely contain large files
+
 	// Performance settings
 	EnableMetrics     bool
 	MetricsInterval   time.Duration
@@ -59,6 +64,14 @@ func DefaultHybridRouterConfig() *HybridRouterConfig {
 		TCPAddress:        ":4443", // Original port for TCP/WebSocket
 		ForceGRPCPaths:    []string{"/assets/", "/media/", "/static/"}, // Removed /api/ to allow WebSocket routing
 		ForceTCPPaths:     []string{"/ws/", "/websocket/", "/socket.io/", "socket.io", "transport=websocket"}, // Enhanced WebSocket patterns
+
+		// Large file handling - route big files to TCP streaming
+		LargeFileExtensions: []string{".mp4", ".avi", ".mov", ".mkv", ".webm", ".m4v", ".flv", ".wmv", // Videos
+			".zip", ".rar", ".7z", ".tar", ".gz", ".bz2", // Archives
+			".iso", ".img", ".dmg", ".exe", ".msi", ".deb", ".rpm"}, // Large binaries
+		MaxGRPCFileSize:     50 * 1024 * 1024, // 50MB - files larger than this use TCP streaming
+		LargeFilePaths:      []string{"/video/", "/download/", "/file/", "/original/", "/raw/"}, // Paths likely to contain large files
+
 		EnableMetrics:     true,
 		MetricsInterval:   1 * time.Minute,
 		EnableRateLimit:   true,
@@ -145,14 +158,23 @@ func (r *HybridTunnelRouter) ProxyConnection(domain string, conn net.Conn, reque
 	clientIP := r.extractClientIP(conn)
 
 	// Parse the request to determine routing
-	isWebSocket, httpMethod, requestPath := r.analyzeRequest(requestData)
+	shouldUseTCP, httpMethod, requestPath := r.analyzeRequest(requestData)
 
-	r.logger.Debug("[HYBRID] Request from %s: %s %s (WebSocket: %t)",
-		clientIP, httpMethod, requestPath, isWebSocket)
+	// Determine the actual request type
+	isActualWebSocket := r.isWebSocketUpgrade(requestData)
+	isLargeFile := r.isLargeFile(requestPath)
+
+	r.logger.Debug("[HYBRID] Request from %s: %s %s (TCP: %t, WebSocket: %t, LargeFile: %t)",
+		clientIP, httpMethod, requestPath, shouldUseTCP, isActualWebSocket, isLargeFile)
 
 	// Route based on request type
-	if isWebSocket {
-		r.routeToTCPTunnel(domain, conn, requestData, requestBody, clientIP)
+	if shouldUseTCP {
+		if isActualWebSocket {
+			r.routeToTCPTunnel(domain, conn, requestData, requestBody, clientIP)
+		} else {
+			// Large file - route to TCP for streaming but handle as HTTP request
+			r.routeToTCPForLargeFile(domain, conn, requestData, requestBody, clientIP, httpMethod, requestPath)
+		}
 	} else {
 		r.routeToGRPCTunnel(domain, conn, requestData, requestBody, clientIP, httpMethod, requestPath)
 	}
@@ -267,7 +289,14 @@ func (r *HybridTunnelRouter) analyzeRequest(requestData []byte) (isWebSocket boo
 		}
 	}
 
-	// Then check gRPC paths (only if not already matched by TCP)
+	// Check for large files that should use TCP streaming instead of gRPC
+	if r.isLargeFile(path) {
+		isWebSocket = true // Route to TCP tunnel for streaming
+		r.logger.Debug("[HYBRID] Path %s detected as large file, routing to TCP for streaming", path)
+		return isWebSocket, method, path
+	}
+
+	// Then check gRPC paths (only if not already matched by TCP or large file)
 	for _, forcePath := range r.config.ForceGRPCPaths {
 		if strings.Contains(path, forcePath) {
 			isWebSocket = false
@@ -277,6 +306,55 @@ func (r *HybridTunnelRouter) analyzeRequest(requestData []byte) (isWebSocket boo
 	}
 
 	return isWebSocket, method, path
+}
+
+// isLargeFile determines if a file path is likely to be a large file that should use TCP streaming
+func (r *HybridTunnelRouter) isLargeFile(path string) bool {
+	pathLower := strings.ToLower(path)
+
+	// Check for large file extensions
+	for _, ext := range r.config.LargeFileExtensions {
+		if strings.HasSuffix(pathLower, strings.ToLower(ext)) {
+			return true
+		}
+	}
+
+	// Check for large file paths
+	for _, largePath := range r.config.LargeFilePaths {
+		if strings.Contains(pathLower, strings.ToLower(largePath)) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// isWebSocketUpgrade checks if the request is a WebSocket upgrade request
+func (r *HybridTunnelRouter) isWebSocketUpgrade(requestData []byte) bool {
+	requestLower := strings.ToLower(string(requestData))
+	return strings.Contains(requestLower, "upgrade: websocket") ||
+		strings.Contains(requestLower, "connection: upgrade")
+}
+
+// routeToTCPForLargeFile routes large files to TCP tunnel for efficient streaming
+func (r *HybridTunnelRouter) routeToTCPForLargeFile(domain string, conn net.Conn, requestData []byte, requestBody io.Reader, clientIP, method, path string) {
+	atomic.AddInt64(&r.tcpRequests, 1)
+
+	r.logger.Debug("[HYBRID→TCP] Routing large file via TCP streaming: %s %s", method, path)
+
+	// Check if TCP tunnel is available
+	if !r.tcpTunnel.IsTunnelDomain(domain) {
+		r.logger.Error("[HYBRID→TCP] No active TCP tunnel for domain: %s", domain)
+		atomic.AddInt64(&r.routingErrors, 1)
+		r.writeHTTPError(conn, 502, "Bad Gateway - TCP tunnel not available")
+		return
+	}
+
+	// Use the existing ProxyConnection method for HTTP requests over TCP
+	// This will handle the request as a regular HTTP request but over TCP tunnel for streaming
+	r.tcpTunnel.ProxyConnection(domain, conn, requestData, requestBody)
+
+	r.logger.Debug("[HYBRID→TCP] Large file streaming completed")
 }
 
 // parseHTTPRequest parses raw HTTP request data into http.Request
