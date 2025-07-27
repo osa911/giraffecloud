@@ -72,8 +72,10 @@ var DefaultConfig = Config{
 		Host: "api.giraffecloud.xyz",
 		Port: 443,
 	},
-	Security: SecurityConfig{
-		InsecureSkipVerify: false,
+		Security: SecurityConfig{
+		InsecureSkipVerify: false, // PRODUCTION: NEVER skip verification
+		// Certificate paths are set dynamically by the 'login' command
+		// after fetching certificates from the API server
 	},
 }
 

@@ -223,34 +223,28 @@ func (t *Tunnel) connectWithRetry(serverAddr string, tlsConfig *tls.Config) erro
 
 // attemptDualConnections tries to establish both gRPC (HTTP) and TCP (WebSocket) tunnel connections
 func (t *Tunnel) attemptDualConnections(serverAddr string, tlsConfig *tls.Config) error {
-	// Create secure TLS config with proper certificate validation
+	// PRODUCTION-GRADE: Create secure TLS config with proper certificate validation
 	if tlsConfig == nil {
-		// Load configuration for certificate paths
+		// PRODUCTION-GRADE: Load configuration and REQUIRE proper certificates
 		cfg, err := LoadConfig()
 		if err != nil {
-			t.logger.Warn("Failed to load config for certificates, using insecure connection: %v", err)
-			// Fallback to insecure configuration for compatibility
-		tlsConfig = &tls.Config{
-				InsecureSkipVerify: true,
-			}
-		} else {
-			// Create secure TLS configuration with proper certificates
-			tlsConfig, err = CreateSecureTLSConfig(cfg.Security.CACert, cfg.Security.ClientCert, cfg.Security.ClientKey)
-			if err != nil {
-				t.logger.Warn("Failed to create secure TLS config, using insecure fallback: %v", err)
-				// Fallback to insecure configuration
-				tlsConfig = &tls.Config{
-					InsecureSkipVerify: true,
+			return fmt.Errorf("SECURITY ERROR: Failed to load config for certificates: %w", err)
 		}
-			} else {
-				t.logger.Info("🔐 Using PRODUCTION-GRADE TLS with certificate validation")
-			}
 
-			// CRITICAL: Force fresh TLS state during reconnection to prevent ERR_SSL_PROTOCOL_ERROR
-			tlsConfig = tlsConfig.Clone()
-			tlsConfig.ClientSessionCache = tls.NewLRUClientSessionCache(0) // Disable session cache
-			tlsConfig.Renegotiation = tls.RenegotiateNever                 // Disable renegotiation
+		// PRODUCTION-GRADE: Create secure TLS configuration with proper certificates
+		tlsConfig, err = CreateSecureTLSConfig(cfg.Security.CACert, cfg.Security.ClientCert, cfg.Security.ClientKey)
+		if err != nil {
+			return fmt.Errorf("SECURITY ERROR: Failed to create secure TLS config: %w", err)
 		}
+
+		t.logger.Info("🔐 PRODUCTION-GRADE: Using secure TLS with certificate validation (InsecureSkipVerify: FALSE)")
+
+		// CRITICAL: Force fresh TLS state during reconnection to prevent ERR_SSL_PROTOCOL_ERROR
+		tlsConfig = tlsConfig.Clone()
+		tlsConfig.ClientSessionCache = nil                             // Completely disable session cache
+		tlsConfig.SessionTicketsDisabled = true                       // Disable session tickets
+		tlsConfig.Renegotiation = tls.RenegotiateNever                 // Disable renegotiation
+		tlsConfig.Time = func() time.Time { return time.Now() }       // Force fresh time for each connection
 	}
 
 	t.logger.Info("🚀 Starting PRODUCTION-GRADE tunnel establishment...")

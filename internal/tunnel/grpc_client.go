@@ -195,32 +195,27 @@ func (c *GRPCTunnelClient) IsConnected() bool {
 
 // connect establishes the gRPC connection and stream
 func (c *GRPCTunnelClient) connect() error {
-	// Load configuration for certificate paths and create secure TLS configuration
-	var tlsConfig *tls.Config
+	// PRODUCTION-GRADE: Load configuration and REQUIRE proper certificates
 	cfg, err := LoadConfig()
 	if err != nil {
-		c.logger.Warn("Failed to load config for certificates, using insecure connection: %v", err)
-		// Fallback to insecure configuration
-		tlsConfig = &tls.Config{
-			InsecureSkipVerify: true,
-		}
-	} else {
-		// Create secure TLS configuration with proper certificates
-		tlsConfig, err = CreateSecureTLSConfig(cfg.Security.CACert, cfg.Security.ClientCert, cfg.Security.ClientKey)
-		if err != nil {
-			c.logger.Warn("Failed to create secure TLS config, using insecure fallback: %v", err)
-			// Fallback to insecure configuration
-			tlsConfig = &tls.Config{
-				InsecureSkipVerify: true,
-			}
-		}
+		return fmt.Errorf("SECURITY ERROR: Failed to load config for certificates: %w", err)
 	}
+
+	// PRODUCTION-GRADE: Create secure TLS configuration with proper certificates
+	tlsConfig, err := CreateSecureTLSConfig(cfg.Security.CACert, cfg.Security.ClientCert, cfg.Security.ClientKey)
+	if err != nil {
+		return fmt.Errorf("SECURITY ERROR: Failed to create secure TLS config: %w", err)
+	}
+
+	c.logger.Info("🔐 PRODUCTION-GRADE: Using secure TLS with certificate validation (InsecureSkipVerify: FALSE)")
 
 	// CRITICAL: Force fresh TLS state by disabling session resumption during reconnection
 	// This prevents ERR_SSL_PROTOCOL_ERROR after server restarts
 	tlsConfig = tlsConfig.Clone()
-	tlsConfig.ClientSessionCache = tls.NewLRUClientSessionCache(0) // Disable session cache
+	tlsConfig.ClientSessionCache = nil                             // Completely disable session cache
+	tlsConfig.SessionTicketsDisabled = true                       // Disable session tickets
 	tlsConfig.Renegotiation = tls.RenegotiateNever                 // Disable renegotiation
+	tlsConfig.Time = func() time.Time { return time.Now() }       // Force fresh time for each connection
 
 	// Create gRPC connection
 	dialOpts := []grpc.DialOption{
