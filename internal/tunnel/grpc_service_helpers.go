@@ -248,7 +248,7 @@ func (s *GRPCTunnelServer) monitorTunnelHealth(tunnelStream *TunnelStream) error
 			return tunnelStream.Context.Err()
 
 		case <-ticker.C:
-			// Check if tunnel is still active
+			// Check if tunnel is still active (2 minutes - activity tracking should prevent this)
 			if time.Since(tunnelStream.lastActivity) > 2*time.Minute {
 				s.logger.Warn("Tunnel %s inactive for %v, closing",
 					tunnelStream.Domain, time.Since(tunnelStream.lastActivity))

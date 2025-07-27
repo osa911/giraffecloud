@@ -351,11 +351,27 @@ func (s *GRPCTunnelServer) collectChunkedResponse(tunnelStream *TunnelStream, re
 	tunnelStream.pendingRequests[req.RequestId] = responseChan
 	tunnelStream.requestsMux.Unlock()
 
-	// Ensure cleanup on exit
+	// Ensure cleanup on exit with safe channel closing
 	defer func() {
+		// Recover from potential panic when closing channels
+		if r := recover(); r != nil {
+			s.logger.Warn("[CHUNKED] 🚧 Recovered from cleanup panic (likely double-close): %v", r)
+		}
+
 		tunnelStream.requestsMux.Lock()
-		delete(tunnelStream.pendingRequests, req.RequestId)
-		close(responseChan)
+		if ch, exists := tunnelStream.pendingRequests[req.RequestId]; exists {
+			delete(tunnelStream.pendingRequests, req.RequestId)
+
+			// Safely close channel - use defer+recover to handle double-close
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						s.logger.Debug("[CHUNKED] Channel already closed for request: %s", req.RequestId)
+					}
+				}()
+				close(ch)
+			}()
+		}
 		tunnelStream.requestsMux.Unlock()
 	}()
 
@@ -374,6 +390,11 @@ func (s *GRPCTunnelServer) collectChunkedResponse(tunnelStream *TunnelStream, re
 
 	s.logger.Debug("[CHUNKED] ✅ Large file request sent, registered in pendingRequests, waiting for chunked response...")
 
+	// Update tunnel activity since we're starting an active chunked transfer
+	tunnelStream.mu.Lock()
+	tunnelStream.lastActivity = time.Now()
+	tunnelStream.mu.Unlock()
+
 	// Create a streaming pipe for memory-efficient processing
 	pipeReader, pipeWriter := io.Pipe()
 
@@ -388,8 +409,8 @@ func (s *GRPCTunnelServer) collectChunkedResponse(tunnelStream *TunnelStream, re
 		var firstChunk *proto.HTTPResponse
 		chunkCount := 0
 
-				// Set timeout for chunk collection
-		timeout := time.After(120 * time.Second) // 2 minutes for large files
+				// Set timeout for chunk collection (reasonable timeout - activity tracking prevents tunnel timeout)
+		timeout := time.After(2 * time.Minute) // 2 minutes max - fail fast if broken
 
 		for {
 			select {
@@ -405,6 +426,11 @@ func (s *GRPCTunnelServer) collectChunkedResponse(tunnelStream *TunnelStream, re
 				}
 
 				s.logger.Debug("[CHUNKED] 📥 Received response from pendingRequests channel: %s", response.RequestId)
+
+				// Update tunnel activity to prevent timeout during chunked streaming
+				tunnelStream.mu.Lock()
+				tunnelStream.lastActivity = time.Now()
+				tunnelStream.mu.Unlock()
 
 				// Handle different message types
 				switch msgType := response.MessageType.(type) {
@@ -430,8 +456,13 @@ func (s *GRPCTunnelServer) collectChunkedResponse(tunnelStream *TunnelStream, re
 								return
 							}
 
-							s.logger.Debug("[CHUNKED] 📥 Streamed chunk %d (%d bytes) directly to pipe",
+														s.logger.Debug("[CHUNKED] 📥 Streamed chunk %d (%d bytes) directly to pipe",
 								chunkCount, len(chunk.Body))
+
+							// Update activity for each chunk to keep tunnel alive during large transfers
+							tunnelStream.mu.Lock()
+							tunnelStream.lastActivity = time.Now()
+							tunnelStream.mu.Unlock()
 						}
 
 						// Check if this is the final chunk

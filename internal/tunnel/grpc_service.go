@@ -397,12 +397,19 @@ func (s *GRPCTunnelServer) cleanupTunnelStreamState(tunnelStream *TunnelStream) 
 	tunnelStream.requestsMux.Lock()
 	pendingCount := len(tunnelStream.pendingRequests)
 
-	// Close all response channels and clear pending requests
+		// Close all response channels and clear pending requests
 	for requestID, responseChan := range tunnelStream.pendingRequests {
 		s.logger.Debug("[CLEANUP] 🚮 Cleaning up pending request: %s", requestID)
 
-		// Close the channel to signal any waiting goroutines
-		close(responseChan)
+		// Safely close the channel to signal any waiting goroutines
+		func(ch chan *proto.TunnelMessage, id string) {
+			defer func() {
+				if r := recover(); r != nil {
+					s.logger.Debug("[CLEANUP] Channel already closed for request: %s", id)
+				}
+			}()
+			close(ch)
+		}(responseChan, requestID)
 
 		// Remove from pending requests
 		delete(tunnelStream.pendingRequests, requestID)

@@ -526,7 +526,7 @@ func (c *GRPCTunnelClient) makeLocalServiceRequest(httpReq *proto.HTTPRequest) (
 
 	// Make request to local service with generous timeout
 	client := &http.Client{
-		Timeout: 120 * time.Second, // 2 minutes for large files
+		Timeout: 2 * time.Minute, // 2 minutes - fail fast if broken
 	}
 
 	startTime := time.Now()
