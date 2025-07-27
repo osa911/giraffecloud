@@ -12,7 +12,7 @@ import (
 type Server struct {
 	router       *gin.Engine
 	db          *db.Database
-	tunnelServer *tunnel.TunnelServer
+	tunnelRouter *tunnel.HybridTunnelRouter // Changed from TunnelServer to HybridTunnelRouter
 }
 
 // Repositories holds all repository instances

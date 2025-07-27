@@ -89,7 +89,7 @@ func DefaultGRPCClientConfig() *GRPCClientConfig {
 		MaxReconnectAttempts: -1, // Infinite retries
 		ReconnectDelay:       1 * time.Second,
 		BackoffMultiplier:    1.5,
-		InsecureSkipVerify:   true, // For development
+		InsecureSkipVerify:   false,
 		MaxMessageSize:       16 * 1024 * 1024, // 16MB
 		EnableCompression:    true,
 	}

@@ -106,6 +106,10 @@ type Tunnel struct {
 
 	// Streaming configuration
 	streamConfig *StreamingConfig
+
+	// PRODUCTION-GRADE: gRPC Tunnel Client for unlimited HTTP concurrency
+	grpcClient   *GRPCTunnelClient
+	grpcEnabled  bool
 }
 
 // NewTunnel creates a new tunnel instance with enhanced features
@@ -214,7 +218,7 @@ func (t *Tunnel) connectWithRetry(serverAddr string, tlsConfig *tls.Config) erro
 	}
 }
 
-// attemptDualConnections tries to establish both HTTP and WebSocket tunnel connections
+// attemptDualConnections tries to establish both gRPC (HTTP) and TCP (WebSocket) tunnel connections
 func (t *Tunnel) attemptDualConnections(serverAddr string, tlsConfig *tls.Config) error {
 	// Simplify TLS config - use defaults for better compatibility
 	if tlsConfig == nil {
@@ -223,7 +227,56 @@ func (t *Tunnel) attemptDualConnections(serverAddr string, tlsConfig *tls.Config
 		}
 	}
 
-	t.logger.Info("[DUAL TUNNEL DEBUG] Starting enhanced tunnel establishment...")
+	t.logger.Info("🚀 Starting PRODUCTION-GRADE tunnel establishment...")
+
+	// Step 1: Establish gRPC tunnel for HTTP traffic (unlimited concurrency)
+	t.logger.Info("📡 Establishing gRPC tunnel for HTTP traffic...")
+
+	// Parse server address for gRPC port
+	grpcServerAddr := strings.Replace(serverAddr, ":4443", ":4444", 1) // Use gRPC port
+
+	// Create gRPC tunnel client
+	grpcConfig := DefaultGRPCClientConfig()
+	t.grpcClient = NewGRPCTunnelClient(grpcServerAddr, t.domain, t.token, int32(t.localPort), grpcConfig)
+
+	// Start gRPC tunnel
+	if err := t.grpcClient.Start(); err != nil {
+		t.logger.Error("Failed to establish gRPC tunnel: %v", err)
+		t.logger.Info("Falling back to TCP-only mode...")
+		t.grpcEnabled = false
+	} else {
+		t.logger.Info("✅ gRPC tunnel established successfully - unlimited HTTP concurrency enabled!")
+		t.grpcEnabled = true
+	}
+
+	// Step 2: Establish TCP tunnel for WebSocket traffic (existing functionality)
+	t.logger.Info("🔌 Establishing TCP tunnel for WebSocket traffic...")
+
+	if t.grpcEnabled {
+		// In hybrid mode, we only need one TCP connection for WebSocket
+		t.logger.Info("Hybrid mode: Establishing minimal TCP connections for WebSocket support...")
+
+		// Establish WebSocket tunnel connection
+		wsConn, err := t.establishConnection(serverAddr, tlsConfig, "websocket")
+		if err != nil {
+			t.logger.Error("Failed to establish WebSocket tunnel: %v", err)
+			// If WebSocket fails but gRPC succeeded, continue with gRPC-only
+			t.logger.Warn("WebSocket tunnel failed - continuing with gRPC-only mode (HTTP traffic only)")
+		} else {
+			t.wsConn = wsConn
+			t.logger.Info("✅ WebSocket tunnel established successfully")
+
+			// Start WebSocket handler
+			t.wg.Add(1)
+			go t.handleWebSocketConnection(wsConn)
+		}
+
+		t.logger.Info("🎯 HYBRID MODE ACTIVE: gRPC (HTTP) + TCP (WebSocket)")
+		return nil
+	}
+
+	// Fallback: Original TCP-only mode for compatibility
+	t.logger.Info("⚠️  Fallback mode: Using legacy TCP tunnels...")
 
 	// Determine the number of HTTP connections to establish based on pool size
 	poolSize := t.streamConfig.PoolSize
@@ -231,43 +284,43 @@ func (t *Tunnel) attemptDualConnections(serverAddr string, tlsConfig *tls.Config
 		poolSize = 3 // Default to 3 concurrent HTTP connections
 	}
 
-	t.logger.Info("[DUAL TUNNEL DEBUG] Establishing %d HTTP tunnel connections for concurrency...", poolSize)
+	t.logger.Info("Establishing %d TCP HTTP tunnel connections for concurrency...", poolSize)
 
 	// Establish multiple HTTP tunnel connections for concurrent request handling
 	httpConnections := make([]net.Conn, 0, poolSize)
 	for i := 0; i < poolSize; i++ {
-		t.logger.Info("[DUAL TUNNEL DEBUG] Establishing HTTP tunnel %d/%d...", i+1, poolSize)
+		t.logger.Info("Establishing TCP HTTP tunnel %d/%d...", i+1, poolSize)
 		httpConn, err := t.establishConnection(serverAddr, tlsConfig, "http")
 		if err != nil {
 			// Clean up previously established connections
 			for _, conn := range httpConnections {
 				conn.Close()
 			}
-			t.logger.Error("[DUAL TUNNEL DEBUG] Failed to establish HTTP tunnel %d: %v", i+1, err)
-			return fmt.Errorf("failed to establish HTTP tunnel %d: %w", i+1, err)
+			t.logger.Error("Failed to establish TCP HTTP tunnel %d: %v", i+1, err)
+			return fmt.Errorf("failed to establish TCP HTTP tunnel %d: %w", i+1, err)
 		}
 		httpConnections = append(httpConnections, httpConn)
-		t.logger.Info("[DUAL TUNNEL DEBUG] HTTP tunnel %d/%d established successfully", i+1, poolSize)
+		t.logger.Info("TCP HTTP tunnel %d/%d established successfully", i+1, poolSize)
 	}
 
 	// Then, establish the WebSocket tunnel connection
-	t.logger.Info("[DUAL TUNNEL DEBUG] Establishing WebSocket tunnel...")
+	t.logger.Info("Establishing WebSocket tunnel...")
 	wsConn, err := t.establishConnection(serverAddr, tlsConfig, "websocket")
 	if err != nil {
 		// Clean up HTTP connections if WebSocket fails
 		for _, conn := range httpConnections {
 			conn.Close()
 		}
-		t.logger.Error("[DUAL TUNNEL DEBUG] Failed to establish WebSocket tunnel: %v", err)
+		t.logger.Error("Failed to establish WebSocket tunnel: %v", err)
 		return fmt.Errorf("failed to establish WebSocket tunnel: %w", err)
 	}
-	t.logger.Info("[DUAL TUNNEL DEBUG] WebSocket tunnel established successfully")
+	t.logger.Info("WebSocket tunnel established successfully")
 
 	// Store the first HTTP connection as the main connection (for backward compatibility)
 	t.conn = httpConnections[0]
 	t.wsConn = wsConn // Store WebSocket connection separately
 
-	t.logger.Info("Enhanced tunnel connections established successfully. Domain: %s, Local Port: %d, HTTP Connections: %d",
+	t.logger.Info("✅ Legacy TCP tunnel connections established. Domain: %s, Local Port: %d, HTTP Connections: %d",
 		t.domain, t.localPort, len(httpConnections))
 
 	// Start handling for all HTTP connections and the WebSocket connection
@@ -281,7 +334,7 @@ func (t *Tunnel) attemptDualConnections(serverAddr string, tlsConfig *tls.Config
 	// Start handler for WebSocket connection
 	go t.handleWebSocketConnection(wsConn)
 
-	t.logger.Info("[DUAL TUNNEL DEBUG] All tunnel handlers started (%d HTTP + 1 WebSocket)", len(httpConnections))
+	t.logger.Info("All legacy TCP tunnel handlers started (%d HTTP + 1 WebSocket)", len(httpConnections))
 	return nil
 }
 
@@ -780,8 +833,21 @@ func (t *Tunnel) Disconnect() error {
 		close(t.stopChan)
 	}
 
-	// Close both connections if they exist
+	// Close gRPC client if enabled
 	var err error
+	if t.grpcEnabled && t.grpcClient != nil {
+		t.logger.Info("Closing gRPC tunnel client...")
+		if grpcErr := t.grpcClient.Stop(); grpcErr != nil {
+			t.logger.Error("Error closing gRPC client: %v", grpcErr)
+			err = grpcErr
+		} else {
+			t.logger.Info("✅ gRPC tunnel client closed successfully")
+		}
+		t.grpcClient = nil
+		t.grpcEnabled = false
+	}
+
+	// Close both TCP connections if they exist
 	if t.conn != nil {
 		// Set a deadline for graceful shutdown
 		t.conn.SetDeadline(time.Now().Add(5 * time.Second))
@@ -790,7 +856,10 @@ func (t *Tunnel) Disconnect() error {
 		// as they interfere with HTTP traffic
 
 		// Close the HTTP connection
-		err = t.conn.Close()
+		tcpErr := t.conn.Close()
+		if err == nil {
+			err = tcpErr
+		}
 		t.conn = nil
 	}
 
@@ -823,7 +892,7 @@ func (t *Tunnel) Disconnect() error {
 	}
 
 	t.setState(StateDisconnected)
-	t.logger.Info("Tunnel disconnected")
+	t.logger.Info("Tunnel disconnected (hybrid mode: gRPC + TCP)")
 	return err
 }
 
@@ -845,10 +914,23 @@ func (t *Tunnel) GetStats() map[string]interface{} {
 		"last_ping":    t.lastPing,
 		"media_optimization": t.streamConfig.EnableMediaOptimization,
 		"media_buffer_size":  t.streamConfig.MediaBufferSize,
+		"grpc_enabled": t.grpcEnabled,
+		"tunnel_mode":  "hybrid", // New production-grade hybrid mode
 	}
 
 	if t.lastError != nil {
 		stats["last_error"] = t.lastError.Error()
+	}
+
+	// Add gRPC client metrics if available
+	if t.grpcEnabled && t.grpcClient != nil {
+		grpcMetrics := t.grpcClient.GetMetrics()
+		stats["grpc_metrics"] = grpcMetrics
+		stats["grpc_connected"] = grpcMetrics["connected"]
+		stats["grpc_requests"] = grpcMetrics["total_requests"]
+		stats["grpc_responses"] = grpcMetrics["total_responses"]
+		stats["grpc_errors"] = grpcMetrics["total_errors"]
+		stats["grpc_reconnects"] = grpcMetrics["reconnect_count"]
 	}
 
 	return stats
