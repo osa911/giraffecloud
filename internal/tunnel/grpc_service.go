@@ -125,8 +125,8 @@ func DefaultGRPCTunnelConfig() *GRPCTunnelConfig {
 		MaxRequestSize:        16 * 1024 * 1024, // 16MB - small files only
 		MaxResponseSize:       16 * 1024 * 1024, // 16MB - small files only
 		RequireAuthentication: true,
-		RateLimitRPM:          1000, // 1000 requests per minute per tunnel
-		RateLimitBurst:        100,
+		RateLimitRPM:          5000, // 5000 requests per minute per tunnel
+		RateLimitBurst:        500,  // 500 requests per minute per tunnel
 	}
 }
 
