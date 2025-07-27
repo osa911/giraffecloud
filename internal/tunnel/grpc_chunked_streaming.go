@@ -344,6 +344,21 @@ func (s *GRPCTunnelServer) handleLargeFileWithChunking(domain string, httpReq *h
 func (s *GRPCTunnelServer) collectChunkedResponse(tunnelStream *TunnelStream, req *proto.LargeFileRequest) (*http.Response, error) {
 	s.logger.Debug("[CHUNKED] 📦 Starting MEMORY-EFFICIENT chunk collection for request: %s", req.RequestId)
 
+		// Create response channel and register it in pendingRequests (CRITICAL!)
+	responseChan := make(chan *proto.TunnelMessage, 100) // Buffer for chunks
+
+	tunnelStream.requestsMux.Lock()
+	tunnelStream.pendingRequests[req.RequestId] = responseChan
+	tunnelStream.requestsMux.Unlock()
+
+	// Ensure cleanup on exit
+	defer func() {
+		tunnelStream.requestsMux.Lock()
+		delete(tunnelStream.pendingRequests, req.RequestId)
+		close(responseChan)
+		tunnelStream.requestsMux.Unlock()
+	}()
+
 	// Send the large file HTTP request to the client (marked as large file)
 	requestMsg := &proto.TunnelMessage{
 		RequestId: req.RequestId,
@@ -357,7 +372,7 @@ func (s *GRPCTunnelServer) collectChunkedResponse(tunnelStream *TunnelStream, re
 		return nil, fmt.Errorf("failed to send large file request: %w", err)
 	}
 
-	s.logger.Debug("[CHUNKED] ✅ Large file request sent, waiting for chunked response...")
+	s.logger.Debug("[CHUNKED] ✅ Large file request sent, registered in pendingRequests, waiting for chunked response...")
 
 	// Create a streaming pipe for memory-efficient processing
 	pipeReader, pipeWriter := io.Pipe()
@@ -373,7 +388,7 @@ func (s *GRPCTunnelServer) collectChunkedResponse(tunnelStream *TunnelStream, re
 		var firstChunk *proto.HTTPResponse
 		chunkCount := 0
 
-		// Set timeout for chunk collection
+				// Set timeout for chunk collection
 		timeout := time.After(120 * time.Second) // 2 minutes for large files
 
 		for {
@@ -382,20 +397,13 @@ func (s *GRPCTunnelServer) collectChunkedResponse(tunnelStream *TunnelStream, re
 				errorCh <- fmt.Errorf("timeout waiting for chunked response after 2 minutes")
 				return
 
-			default:
-				// Wait for chunks from client
-				response, err := tunnelStream.Stream.Recv()
-				if err != nil {
-					errorCh <- fmt.Errorf("failed to receive chunk: %w", err)
+			case response, ok := <-responseChan:
+				if !ok {
+					errorCh <- fmt.Errorf("response channel closed unexpectedly")
 					return
 				}
 
-				// Check if this is our response
-				if response.RequestId != req.RequestId {
-					s.logger.Warn("[CHUNKED] Received response for different request ID: %s (expected: %s)",
-						response.RequestId, req.RequestId)
-					continue
-				}
+				s.logger.Debug("[CHUNKED] 📥 Received response from pendingRequests channel: %s", response.RequestId)
 
 				// Handle different message types
 				switch msgType := response.MessageType.(type) {
