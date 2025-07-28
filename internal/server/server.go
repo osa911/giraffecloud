@@ -27,11 +27,11 @@ import (
 // serverManager handles the lifecycle of HTTP and tunnel servers
 type serverManager struct {
 	httpServer   *http.Server
-	tunnelServer *tunnel.TunnelServer
+	tunnelRouter *tunnel.HybridTunnelRouter // Changed from TunnelServer to HybridTunnelRouter
 }
 
 // newServerManager creates a new server manager
-func newServerManager(router *gin.Engine, tunnelSrv *tunnel.TunnelServer, port string) *serverManager {
+func newServerManager(router *gin.Engine, tunnelRouter *tunnel.HybridTunnelRouter, port string) *serverManager {
 	// Configure http.Server with environment-specific settings
 	httpServer := &http.Server{
 		Addr:    ":" + port,
@@ -56,7 +56,7 @@ func newServerManager(router *gin.Engine, tunnelSrv *tunnel.TunnelServer, port s
 
 	return &serverManager{
 		httpServer:   httpServer,
-		tunnelServer: tunnelSrv,
+		tunnelRouter: tunnelRouter, // Changed from tunnelServer
 	}
 }
 
@@ -95,10 +95,10 @@ func (sm *serverManager) shutdown() error {
 		logger.Error("HTTP server shutdown error: %v", err)
 	}
 
-	// Shutdown tunnel server
-	if sm.tunnelServer != nil {
-		if err := sm.tunnelServer.Stop(); err != nil {
-			logger.Error("Tunnel server shutdown error: %v", err)
+	// Shutdown tunnel router
+	if sm.tunnelRouter != nil {
+		if err := sm.tunnelRouter.Stop(); err != nil {
+			logger.Error("Tunnel router shutdown error: %v", err)
 		}
 	}
 
@@ -201,19 +201,38 @@ func (s *Server) Init() error {
 	tunnelService := service.NewTunnelService(repos.Tunnel, caddyService)
 	logger.Info("Tunnel service initialized")
 
-	// Initialize tunnel server
-	logger.Info("Initializing tunnel server...")
-	s.tunnelServer = tunnel.NewServer(repos.Token, repos.Tunnel, tunnelService)
+	// Initialize Hybrid Tunnel Router (Production-Grade Architecture)
+	logger.Info("Initializing Hybrid Tunnel Router...")
 
-	tunnelPort := os.Getenv("TUNNEL_PORT")
-	if tunnelPort == "" {
-		tunnelPort = "4443"
+	// Create hybrid router configuration
+	routerConfig := tunnel.DefaultHybridRouterConfig()
+
+	// Override ports from environment variables
+	if grpcPort := os.Getenv("GRPC_TUNNEL_PORT"); grpcPort != "" {
+		routerConfig.GRPCAddress = ":" + grpcPort
+	} else {
+		routerConfig.GRPCAddress = ":4444" // Default gRPC port
 	}
-	if err := s.tunnelServer.Start(":" + tunnelPort); err != nil {
-		logger.Error("Failed to start tunnel server: %v", err)
-		return fmt.Errorf("failed to start tunnel server: %w", err)
+
+	if tcpPort := os.Getenv("TUNNEL_PORT"); tcpPort != "" {
+		routerConfig.TCPAddress = ":" + tcpPort
+	} else {
+		routerConfig.TCPAddress = ":4443" // Default TCP port
 	}
-	logger.Info("Tunnel server started on port %s", tunnelPort)
+
+	// Create the hybrid tunnel router
+	s.tunnelRouter = tunnel.NewHybridTunnelRouter(repos.Token, repos.Tunnel, tunnelService, routerConfig)
+
+	// Start the hybrid tunnel router
+	if err := s.tunnelRouter.Start(); err != nil {
+		logger.Error("Failed to start hybrid tunnel router: %v", err)
+		return fmt.Errorf("failed to start hybrid tunnel router: %w", err)
+	}
+
+	logger.Info("🚀 Hybrid Tunnel Router started successfully!")
+	logger.Info("  ✓ gRPC Tunnel (HTTP): %s", routerConfig.GRPCAddress)
+	logger.Info("  ✓ TCP Tunnel (WebSocket): %s", routerConfig.TCPAddress)
+	logger.Info("  ✓ Production-grade unlimited concurrency enabled")
 
 	// Initialize handlers
 	logger.Info("Initializing handlers...")
@@ -281,7 +300,8 @@ func (s *Server) Start(cfg *Config) error {
 	logger.Info("- HTTP Port: %s", cfg.Port)
 	logger.Info("- Environment: %s", os.Getenv("ENV"))
 	logger.Info("- Database URL: %s", os.Getenv("DATABASE_URL"))
-	logger.Info("- Tunnel Port: %s", os.Getenv("TUNNEL_PORT"))
+	logger.Info("- gRPC Tunnel Port: %s", os.Getenv("GRPC_TUNNEL_PORT"))
+	logger.Info("- TCP Tunnel Port: %s", os.Getenv("TUNNEL_PORT"))
 	if os.Getenv("ENV") == "production" {
 		logger.Info("- Caddy Config: %s", caddy.CaddyPaths.Config)
 	}
@@ -289,11 +309,10 @@ func (s *Server) Start(cfg *Config) error {
 	// Custom handler for tunnel domains only
 	httpHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		domain := r.Host
-		isTunnel := s.tunnelServer.IsTunnelDomain(domain)
+		isTunnel := s.tunnelRouter.IsTunnelDomain(domain)
 
 		if isTunnel {
-			// Check if this is a WebSocket upgrade request
-			isWebSocket := isWebSocketUpgrade(r)
+			// Use connection hijacking for all tunnel traffic
 			hj, ok := w.(http.Hijacker)
 			if !ok {
 				logger.Error("Failed to hijack: ResponseWriter doesn't support hijacking")
@@ -317,41 +336,39 @@ func (s *Server) Start(cfg *Config) error {
 				}
 			}
 
-			if isWebSocket {
-				// Handle WebSocket upgrade
-				s.tunnelServer.ProxyWebSocketConnection(domain, conn, r)
-			} else {
-				// Handle regular HTTP request
-				// Build the request string
-				var requestData strings.Builder
+			// Build the complete HTTP request string
+			var requestData strings.Builder
 
-				// Add request line
-				requestData.WriteString(fmt.Sprintf("%s %s HTTP/1.1\r\n", r.Method, r.URL.RequestURI()))
+			// Add request line
+			requestData.WriteString(fmt.Sprintf("%s %s HTTP/1.1\r\n", r.Method, r.URL.RequestURI()))
 
-				// Add Host header first
-				requestData.WriteString(fmt.Sprintf("Host: %s\r\n", r.Host))
+			// Add Host header first
+			requestData.WriteString(fmt.Sprintf("Host: %s\r\n", r.Host))
 
-				// Add Content-Length if body exists
-				if r.ContentLength > 0 {
-					requestData.WriteString(fmt.Sprintf("Content-Length: %d\r\n", r.ContentLength))
-				}
+			// Add Content-Length if body exists
+			if r.ContentLength > 0 {
+				requestData.WriteString(fmt.Sprintf("Content-Length: %d\r\n", r.ContentLength))
+			}
 
-				// Add remaining headers, skipping those we've already handled
-				for key, values := range r.Header {
-					if key != "Host" && key != "Content-Length" { // Skip headers we've already added
-						for _, value := range values {
-							requestData.WriteString(fmt.Sprintf("%s: %s\r\n", key, value))
-						}
+			// Add remaining headers, skipping those we've already handled
+			for key, values := range r.Header {
+				if key != "Host" && key != "Content-Length" { // Skip headers we've already added
+					for _, value := range values {
+						requestData.WriteString(fmt.Sprintf("%s: %s\r\n", key, value))
 					}
 				}
-
-				// Add empty line to separate headers from body
-				requestData.WriteString("\r\n")
-
-				// Get the request as bytes
-				requestBytes := []byte(requestData.String())
-				s.tunnelServer.ProxyConnection(domain, conn, requestBytes, r.Body)
 			}
+
+			// Add empty line to separate headers from body
+			requestData.WriteString("\r\n")
+
+			// Get the request as bytes
+			requestBytes := []byte(requestData.String())
+
+			// Let the HybridTunnelRouter intelligently route the traffic
+			// It will automatically detect WebSocket upgrades and route to TCP tunnel
+			// Regular HTTP requests will be routed to gRPC tunnel for unlimited concurrency
+			s.tunnelRouter.ProxyConnection(domain, conn, requestBytes, r.Body)
 		} else {
 			http.Error(w, "Not Found", http.StatusNotFound)
 		}
@@ -375,7 +392,7 @@ func (s *Server) Start(cfg *Config) error {
 	}()
 
 	// Create server manager for the main Gin HTTP API (if needed)
-	manager := newServerManager(s.router, s.tunnelServer, cfg.Port)
+	manager := newServerManager(s.router, s.tunnelRouter, cfg.Port)
 
 	// Start servers
 	return manager.start()

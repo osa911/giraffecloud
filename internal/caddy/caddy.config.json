@@ -31,6 +31,31 @@
               ]
             },
             {
+              "match": [
+                {
+                  "path": [
+                    "/.env*",
+                    "/config*",
+                    "/admin*",
+                    "/debug*",
+                    "/.git/*",
+                    "/swagger*",
+                    "/metrics*",
+                    "/.well-known/security.txt",
+                    "/server-status*",
+                    "/server-info*"
+                  ]
+                }
+              ],
+              "handle": [
+                {
+                  "handler": "static_response",
+                  "status_code": 404,
+                  "body": "Not Found"
+                }
+              ]
+            },
+            {
               "match": [{ "host": ["api.giraffecloud.xyz"] }],
               "handle": [
                 {
@@ -40,9 +65,18 @@
                       "Strict-Transport-Security": [
                         "max-age=31536000; includeSubDomains; preload"
                       ],
-                      "X-Content-Type-Options": ["nosniff"]
+                      "X-Content-Type-Options": ["nosniff"],
+                      "X-Frame-Options": ["DENY"],
+                      "X-XSS-Protection": ["1; mode=block"],
+                      "Content-Security-Policy": [
+                        "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src 'self'"
+                      ],
+                      "Referrer-Policy": ["strict-origin-when-cross-origin"],
+                      "Permissions-Policy": [
+                        "geolocation=(), microphone=(), camera=()"
+                      ]
                     },
-                    "delete": ["Server"]
+                    "delete": ["Server", "X-Powered-By"]
                   }
                 },
                 {

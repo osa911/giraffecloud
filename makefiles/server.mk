@@ -1,4 +1,5 @@
-.PHONY: dev dev-hot prod build test caddy-start caddy-stop caddy-reload
+.PHONY: dev dev-hot prod build build-client test caddy-start caddy-stop caddy-reload
+.PHONY: test-tunnel
 
 # Caddy commands
 caddy-start:
@@ -29,15 +30,20 @@ prod: validate-prod-env
 	@set -a && source $(PROD_ENV) && set +a && go run cmd/server/main.go
 
 # Build commands
-build:
-	@echo "Building application..."
-	@go build -o bin/giraffecloud cmd/server/main.go
+build: ## Build application with hybrid tunnel support
+	@echo "Building application with hybrid tunnel support..."
+	@go build -o bin/giraffecloud ./cmd/server/
 
-build-client:
-	@echo "Building CLI client..."
+build-client: ## Build CLI client with hybrid tunnel support
+	@echo "Building CLI client with hybrid tunnel support..."
+	@echo "Building multi-platform CLI releases..."
 	@./scripts/build-cli.sh
 
 # Test commands
 test:
 	@echo "Running tests..."
 	@go test ./...
+
+test-tunnel: ## Test tunnel functionality
+	@echo "Testing hybrid tunnel connections..."
+	@go test -v ./internal/tunnel/... -run TestHybrid

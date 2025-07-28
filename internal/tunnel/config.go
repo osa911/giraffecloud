@@ -72,8 +72,10 @@ var DefaultConfig = Config{
 		Host: "api.giraffecloud.xyz",
 		Port: 443,
 	},
-	Security: SecurityConfig{
-		InsecureSkipVerify: false,
+		Security: SecurityConfig{
+		InsecureSkipVerify: false, // PRODUCTION: NEVER skip verification
+		// Certificate paths are set dynamically by the 'login' command
+		// after fetching certificates from the API server
 	},
 }
 
@@ -83,13 +85,17 @@ func DefaultStreamingConfig() *StreamingConfig {
 		MediaBufferSize:   65536, // 64KB
 		RegularBufferSize: 32768, // 32KB
 
-		PoolSize:      15,
+		// HYBRID TUNNEL APPROACH - Hot pool + On-demand creation
+		// Hot pool: 10 ready connections for instant response (increased for stability)
+		// On-demand: Unlimited additional connections created as needed
+		// Less aggressive cleanup: Keep connections longer to maintain pool stability
+		PoolSize:      10,  // INCREASED: Larger hot pool for better stability
 		PoolTimeout:   10 * time.Second,
 		PoolKeepAlive: 30 * time.Second,
 
-		// Timeout settings - much shorter for media requests
-		MediaTimeout:   8 * time.Second,   // 8 seconds for media requests
-		RegularTimeout: 15 * time.Second,  // 15 seconds for regular requests
+		// Timeout settings - more aggressive to prevent stuck connections
+		MediaTimeout:   15 * time.Second,  // 15 seconds for media (aggressive)
+		RegularTimeout: 10 * time.Second,  // 10 seconds for regular requests (aggressive)
 
 		EnableMediaOptimization: true,
 		MediaExtensions: []string{

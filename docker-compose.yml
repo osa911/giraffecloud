@@ -43,6 +43,7 @@ services:
     ports:
       - "${API_PORT:-8080}:8080"
       - "${TUNNEL_PORT:-4443}:4443"
+      - "${GRPC_TUNNEL_PORT:-4444}:4444"
       - "8081:8081"
     depends_on:
       - postgres
@@ -69,8 +70,8 @@ services:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: ${DB_NAME}
-    ports:
-      - "${DB_PORT:-5432}:5432"
+    # ports:
+    # - "${DB_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./logs/postgres:/var/log/postgresql

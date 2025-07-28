@@ -1,0 +1,232 @@
+syntax = "proto3";
+
+package tunnel;
+
+option go_package = "giraffecloud/internal/tunnel/proto";
+
+// TunnelService provides high-performance tunneling with unlimited concurrency
+service TunnelService {
+    // EstablishTunnel creates a bidirectional streaming tunnel for regular HTTP traffic
+    rpc EstablishTunnel(stream TunnelMessage) returns (stream TunnelMessage);
+
+    // StreamLargeFile handles large file streaming with chunked transfer for memory efficiency
+    rpc StreamLargeFile(LargeFileRequest) returns (stream LargeFileChunk);
+
+    // HealthCheck provides tunnel health monitoring
+    rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}
+
+// TunnelMessage represents bidirectional communication over the tunnel
+message TunnelMessage {
+    oneof message_type {
+        TunnelHandshake handshake = 1;
+        HTTPRequest http_request = 2;
+        HTTPResponse http_response = 3;
+        TunnelControl control = 4;
+        ErrorMessage error = 5;
+        TunnelStatus status = 6;
+    }
+
+    string request_id = 10;
+    int64 timestamp = 11;
+}
+
+// TunnelHandshake initiates the tunnel connection
+message TunnelHandshake {
+    string token = 1;
+    string domain = 2;
+    int32 target_port = 3;
+    string client_version = 4;
+    TunnelCapabilities capabilities = 5;
+}
+
+// TunnelCapabilities describes client/server capabilities
+message TunnelCapabilities {
+    bool supports_chunked_streaming = 1;
+    bool supports_compression = 2;
+    int64 max_chunk_size = 3;
+    repeated string supported_encodings = 4;
+}
+
+// HTTPRequest represents an HTTP request to be forwarded
+message HTTPRequest {
+    string method = 1;
+    string path = 2;
+    string query = 3;
+    map<string, string> headers = 4;
+    bytes body = 5;
+    string remote_addr = 6;
+    bool is_large_file = 7;  // Indicates if this should use chunked streaming
+    int64 expected_size = 8; // Expected response size for optimization
+    string client_ip = 9;    // Client IP address
+    RequestMetadata metadata = 10; // Request metadata
+}
+
+// HTTPResponse represents an HTTP response from the local service
+message HTTPResponse {
+    int32 status_code = 1;
+    string status_text = 2;
+    map<string, string> headers = 3;
+    bytes body = 4;
+    bool is_chunked = 5;     // Indicates if response is chunked
+    string chunk_id = 6;     // For chunked responses
+    ResponseMetadata metadata = 7; // Response metadata
+}
+
+// Large file streaming messages for memory-efficient transfers
+message LargeFileRequest {
+    string request_id = 1;
+    HTTPRequest http_request = 2;
+    int32 chunk_size = 3;    // Preferred chunk size (default: 1MB)
+    bool enable_compression = 4;
+}
+
+message LargeFileChunk {
+    string request_id = 1;
+    int32 chunk_number = 2;
+    bytes data = 3;
+    bool is_final = 4;
+    int64 total_size = 5;    // Total file size if known
+    string content_type = 6;
+    map<string, string> headers = 7; // HTTP headers (sent with first chunk)
+    int32 status_code = 8;   // HTTP status (sent with first chunk)
+    string error_message = 9; // Error if chunk failed
+}
+
+// TunnelControl handles tunnel lifecycle management
+message TunnelControl {
+    oneof control_type {
+        TunnelHandshake handshake = 1;
+        TunnelStatus status = 2;
+        TunnelConfig config = 3;
+        TunnelMetrics metrics = 4;
+    }
+
+    string message = 10;
+    int64 timestamp = 11;
+}
+
+// TunnelConfig for configuration updates
+message TunnelConfig {
+    int32 max_concurrent = 1;
+    int32 timeout_seconds = 2;
+    bool enable_compression = 3;
+}
+
+// ErrorMessage provides structured error information
+message ErrorMessage {
+    enum ErrorType {
+        UNKNOWN = 0;
+        AUTHENTICATION_FAILED = 1;
+        TUNNEL_NOT_FOUND = 2;
+        SERVICE_UNAVAILABLE = 3;
+        REQUEST_TIMEOUT = 4;
+        RATE_LIMITED = 5;
+        CHUNK_ERROR = 6;
+        STREAMING_ERROR = 7;
+    }
+
+    ErrorType type = 1;
+    string message = 2;
+    string details = 3;
+    int32 code = 4;
+    bool retryable = 5;      // Whether the error is retryable
+}
+
+// TunnelStatus provides tunnel state information
+message TunnelStatus {
+    TunnelState state = 1;
+    string domain = 2;
+    int32 target_port = 3;
+    int64 connected_at = 4;
+    int32 active_connections = 5;
+    int64 last_activity = 6;
+    string error_message = 7;
+}
+
+// TunnelState enum
+enum TunnelState {
+    TUNNEL_STATE_UNKNOWN = 0;
+    TUNNEL_STATE_CONNECTING = 1;
+    TUNNEL_STATE_CONNECTED = 2;
+    TUNNEL_STATE_AUTHENTICATING = 3;
+    TUNNEL_STATE_ACTIVE = 4;
+    TUNNEL_STATE_DISCONNECTING = 5;
+    TUNNEL_STATE_DISCONNECTED = 6;
+    TUNNEL_STATE_ERROR = 7;
+}
+
+// TunnelMetrics provides performance metrics
+message TunnelMetrics {
+    int64 total_requests = 1;
+    int64 total_responses = 2;
+    int64 total_bytes_sent = 3;
+    int64 total_bytes_received = 4;
+    int64 active_streams = 5;
+    int64 chunked_transfers = 6;
+    double average_response_time = 7;
+    int64 errors_count = 8;
+}
+
+// Health check messages
+message HealthCheckRequest {
+    string service = 1;
+}
+
+message HealthCheckResponse {
+    HealthStatus status = 1;
+    string message = 2;
+    TunnelMetrics metrics = 3;
+    map<string, string> details = 4; // Additional health details
+}
+
+// Health status enum
+enum HealthStatus {
+    HEALTH_STATUS_UNKNOWN = 0;
+    HEALTH_STATUS_SERVING = 1;
+    HEALTH_STATUS_NOT_SERVING = 2;
+    HEALTH_STATUS_SERVICE_UNKNOWN = 3;
+}
+
+// Request metadata for tracking and optimization
+message RequestMetadata {
+    RequestType type = 1;
+    Priority priority = 2;
+    int64 timeout_ms = 3;
+    string trace_id = 4;
+}
+
+// Response metadata for performance tracking
+message ResponseMetadata {
+    int64 processing_time_ms = 1;
+    int64 response_size = 2;
+    CacheStatus cache_status = 3;
+    string server_id = 4;
+}
+
+// Request type classification
+enum RequestType {
+    REQUEST_TYPE_UNKNOWN = 0;
+    REQUEST_TYPE_API = 1;
+    REQUEST_TYPE_MEDIA = 2;
+    REQUEST_TYPE_STATIC = 3;
+    REQUEST_TYPE_LARGE_FILE = 4;
+}
+
+// Request priority for QoS
+enum Priority {
+    PRIORITY_UNKNOWN = 0;
+    PRIORITY_LOW = 1;
+    PRIORITY_NORMAL = 2;
+    PRIORITY_HIGH = 3;
+    PRIORITY_CRITICAL = 4;
+}
+
+// Cache status for optimization
+enum CacheStatus {
+    CACHE_STATUS_UNKNOWN = 0;
+    CACHE_STATUS_HIT = 1;
+    CACHE_STATUS_MISS = 2;
+    CACHE_STATUS_STALE = 3;
+    CACHE_STATUS_BYPASS = 4;
+}
