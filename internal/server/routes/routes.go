@@ -18,6 +18,9 @@ func Setup(router *gin.Engine, h *Handlers, m *Middleware) {
 	// Health check endpoint
 	SetupHealthRoutes(router, h.Health)
 
+	// Webhook routes
+	SetupWebhookRoutes(router, h.Webhook)
+
 	// Auth routes
 	SetupAuthRoutes(v1, h.Auth, m)
 

@@ -1,24 +1,32 @@
 package routes
 
 import (
-	"giraffecloud/internal/api/handlers"
 	"giraffecloud/internal/api/middleware"
 
 	"github.com/gin-gonic/gin"
 )
 
-// SetupTunnelRoutes configures tunnel management routes
-func SetupTunnelRoutes(rg *gin.RouterGroup, tunnel *handlers.TunnelHandler, cert *handlers.TunnelCertificateHandler) {
-	tunnels := rg.Group("/tunnels")
+// SetupTunnelRoutes configures all tunnel routes (both public and protected)
+func SetupTunnelRoutes(v1Group *gin.RouterGroup, m *Middleware, h *Handlers) {
+	// Create the tunnel group once
+	tunnels := v1Group.Group("/tunnels")
+
+	// Public endpoints (no authentication required)
+	tunnels.GET("/version", h.Tunnel.GetVersion)
+
+	// Protected endpoints - create a sub-group with auth middleware
+	protected := tunnels.Group("")
+	protected.Use(m.Auth.RequireAuth())
+	protected.Use(middleware.CSRFMiddleware(m.CSRF))
 	{
 		// Rate limit: 1 request per second, burst 2
 		certRateLimit := middleware.RateLimitMiddleware(middleware.RateLimitConfig{RPS: 1, Burst: 2})
-		tunnels.GET("/certificates", certRateLimit, cert.IssueClientCertificate)
+		protected.GET("/certificates", certRateLimit, h.TunnelCertificate.IssueClientCertificate)
 
-		tunnels.POST("", tunnel.CreateTunnel)
-		tunnels.GET("", tunnel.ListTunnels)
-		tunnels.GET("/:id", tunnel.GetTunnel)
-		tunnels.PUT("/:id", tunnel.UpdateTunnel)
-		tunnels.DELETE("/:id", tunnel.DeleteTunnel)
+		protected.POST("", h.Tunnel.CreateTunnel)
+		protected.GET("", h.Tunnel.ListTunnels)
+		protected.GET("/:id", h.Tunnel.GetTunnel)
+		protected.PUT("/:id", h.Tunnel.UpdateTunnel)
+		protected.DELETE("/:id", h.Tunnel.DeleteTunnel)
 	}
 }

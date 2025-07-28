@@ -15,6 +15,7 @@ type Handlers struct {
 	Token   *handlers.TokenHandler
 	Tunnel  *handlers.TunnelHandler
 	TunnelCertificate *handlers.TunnelCertificateHandler
+	Webhook *handlers.WebhookHandler
 }
 
 // Middleware contains all the middleware

@@ -237,12 +237,13 @@ func (s *Server) Init() error {
 	// Initialize handlers
 	logger.Info("Initializing handlers...")
 	handlers := &routes.Handlers{
-		Auth:    handlers.NewAuthHandler(repos.Auth, repos.Session, csrfService, auditService),
-		User:    handlers.NewUserHandler(repos.User),
-		Health:  handlers.NewHealthHandler(s.db.DB),
-		Session: handlers.NewSessionHandler(repos.Session),
-		Token:   handlers.NewTokenHandler(tokenService),
-		Tunnel:  handlers.NewTunnelHandler(tunnelService),
+		Auth:              handlers.NewAuthHandler(repos.Auth, repos.Session, csrfService, auditService),
+		User:              handlers.NewUserHandler(repos.User),
+		Health:            handlers.NewHealthHandler(s.db.DB),
+		Session:           handlers.NewSessionHandler(repos.Session),
+		Token:             handlers.NewTokenHandler(tokenService),
+		Tunnel:            handlers.NewTunnelHandler(tunnelService),
+		Webhook:           handlers.NewWebhookHandler(),
 	}
 	logger.Info("Handlers initialized")
 
