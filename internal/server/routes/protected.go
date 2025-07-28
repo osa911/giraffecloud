@@ -15,5 +15,5 @@ func SetupProtectedRoutes(router *gin.RouterGroup, h *Handlers, m *Middleware) {
 	SetupUserRoutes(protected, h.User, m.Validation)
 	SetupSessionRoutes(protected, h.Session)
 	SetupTokenRoutes(protected, h.Token)
-	SetupTunnelRoutes(protected, h.Tunnel, h.TunnelCertificate)
+	SetupTunnelRoutes(protected, m, h)
 }
