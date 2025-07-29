@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"time"
 )
 
 type ServiceManager struct {
@@ -307,6 +308,48 @@ func (sm *ServiceManager) GetLogs() (string, error) {
 	}
 }
 
+// Restart restarts the service
+func (sm *ServiceManager) Restart() error {
+	switch runtime.GOOS {
+	case "darwin":
+		return sm.restartDarwin()
+	case "linux":
+		return sm.restartLinux()
+	case "windows":
+		return sm.restartWindows()
+	default:
+		return fmt.Errorf("unsupported operating system: %s", runtime.GOOS)
+	}
+}
+
+// Stop stops the service
+func (sm *ServiceManager) Stop() error {
+	switch runtime.GOOS {
+	case "darwin":
+		return sm.stopDarwin()
+	case "linux":
+		return sm.stopLinux()
+	case "windows":
+		return sm.stopWindows()
+	default:
+		return fmt.Errorf("unsupported operating system: %s", runtime.GOOS)
+	}
+}
+
+// Start starts the service
+func (sm *ServiceManager) Start() error {
+	switch runtime.GOOS {
+	case "darwin":
+		return sm.startDarwin()
+	case "linux":
+		return sm.startLinux()
+	case "windows":
+		return sm.startWindows()
+	default:
+		return fmt.Errorf("unsupported operating system: %s", runtime.GOOS)
+	}
+}
+
 // Darwin-specific implementations
 func (sm *ServiceManager) isInstalledDarwin() (bool, error) {
 	homeDir, err := os.UserHomeDir()
@@ -387,4 +430,101 @@ func (sm *ServiceManager) getLogsWindows() (string, error) {
 		return "", fmt.Errorf("failed to read Windows event logs: %w", err)
 	}
 	return string(output), nil
+}
+
+// Darwin service control methods
+func (sm *ServiceManager) restartDarwin() error {
+	// Stop then start
+	_ = sm.stopDarwin() // Ignore error if not running
+	return sm.startDarwin()
+}
+
+func (sm *ServiceManager) stopDarwin() error {
+	cmd := exec.Command("launchctl", "unload", "-w", filepath.Join(os.Getenv("HOME"), "Library/LaunchAgents/com.giraffecloud.tunnel.plist"))
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to stop Darwin service: %w", err)
+	}
+	sm.logger.Info("Service stopped successfully")
+	return nil
+}
+
+func (sm *ServiceManager) startDarwin() error {
+	cmd := exec.Command("launchctl", "load", "-w", filepath.Join(os.Getenv("HOME"), "Library/LaunchAgents/com.giraffecloud.tunnel.plist"))
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to start Darwin service: %w", err)
+	}
+	sm.logger.Info("Service started successfully")
+	return nil
+}
+
+// Linux service control methods
+func (sm *ServiceManager) restartLinux() error {
+	cmd := exec.Command("sudo", "systemctl", "restart", "giraffecloud")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to restart Linux service: %w", err)
+	}
+	sm.logger.Info("Service restarted successfully")
+	return nil
+}
+
+func (sm *ServiceManager) stopLinux() error {
+	cmd := exec.Command("sudo", "systemctl", "stop", "giraffecloud")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to stop Linux service: %w", err)
+	}
+	sm.logger.Info("Service stopped successfully")
+	return nil
+}
+
+func (sm *ServiceManager) startLinux() error {
+	cmd := exec.Command("sudo", "systemctl", "start", "giraffecloud")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to start Linux service: %w", err)
+	}
+	sm.logger.Info("Service started successfully")
+	return nil
+}
+
+// Windows service control methods
+func (sm *ServiceManager) restartWindows() error {
+	serviceName := "GiraffeCloudTunnel"
+
+	// Stop the service
+	cmd := exec.Command("sc", "stop", serviceName)
+	if err := cmd.Run(); err != nil {
+		// Don't fail if service is already stopped
+		sm.logger.Info("Service may already be stopped")
+	}
+
+	// Wait a moment for the service to stop
+	time.Sleep(2 * time.Second)
+
+	// Start the service
+	cmd = exec.Command("sc", "start", serviceName)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to start Windows service: %w", err)
+	}
+
+	sm.logger.Info("Service restarted successfully")
+	return nil
+}
+
+func (sm *ServiceManager) stopWindows() error {
+	serviceName := "GiraffeCloudTunnel"
+	cmd := exec.Command("sc", "stop", serviceName)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to stop Windows service: %w", err)
+	}
+	sm.logger.Info("Service stopped successfully")
+	return nil
+}
+
+func (sm *ServiceManager) startWindows() error {
+	serviceName := "GiraffeCloudTunnel"
+	cmd := exec.Command("sc", "start", serviceName)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to start Windows service: %w", err)
+	}
+	sm.logger.Info("Service started successfully")
+	return nil
 }

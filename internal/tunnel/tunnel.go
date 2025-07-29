@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"giraffecloud/internal/logging"
@@ -11,6 +12,8 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -113,6 +116,24 @@ type Tunnel struct {
 	// PRODUCTION-GRADE: gRPC Tunnel Client for unlimited HTTP concurrency
 	grpcClient   *GRPCTunnelClient
 	grpcEnabled  bool
+}
+
+// TunnelState represents preserved tunnel state for connection restoration
+type TunnelState struct {
+	Token       string            `json:"token"`
+	Domain      string            `json:"domain"`
+	LocalPort   int               `json:"local_port"`
+	ServerAddr  string            `json:"server_addr"`
+	TLSConfig   *tls.Config       `json:"-"` // Can't serialize, will need to recreate
+	State       ConnectionState   `json:"state"`
+	Timestamp   time.Time         `json:"timestamp"`
+
+	// Connection details
+	GRPCEnabled bool              `json:"grpc_enabled"`
+
+	// Configuration
+	RetryConfig *RetryConfig      `json:"retry_config"`
+	StreamConfig *StreamingConfig `json:"stream_config"`
 }
 
 // NewTunnel creates a new tunnel instance with enhanced features
@@ -846,7 +867,12 @@ func (t *Tunnel) coordinatedReconnectWithContext(isIntentional bool) {
 
 	// Start reconnection process
 	go func() {
-		serverAddr := fmt.Sprintf("%s:%d", "tunnel.giraffecloud.xyz", 4443) // TODO: make configurable
+		// Load configuration for server address
+		cfg, err := LoadConfig()
+		if err != nil {
+			cfg = &DefaultConfig // fallback to default
+		}
+		serverAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 		t.connectWithRetry(serverAddr, nil)
 	}()
 }
@@ -1084,4 +1110,193 @@ func isExpectedConnectionClose(err error) bool {
 	}
 
 	return false
+}
+
+// ConnectionStateProvider interface implementation
+
+// GetConnectionCount returns the number of active connections
+func (t *Tunnel) GetConnectionCount() int {
+	count := 0
+
+	// Count gRPC connection
+	if t.grpcEnabled && t.grpcClient != nil {
+		count++
+	}
+
+	// Count WebSocket connection
+	if t.wsConn != nil {
+		count++
+	}
+
+	// Count HTTP connections
+	count += len(t.httpConnections)
+
+	return count
+}
+
+// PreserveState captures the current tunnel state for restoration after update
+func (t *Tunnel) PreserveState() (interface{}, error) {
+	t.stateMutex.RLock()
+	defer t.stateMutex.RUnlock()
+
+	if t.state != StateConnected {
+		return nil, fmt.Errorf("tunnel is not connected, cannot preserve state")
+	}
+
+	state := &TunnelState{
+		Token:        t.token,
+		Domain:       t.domain,
+		LocalPort:    t.localPort,
+		State:        t.state,
+		Timestamp:    time.Now(),
+		GRPCEnabled:  t.grpcEnabled,
+		RetryConfig:  t.retryConfig,
+		StreamConfig: t.streamConfig,
+	}
+
+	t.logger.Info("Preserved tunnel state for domain: %s, local port: %d", state.Domain, state.LocalPort)
+	return state, nil
+}
+
+// RestoreState attempts to restore tunnel connection from preserved state
+func (t *Tunnel) RestoreState(stateInterface interface{}) error {
+	state, ok := stateInterface.(*TunnelState)
+	if !ok {
+		return fmt.Errorf("invalid state type for restoration")
+	}
+
+	t.logger.Info("Attempting to restore tunnel state for domain: %s", state.Domain)
+
+	// Check if state is too old (more than 5 minutes)
+	if time.Since(state.Timestamp) > 5*time.Minute {
+		return fmt.Errorf("preserved state is too old (%v), cannot restore", time.Since(state.Timestamp))
+	}
+
+	// Stop current connections if any
+	if t.IsConnected() {
+		t.logger.Info("Stopping existing connections before restoration")
+		t.Disconnect()
+	}
+
+	// Restore tunnel configuration
+	t.token = state.Token
+	t.domain = state.Domain
+	t.localPort = state.LocalPort
+	t.grpcEnabled = state.GRPCEnabled
+	t.retryConfig = state.RetryConfig
+	t.streamConfig = state.StreamConfig
+
+	// Load current config to get server details and TLS config
+	cfg, err := LoadConfig()
+	if err != nil {
+		return fmt.Errorf("failed to load config for restoration: %w", err)
+	}
+
+	// Create new context for restored connection
+	t.ctx, t.cancel = context.WithCancel(context.Background())
+
+	// Reconstruct TLS config (since it's not serializable)
+	tlsConfig := &tls.Config{
+		InsecureSkipVerify: cfg.Security.InsecureSkipVerify,
+	}
+
+	// Load certificates if available
+	if cfg.Security.CACert != "" {
+		if caCert, err := os.ReadFile(cfg.Security.CACert); err == nil {
+			caCertPool := x509.NewCertPool()
+			if caCertPool.AppendCertsFromPEM(caCert) {
+				tlsConfig.RootCAs = caCertPool
+			}
+		}
+	}
+
+	if cfg.Security.ClientCert != "" && cfg.Security.ClientKey != "" {
+		if cert, err := tls.LoadX509KeyPair(cfg.Security.ClientCert, cfg.Security.ClientKey); err == nil {
+			tlsConfig.Certificates = []tls.Certificate{cert}
+		}
+	}
+
+	// Attempt to reconnect
+	serverAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
+
+	t.logger.Info("Reconnecting tunnel with preserved state...")
+	err = t.Connect(t.ctx, serverAddr, t.token, t.domain, t.localPort, tlsConfig)
+	if err != nil {
+		return fmt.Errorf("failed to restore tunnel connection: %w", err)
+	}
+
+	t.logger.Info("Successfully restored tunnel connection")
+	return nil
+}
+
+// SaveStateToFile saves tunnel state to a file for persistence across restarts
+func (t *Tunnel) SaveStateToFile() error {
+	state, err := t.PreserveState()
+	if err != nil {
+		return err
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	stateDir := filepath.Join(homeDir, ".giraffecloud")
+	if err := os.MkdirAll(stateDir, 0700); err != nil {
+		return fmt.Errorf("failed to create state directory: %w", err)
+	}
+
+	stateFile := filepath.Join(stateDir, "tunnel_state.json")
+	data, err := json.Marshal(state)
+	if err != nil {
+		return fmt.Errorf("failed to marshal state: %w", err)
+	}
+
+	if err := os.WriteFile(stateFile, data, 0600); err != nil {
+		return fmt.Errorf("failed to write state file: %w", err)
+	}
+
+	t.logger.Info("Saved tunnel state to file: %s", stateFile)
+	return nil
+}
+
+// LoadStateFromFile loads tunnel state from a file
+func (t *Tunnel) LoadStateFromFile() (interface{}, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	stateFile := filepath.Join(homeDir, ".giraffecloud", "tunnel_state.json")
+	data, err := os.ReadFile(stateFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("no saved state found")
+		}
+		return nil, fmt.Errorf("failed to read state file: %w", err)
+	}
+
+	var state TunnelState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal state: %w", err)
+	}
+
+	t.logger.Info("Loaded tunnel state from file: %s", stateFile)
+	return &state, nil
+}
+
+// ClearStateFile removes the saved state file
+func (t *Tunnel) ClearStateFile() error {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	stateFile := filepath.Join(homeDir, ".giraffecloud", "tunnel_state.json")
+	if err := os.Remove(stateFile); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to remove state file: %w", err)
+	}
+
+	t.logger.Debug("Cleared tunnel state file")
+	return nil
 }

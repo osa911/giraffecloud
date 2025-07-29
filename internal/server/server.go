@@ -159,7 +159,13 @@ func (s *Server) Init() error {
 	logger.Info("Initializing core services...")
 	auditService := service.NewAuditService()
 	csrfService := service.NewCSRFService()
+	versionService := service.NewVersionService(s.db.DB)
 	logger.Info("Core services initialized")
+
+	// Initialize default version configurations
+	if err := versionService.InitializeDefaultConfigs(context.Background()); err != nil {
+		logger.Warn("Failed to initialize default version configs: %v", err)
+	}
 
 	// Initialize connection manager
 	logger.Info("Initializing connection manager...")
@@ -237,13 +243,15 @@ func (s *Server) Init() error {
 	// Initialize handlers
 	logger.Info("Initializing handlers...")
 	handlers := &routes.Handlers{
-		Auth:              handlers.NewAuthHandler(repos.Auth, repos.Session, csrfService, auditService),
-		User:              handlers.NewUserHandler(repos.User),
-		Health:            handlers.NewHealthHandler(s.db.DB),
-		Session:           handlers.NewSessionHandler(repos.Session),
-		Token:             handlers.NewTokenHandler(tokenService),
-		Tunnel:            handlers.NewTunnelHandler(tunnelService),
-		Webhook:           handlers.NewWebhookHandler(),
+		Auth:    handlers.NewAuthHandler(repos.Auth, repos.Session, csrfService, auditService),
+		User:    handlers.NewUserHandler(repos.User),
+		Health:  handlers.NewHealthHandler(s.db.DB),
+		Session: handlers.NewSessionHandler(repos.Session),
+		Token:   handlers.NewTokenHandler(tokenService),
+		Tunnel:  handlers.NewTunnelHandler(tunnelService, versionService),
+		TunnelCertificate: handlers.NewTunnelCertificateHandler(),
+		Webhook: handlers.NewWebhookHandler(),
+		Admin:   handlers.NewAdminHandler(versionService),
 	}
 	logger.Info("Handlers initialized")
 

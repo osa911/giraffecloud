@@ -22,6 +22,36 @@ type Config struct {
 	Server    ServerConfig   `json:"server"`
 	API       ServerConfig   `json:"api"`
 	Security  SecurityConfig `json:"security"`
+	AutoUpdate AutoUpdateConfig `json:"auto_update"`
+	TestMode  TestModeConfig `json:"test_mode"`
+}
+
+// TestModeConfig represents test mode settings
+type TestModeConfig struct {
+	Enabled bool   `json:"enabled"`                      // Enable test mode
+	Channel string `json:"channel"`                      // Release channel: stable, beta, test
+	UserID  string `json:"user_id,omitempty"`           // User ID for test targeting
+	Groups  []string `json:"groups,omitempty"`          // Test groups this client belongs to
+}
+
+// AutoUpdateConfig represents auto-update settings
+type AutoUpdateConfig struct {
+	Enabled              bool          `json:"enabled"`                // Enable automatic updates
+	CheckInterval        time.Duration `json:"check_interval"`         // How often to check for updates
+	RequiredOnly         bool          `json:"required_only"`          // Only install required updates automatically
+	DownloadURL          string        `json:"download_url"`           // Base URL for downloads
+	PreserveConnection   bool          `json:"preserve_connection"`    // Try to preserve connections during updates
+	RestartService       bool          `json:"restart_service"`        // Restart service after update
+	BackupCount          int           `json:"backup_count"`           // Number of backups to keep
+	UpdateWindow         *TimeWindow   `json:"update_window,omitempty"` // Time window for automatic updates
+	Channel              string        `json:"channel"`                // Release channel override
+}
+
+// TimeWindow represents a time window for updates
+type TimeWindow struct {
+	StartHour int `json:"start_hour"` // Hour to start updates (0-23)
+	EndHour   int `json:"end_hour"`   // Hour to stop updates (0-23)
+	Timezone  string `json:"timezone"` // Timezone for the time window
 }
 
 // ServerConfig represents server connection settings
@@ -72,10 +102,31 @@ var DefaultConfig = Config{
 		Host: "api.giraffecloud.xyz",
 		Port: 443,
 	},
-		Security: SecurityConfig{
+	Security: SecurityConfig{
 		InsecureSkipVerify: false, // PRODUCTION: NEVER skip verification
 		// Certificate paths are set dynamically by the 'login' command
 		// after fetching certificates from the API server
+	},
+	AutoUpdate: AutoUpdateConfig{
+		Enabled:            true,                           // Enable auto-updates by default
+		CheckInterval:      24 * time.Hour,                 // Check daily
+		RequiredOnly:       true,                          // Only auto-install required updates
+		DownloadURL:        "https://github.com/osa911/giraffecloud/releases/download",
+		PreserveConnection: true,                          // Try to preserve connections
+		RestartService:     true,                          // Restart service after update
+		BackupCount:        5,                             // Keep 5 backups
+		Channel:            "stable",                       // Default to stable releases
+		UpdateWindow: &TimeWindow{                         // Update during off-peak hours
+			StartHour: 2,  // 2 AM
+			EndHour:   6,  // 6 AM
+			Timezone:  "UTC",
+		},
+	},
+	TestMode: TestModeConfig{
+		Enabled: false,           // Test mode disabled by default
+		Channel: "stable",        // Default to stable channel
+		UserID:  "",             // No user ID by default
+		Groups:  []string{},     // No test groups by default
 	},
 }
 
