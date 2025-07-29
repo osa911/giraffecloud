@@ -22,6 +22,11 @@ on:
       - "internal/service/**"
       - "scripts/build-cli.sh"
 
+# Add permissions block at workflow level
+permissions:
+  contents: write # This allows creating releases and uploading assets
+  pull-requests: read
+
 jobs:
   # Determine release channel based on branch
   determine-channel:
