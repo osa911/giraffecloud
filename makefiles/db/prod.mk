@@ -1,5 +1,15 @@
 # Production database commands
-.PHONY: db-init-prod db-migrate-prod db-recreate-prod db-backup-prod db-restore-prod
+
+# Configurable Docker network settings (priority: args > env vars > defaults)
+# Uses existing DB_HOST and DB_PORT from your environment file
+# Usage examples:
+#   make db-migrate-prod FORCE=1 CONFIRM=1                    # Use env vars (DB_HOST=postgres, DB_PORT=5432)
+#   make db-migrate-prod FORCE=1 CONFIRM=1 DB_HOST=localhost  # Override via args
+#   export DB_HOST=myhost && make db-migrate-prod FORCE=1     # Override via env
+DOCKER_DB_HOST ?= $(shell echo $${DB_HOST:-postgres})
+DOCKER_DB_PORT ?= $(shell echo $${DB_PORT:-5432})
+
+.PHONY: db-init-prod db-migrate-prod db-recreate-prod db-backup-prod db-restore-prod db-debug-vars
 
 # Initialize production database
 db-init-prod: validate-prod-env db-gen
@@ -42,8 +52,8 @@ db-migrate-prod: validate-prod-env
 		. $(PROD_ENV) && atlas migrate apply \
 			--env prod \
 			--allow-dirty \
-			--var db_dev_url="postgres://$$DB_USER:$$DB_PASSWORD@localhost:$$DB_PORT/$$DB_NAME?sslmode=$$DB_SSL_MODE" \
-			--var db_url="postgres://$$DB_USER:$$DB_PASSWORD@localhost:$$DB_PORT/$$DB_NAME?sslmode=$$DB_SSL_MODE" \
+			--var db_dev_url="postgres://$$DB_USER:$$DB_PASSWORD@$(DOCKER_DB_HOST):$(DOCKER_DB_PORT)/$$DB_NAME?sslmode=$$DB_SSL_MODE" \
+			--var db_url="postgres://$$DB_USER:$$DB_PASSWORD@$(DOCKER_DB_HOST):$(DOCKER_DB_PORT)/$$DB_NAME?sslmode=$$DB_SSL_MODE" \
 			--dry-run; \
 		echo "Dry run completed. Review the changes above."; \
 		echo "To apply the changes, run with CONFIRM=1:"; \
@@ -53,8 +63,8 @@ db-migrate-prod: validate-prod-env
 			. $(PROD_ENV) && atlas migrate apply \
 				--env prod \
 				--allow-dirty \
-				--var db_dev_url="postgres://$$DB_USER:$$DB_PASSWORD@localhost:$$DB_PORT/$$DB_NAME?sslmode=$$DB_SSL_MODE" \
-				--var db_url="postgres://$$DB_USER:$$DB_PASSWORD@localhost:$$DB_PORT/$$DB_NAME?sslmode=$$DB_SSL_MODE"; \
+				--var db_dev_url="postgres://$$DB_USER:$$DB_PASSWORD@$(DOCKER_DB_HOST):$(DOCKER_DB_PORT)/$$DB_NAME?sslmode=$$DB_SSL_MODE" \
+				--var db_url="postgres://$$DB_USER:$$DB_PASSWORD@$(DOCKER_DB_HOST):$(DOCKER_DB_PORT)/$$DB_NAME?sslmode=$$DB_SSL_MODE"; \
 		fi \
 	else \
 		echo "This is a production operation. Run with FORCE=1 to proceed:"; \
