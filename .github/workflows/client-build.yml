@@ -49,7 +49,7 @@ jobs:
           elif [[ "$BRANCH_NAME" == "develop" ]]; then
             CHANNEL="beta"
             SHOULD_RELEASE="true"
-          elif [[ "$BRANCH_NAME" == feature/* ]] || [[ "$BRANCH_NAME" == test/* ]]; then
+          elif [[ "$BRANCH_NAME" == feature/* ]] || [[ "$BRANCH_NAME" == test/* ]] || [[ "$BRANCH_NAME" == osa911/* ]]; then
             CHANNEL="test"
             SHOULD_RELEASE="true"
           else
