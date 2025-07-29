@@ -15,16 +15,22 @@ func Setup(router *gin.Engine, h *Handlers, m *Middleware) {
 	// Create base API v1 group
 	v1 := router.Group("/api/v1")
 
-	// Health check endpoint
-	SetupHealthRoutes(router, h.Health)
+	// Public routes (no auth required)
+	SetupPublicRoutes(router, h)
+
+	// Tunnel routes (both public and protected)
+	SetupTunnelRoutes(v1, m, h)
 
 	// Webhook routes
 	SetupWebhookRoutes(router, h.Webhook)
 
-	// Auth routes
+	// Auth routes (no auth required for login/register)
 	SetupAuthRoutes(v1, h.Auth, m)
 
-	// Protected API routes
+	// Admin routes (requires authentication)
+	SetupAdminRoutes(v1, h.Admin, m)
+
+	// Protected API routes (auth required)
 	SetupProtectedRoutes(v1, h, m)
 
 	logger.Info("All routes have been set up successfully")

@@ -1,0 +1,244 @@
+name: Client Build and Release
+
+on:
+  push:
+    branches: [main, "osa911/*"]
+    paths:
+      - "cmd/giraffecloud/**"
+      - "internal/tunnel/**"
+      - "internal/version/**"
+      - "internal/service/**"
+      - "go.mod"
+      - "go.sum"
+      - ".goreleaser.yml"
+  pull_request:
+    branches: [main, "osa911/*"]
+    paths:
+      - "cmd/giraffecloud/**"
+      - "internal/tunnel/**"
+      - "internal/version/**"
+      - "internal/service/**"
+
+jobs:
+  # Determine release channel based on branch
+  determine-channel:
+    runs-on: ubuntu-latest
+    outputs:
+      channel: ${{ steps.channel.outputs.channel }}
+      should_release: ${{ steps.channel.outputs.should_release }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine channel and version
+        id: channel
+        run: |
+          BRANCH_NAME=${GITHUB_REF#refs/heads/}
+          echo "Branch: $BRANCH_NAME"
+
+          # Determine channel based on branch
+          if [[ "$BRANCH_NAME" == "main" ]]; then
+            CHANNEL="stable"
+            SHOULD_RELEASE="true"
+          elif [[ "$BRANCH_NAME" == "develop" ]]; then
+            CHANNEL="beta"
+            SHOULD_RELEASE="true"
+          elif [[ "$BRANCH_NAME" == feature/* ]] || [[ "$BRANCH_NAME" == test/* ]]; then
+            CHANNEL="test"
+            SHOULD_RELEASE="true"
+          else
+            CHANNEL="test"
+            SHOULD_RELEASE="false"
+          fi
+
+          echo "channel=$CHANNEL" >> $GITHUB_OUTPUT
+          echo "should_release=$SHOULD_RELEASE" >> $GITHUB_OUTPUT
+
+      - name: Generate version
+        id: version
+        run: |
+          # Generate version based on channel
+          COMMIT_SHORT=$(git rev-parse --short HEAD)
+          TIMESTAMP=$(date +%Y%m%d%H%M%S)
+
+          if [[ "${{ steps.channel.outputs.channel }}" == "stable" ]]; then
+            # For stable, use semantic versioning with git tags
+            VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "v1.0.0")
+          elif [[ "${{ steps.channel.outputs.channel }}" == "beta" ]]; then
+            # For beta, use version with beta suffix
+            BASE_VERSION=$(git describe --tags --always 2>/dev/null | sed 's/-.*//g' || echo "v1.0.0")
+            VERSION="${BASE_VERSION}-beta.${TIMESTAMP}.${COMMIT_SHORT}"
+          else
+            # For test, use branch name and commit
+            BRANCH_CLEAN=$(echo "${GITHUB_REF#refs/heads/}" | sed 's/[^a-zA-Z0-9]/-/g')
+            VERSION="v0.0.0-test.${BRANCH_CLEAN}.${TIMESTAMP}.${COMMIT_SHORT}"
+          fi
+
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Generated version: $VERSION"
+
+  # Build client binaries
+  build:
+    needs: determine-channel
+    if: needs.determine-channel.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.21"
+
+      - name: Build binaries
+        env:
+          VERSION: ${{ needs.determine-channel.outputs.version }}
+          CHANNEL: ${{ needs.determine-channel.outputs.channel }}
+        run: |
+          BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          GIT_COMMIT=$(git rev-parse HEAD)
+
+          LDFLAGS="-s -w \
+            -X giraffecloud/internal/version.Version=${VERSION} \
+            -X giraffecloud/internal/version.BuildTime=${BUILD_TIME} \
+            -X giraffecloud/internal/version.GitCommit=${GIT_COMMIT}"
+
+          # Create bin directory
+          mkdir -p bin
+
+          # Build for multiple platforms
+          GOOS=linux GOARCH=amd64 go build -ldflags="${LDFLAGS}" -o bin/giraffecloud-linux-amd64 cmd/giraffecloud/main.go
+          GOOS=linux GOARCH=arm64 go build -ldflags="${LDFLAGS}" -o bin/giraffecloud-linux-arm64 cmd/giraffecloud/main.go
+          GOOS=darwin GOARCH=amd64 go build -ldflags="${LDFLAGS}" -o bin/giraffecloud-darwin-amd64 cmd/giraffecloud/main.go
+          GOOS=darwin GOARCH=arm64 go build -ldflags="${LDFLAGS}" -o bin/giraffecloud-darwin-arm64 cmd/giraffecloud/main.go
+          GOOS=windows GOARCH=amd64 go build -ldflags="${LDFLAGS}" -o bin/giraffecloud-windows-amd64.exe cmd/giraffecloud/main.go
+          GOOS=windows GOARCH=arm64 go build -ldflags="${LDFLAGS}" -o bin/giraffecloud-windows-arm64.exe cmd/giraffecloud/main.go
+
+          # Create checksums
+          cd bin
+          sha256sum * > checksums.txt
+          cd ..
+
+      - name: Create archives
+        env:
+          VERSION: ${{ needs.determine-channel.outputs.version }}
+        run: |
+          cd bin
+
+          # Create tar.gz archives for Unix systems
+          tar -czf giraffecloud_${VERSION}_linux_amd64.tar.gz giraffecloud-linux-amd64
+          tar -czf giraffecloud_${VERSION}_linux_arm64.tar.gz giraffecloud-linux-arm64
+          tar -czf giraffecloud_${VERSION}_darwin_amd64.tar.gz giraffecloud-darwin-amd64
+          tar -czf giraffecloud_${VERSION}_darwin_arm64.tar.gz giraffecloud-darwin-arm64
+
+          # Create zip archives for Windows
+          zip giraffecloud_${VERSION}_windows_amd64.zip giraffecloud-windows-amd64.exe
+          zip giraffecloud_${VERSION}_windows_arm64.zip giraffecloud-windows-arm64.exe
+
+          # Update checksums to include archives
+          sha256sum *.tar.gz *.zip > checksums.txt
+
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.determine-channel.outputs.version }}
+          CHANNEL: ${{ needs.determine-channel.outputs.channel }}
+        run: |
+          PRERELEASE=""
+          if [[ "$CHANNEL" != "stable" ]]; then
+            PRERELEASE="--prerelease"
+          fi
+
+          RELEASE_NOTES="**Channel:** $CHANNEL
+          **Version:** $VERSION
+          **Commit:** $(git rev-parse HEAD)
+          **Branch:** ${GITHUB_REF#refs/heads/}
+
+          ## Changes
+          $(git log --oneline --since='24 hours ago' | head -10)"
+
+          # Create release
+          gh release create "$VERSION" \
+            bin/*.tar.gz bin/*.zip bin/checksums.txt \
+            --title "GiraffeCloud Client $VERSION ($CHANNEL)" \
+            --notes "$RELEASE_NOTES" \
+            $PRERELEASE
+
+  # Update database with version information
+  update-database:
+    needs: [determine-channel, build]
+    if: needs.determine-channel.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Update version in database
+        env:
+          API_ENDPOINT: ${{ secrets.API_ENDPOINT }}
+          API_TOKEN: ${{ secrets.API_TOKEN }}
+          VERSION: ${{ needs.determine-channel.outputs.version }}
+          CHANNEL: ${{ needs.determine-channel.outputs.channel }}
+        run: |
+          # Determine download URL based on channel
+          if [[ "$CHANNEL" == "stable" ]]; then
+            DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/latest/download"
+          else
+            DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/$VERSION"
+          fi
+
+          # Update version configuration via API
+          curl -X POST "$API_ENDPOINT/api/v1/admin/version/update" \
+            -H "Authorization: Bearer $API_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"channel\": \"$CHANNEL\",
+              \"platform\": \"all\",
+              \"arch\": \"all\",
+              \"latest_version\": \"$VERSION\",
+              \"minimum_version\": \"v1.0.0\",
+              \"download_url\": \"$DOWNLOAD_URL\",
+              \"release_notes\": \"Automated build from ${GITHUB_REF#refs/heads/} branch\",
+              \"auto_update_enabled\": $([ "$CHANNEL" = "stable" ] && echo "true" || echo "false"),
+              \"force_update\": false,
+              \"metadata\": {
+                \"git_commit\": \"$(git rev-parse HEAD)\",
+                \"branch\": \"${GITHUB_REF#refs/heads/}\",
+                \"build_number\": \"${{ github.run_number }}\",
+                \"build_url\": \"https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\"
+              }
+            }" || echo "Failed to update database - continuing..."
+
+  # Notification
+  notify:
+    needs: [determine-channel, build, update-database]
+    if: always() && needs.determine-channel.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify completion
+        env:
+          VERSION: ${{ needs.determine-channel.outputs.version }}
+          CHANNEL: ${{ needs.determine-channel.outputs.channel }}
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          STATUS="✅ Success"
+          if [[ "${{ needs.build.result }}" != "success" ]]; then
+            STATUS="❌ Failed"
+          fi
+
+          MESSAGE="$STATUS GiraffeCloud Client Build
+          **Channel:** $CHANNEL
+          **Version:** $VERSION
+          **Release:** https://github.com/${{ github.repository }}/releases/tag/$VERSION"
+
+          if [[ -n "$SLACK_WEBHOOK" ]]; then
+            curl -X POST -H 'Content-type: application/json' \
+              --data "{\"text\":\"$MESSAGE\"}" \
+              "$SLACK_WEBHOOK" || echo "Slack notification failed"
+          fi
+
+          echo "$MESSAGE"

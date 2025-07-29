@@ -4,6 +4,7 @@ import (
 	"giraffecloud/internal/api/constants"
 	"giraffecloud/internal/api/dto/common"
 	"giraffecloud/internal/interfaces"
+	"giraffecloud/internal/service"
 	"giraffecloud/internal/utils"
 	"strconv"
 
@@ -14,15 +15,56 @@ import (
 
 // TunnelHandler handles tunnel-related HTTP requests
 type TunnelHandler struct {
-	tunnelService interfaces.TunnelService
+	tunnelService  interfaces.TunnelService
+	versionService *service.VersionService
 }
 
 // NewTunnelHandler creates a new tunnel handler instance
-func NewTunnelHandler(tunnelService interfaces.TunnelService) *TunnelHandler {
+func NewTunnelHandler(tunnelService interfaces.TunnelService, versionService *service.VersionService) *TunnelHandler {
 	return &TunnelHandler{
-		tunnelService: tunnelService,
+		tunnelService:  tunnelService,
+		versionService: versionService,
 	}
 }
+
+// GetVersion returns the server version information for client version checking
+// This endpoint doesn't require authentication as it's used during tunnel connection
+func (h *TunnelHandler) GetVersion(c *gin.Context) {
+	// Get client information from query parameters or headers
+	clientVersion := c.Query("client_version")
+	if clientVersion == "" {
+		clientVersion = c.GetHeader("X-Client-Version")
+	}
+
+	// Get channel (test mode support)
+	channel := c.Query("channel")
+	if channel == "" {
+		channel = c.GetHeader("X-Release-Channel")
+	}
+
+	// Get platform and architecture
+	platform := c.Query("platform")
+	if platform == "" {
+		platform = c.GetHeader("X-Client-Platform")
+	}
+	arch := c.Query("arch")
+	if arch == "" {
+		arch = c.GetHeader("X-Client-Arch")
+	}
+
+	// Get version information from service
+	versionInfo, err := h.versionService.GetVersionInfo(c.Request.Context(), clientVersion, channel, platform, arch)
+	if err != nil {
+		logging.GetGlobalLogger().Error("Failed to get version info: %v", err)
+		c.JSON(500, gin.H{
+			"error": "Failed to retrieve version information",
+		})
+		return
+	}
+
+	c.JSON(200, versionInfo)
+}
+
 
 // CreateTunnel creates a new tunnel
 func (h *TunnelHandler) CreateTunnel(c *gin.Context) {
