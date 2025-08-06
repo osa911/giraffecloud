@@ -76,15 +76,19 @@ jobs:
         run: |
           # Generate version based on channel
           COMMIT_SHORT=$(git rev-parse --short HEAD)
-          TIMESTAMP=$(date +%Y%m%d%H%M%S)
+          TIMESTAMP=$(date +%Y%m%d)
 
           if [[ "${{ steps.channel.outputs.channel }}" == "stable" ]]; then
             # For stable, use semantic versioning with git tags
             VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "v1.0.0")
+            RELEASE_TAG="$VERSION"
+            SHORT_VERSION="$VERSION"
           elif [[ "${{ steps.channel.outputs.channel }}" == "beta" ]]; then
             # For beta, use version with beta suffix
             BASE_VERSION=$(git describe --tags --always 2>/dev/null | sed 's/-.*//g' || echo "v1.0.0")
             VERSION="${BASE_VERSION}-beta.${TIMESTAMP}.${COMMIT_SHORT}"
+            RELEASE_TAG="beta"
+            SHORT_VERSION="${BASE_VERSION}-beta.${COMMIT_SHORT}"
           else
             # For test, use branch name and commit
             if [[ "${{ github.event_name }}" == "pull_request" ]]; then
@@ -93,6 +97,8 @@ jobs:
               BRANCH_CLEAN=$(echo "${GITHUB_REF#refs/heads/}" | sed 's/[^a-zA-Z0-9]/-/g')
             fi
             VERSION="v0.0.0-test.${BRANCH_CLEAN}.${TIMESTAMP}.${COMMIT_SHORT}"
+            RELEASE_TAG="test"
+            SHORT_VERSION="v0.0.0-test.${COMMIT_SHORT}"
           fi
 
           echo "version=$VERSION" >> $GITHUB_OUTPUT
@@ -128,15 +134,34 @@ jobs:
         run: |
           cd bin
 
-          # Create tar.gz archives for Unix systems
-          tar -czf giraffecloud-linux-amd64-${VERSION}.tar.gz giraffecloud-linux-amd64
-          tar -czf giraffecloud-linux-arm64-${VERSION}.tar.gz giraffecloud-linux-arm64
-          tar -czf giraffecloud-darwin-amd64-${VERSION}.tar.gz giraffecloud-darwin-amd64
-          tar -czf giraffecloud-darwin-arm64-${VERSION}.tar.gz giraffecloud-darwin-arm64
+          # Create tar.gz archives for Unix systems with proper directory structure
+          for PLATFORM in linux darwin; do
+            for ARCH in amd64 arm64; do
+              # Create a temporary directory with the proper structure
+              mkdir -p tmp/giraffecloud-${PLATFORM}-${ARCH}-${VERSION}/bin
+              cp giraffecloud-${PLATFORM}-${ARCH} tmp/giraffecloud-${PLATFORM}-${ARCH}-${VERSION}/bin/giraffecloud
+              chmod +x tmp/giraffecloud-${PLATFORM}-${ARCH}-${VERSION}/bin/giraffecloud
 
-          # Create zip archives for Windows
-          zip giraffecloud-windows-amd64-${VERSION}.zip giraffecloud-windows-amd64.exe
-          zip giraffecloud-windows-arm64-${VERSION}.zip giraffecloud-windows-arm64.exe
+                            # Create tar archive from the directory with simplified name
+              tar -czf giraffecloud-${PLATFORM}-${ARCH}-${SHORT_VERSION}.tar.gz -C tmp giraffecloud-${PLATFORM}-${ARCH}-${VERSION}
+              rm -rf tmp/giraffecloud-${PLATFORM}-${ARCH}-${VERSION}
+            done
+          done
+
+          # Create zip archives for Windows with proper directory structure
+          for ARCH in amd64 arm64; do
+            # Create a temporary directory with the proper structure
+            mkdir -p tmp/giraffecloud-windows-${ARCH}-${VERSION}/bin
+            cp giraffecloud-windows-${ARCH}.exe tmp/giraffecloud-windows-${ARCH}-${VERSION}/bin/giraffecloud.exe
+            chmod +x tmp/giraffecloud-windows-${ARCH}-${VERSION}/bin/giraffecloud.exe
+
+            # Create zip archive from the directory with simplified name
+            (cd tmp && zip -r ../giraffecloud-windows-${ARCH}-${SHORT_VERSION}.zip giraffecloud-windows-${ARCH}-${VERSION})
+            rm -rf tmp/giraffecloud-windows-${ARCH}-${VERSION}
+          done
+
+          # Cleanup temp directory
+          rm -rf tmp
 
           # Update checksums to include archives
           sha256sum *.tar.gz *.zip > checksums.txt
@@ -160,8 +185,14 @@ jobs:
           ## Changes
           $(git log --oneline --since='24 hours ago' | head -10)"
 
+          # Create or update release
+          if [[ "$CHANNEL" != "stable" ]]; then
+            # For non-stable releases, try to delete existing release first
+            gh release delete "$RELEASE_TAG" --yes || true
+          fi
+
           # Create release
-          gh release create "$VERSION" \
+          gh release create "$RELEASE_TAG" \
             bin/*.tar.gz bin/*.zip bin/checksums.txt \
             --title "GiraffeCloud CLI Client $VERSION ($CHANNEL)" \
             --notes "$RELEASE_NOTES" \
