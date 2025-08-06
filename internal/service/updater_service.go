@@ -337,34 +337,25 @@ func (u *UpdaterService) extractArchive(archivePath, extractPath string) error {
 
 // findExecutable finds the executable in the extracted directory
 func (u *UpdaterService) findExecutable(extractPath string) (string, error) {
-	var exePath string
-
-	err := filepath.Walk(extractPath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		// Look for giraffecloud executable
-		if strings.Contains(info.Name(), "giraffecloud") && !info.IsDir() {
-			// Check if it's executable
-			if info.Mode()&0111 != 0 {
-				exePath = path
-				return io.EOF // Stop walking
-			}
-		}
-
-		return nil
-	})
-
-	if err != nil && err != io.EOF {
-		return "", err
+	// Look for the binary directly or in a top-level directory
+	binaryName := "giraffecloud"
+	if runtime.GOOS == "windows" {
+		binaryName += ".exe"
 	}
 
-	if exePath == "" {
-		return "", fmt.Errorf("executable not found in archive")
+	// Try direct path first
+	directPath := filepath.Join(extractPath, binaryName)
+	if info, err := os.Stat(directPath); err == nil && !info.IsDir() && info.Mode()&0111 != 0 {
+		return directPath, nil
 	}
 
-	return exePath, nil
+	// Try in giraffecloud directory (fallback for some archive formats)
+	dirPath := filepath.Join(extractPath, "giraffecloud", binaryName)
+	if info, err := os.Stat(dirPath); err == nil && !info.IsDir() && info.Mode()&0111 != 0 {
+		return dirPath, nil
+	}
+
+	return "", fmt.Errorf("executable not found in archive (tried %s and %s)", directPath, dirPath)
 }
 
 // replaceExecutable replaces the current executable with the new one

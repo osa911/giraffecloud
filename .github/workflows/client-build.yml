@@ -146,68 +146,61 @@ jobs:
         run: |
           cd bin
 
-          # Create tar.gz archives for Unix systems with proper directory structure
+          # Create tar.gz archives for Unix systems
           for PLATFORM in linux darwin; do
             for ARCH in amd64 arm64; do
-              # Create a temporary directory with the proper structure
-              DIRNAME="giraffecloud_${PLATFORM}_${ARCH}_${SHORT_VERSION}"
-              mkdir -p "tmp/${DIRNAME}/bin"
-              cp giraffecloud-${PLATFORM}-${ARCH} "tmp/${DIRNAME}/bin/giraffecloud"
-              chmod +x "tmp/${DIRNAME}/bin/giraffecloud"
+              FILENAME="giraffecloud_${PLATFORM}_${ARCH}_${SHORT_VERSION}"
 
-              # Create tar archive from the directory with simplified name
-              echo "Creating archive for ${DIRNAME}"
-              echo "Contents of tmp directory:"
-              ls -la tmp/
-              echo "Contents of tmp/${DIRNAME}:"
-              ls -la "tmp/${DIRNAME}"
-              echo "Contents of tmp/${DIRNAME}/bin:"
-              ls -la "tmp/${DIRNAME}/bin"
+              # Rename binary to final name and make executable
+              cp "giraffecloud-${PLATFORM}-${ARCH}" "giraffecloud"
+              chmod +x "giraffecloud"
+
+              echo "Creating archive for ${FILENAME}"
+              echo "Binary contents:"
+              ls -la "giraffecloud"
 
               # Create archive with verbose output
-              tar -czvf "${DIRNAME}.tar.gz" -C tmp "${DIRNAME}" || {
+              tar -czvf "${FILENAME}.tar.gz" "giraffecloud" || {
                 echo "Tar command failed with exit code $?"
                 echo "Trying alternative approach..."
-                (cd tmp && tar -czvf "../${DIRNAME}.tar.gz" "${DIRNAME}")
+                tar -czvf "${FILENAME}.tar.gz" --transform 's,^,giraffecloud/,' "giraffecloud"
               }
 
               # Verify the archive
-              echo "Verifying archive ${DIRNAME}.tar.gz"
-              tar -tvf "${DIRNAME}.tar.gz"
+              echo "Verifying archive ${FILENAME}.tar.gz"
+              tar -tvf "${FILENAME}.tar.gz"
 
-              rm -rf "tmp/${DIRNAME}"
+              rm "giraffecloud"
             done
           done
 
-          # Create zip archives for Windows with proper directory structure
+          # Create zip archives for Windows
           for ARCH in amd64 arm64; do
-            # Create a temporary directory with the proper structure
-            DIRNAME="giraffecloud_windows_${ARCH}_${SHORT_VERSION}"
-            mkdir -p "tmp/${DIRNAME}/bin"
-            cp giraffecloud-windows-${ARCH}.exe "tmp/${DIRNAME}/bin/giraffecloud.exe"
-            chmod +x "tmp/${DIRNAME}/bin/giraffecloud.exe"
+            FILENAME="giraffecloud_windows_${ARCH}_${SHORT_VERSION}"
 
-            # Create zip archive from the directory with simplified name
-            echo "Creating archive for ${DIRNAME}"
-            echo "Contents of tmp directory:"
-            ls -la tmp/
-            echo "Contents of tmp/${DIRNAME}:"
-            ls -la "tmp/${DIRNAME}"
-            echo "Contents of tmp/${DIRNAME}/bin:"
-            ls -la "tmp/${DIRNAME}/bin"
+            # Rename binary to final name
+            cp "giraffecloud-windows-${ARCH}.exe" "giraffecloud.exe"
+            chmod +x "giraffecloud.exe"
+
+            echo "Creating archive for ${FILENAME}"
+            echo "Binary contents:"
+            ls -la "giraffecloud.exe"
 
             # Create archive with verbose output
-            (cd tmp && zip -rv "../${DIRNAME}.zip" "${DIRNAME}") || {
+            zip -v "${FILENAME}.zip" "giraffecloud.exe" || {
               echo "Zip command failed with exit code $?"
               echo "Trying alternative approach..."
-              zip -rv "${DIRNAME}.zip" "tmp/${DIRNAME}"
+              mkdir -p "giraffecloud"
+              mv "giraffecloud.exe" "giraffecloud/"
+              zip -rv "${FILENAME}.zip" "giraffecloud"
+              rm -rf "giraffecloud"
             }
 
             # Verify the archive
-            echo "Verifying archive ${DIRNAME}.zip"
-            unzip -l "${DIRNAME}.zip"
+            echo "Verifying archive ${FILENAME}.zip"
+            unzip -l "${FILENAME}.zip"
 
-            rm -rf "tmp/${DIRNAME}"
+            rm -f "giraffecloud.exe"
           done
 
           # Cleanup temp directory
