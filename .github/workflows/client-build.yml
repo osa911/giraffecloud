@@ -142,6 +142,7 @@ jobs:
       - name: Create archives
         env:
           VERSION: ${{ needs.determine-channel.outputs.version }}
+          SHORT_VERSION: ${{ needs.determine-channel.outputs.short_version }}
         run: |
           cd bin
 
@@ -149,25 +150,27 @@ jobs:
           for PLATFORM in linux darwin; do
             for ARCH in amd64 arm64; do
               # Create a temporary directory with the proper structure
-              mkdir -p tmp/giraffecloud-${PLATFORM}-${ARCH}-${VERSION}/bin
-              cp giraffecloud-${PLATFORM}-${ARCH} tmp/giraffecloud-${PLATFORM}-${ARCH}-${VERSION}/bin/giraffecloud
-              chmod +x tmp/giraffecloud-${PLATFORM}-${ARCH}-${VERSION}/bin/giraffecloud
+              DIRNAME="giraffecloud_${PLATFORM}_${ARCH}_${SHORT_VERSION}"
+              mkdir -p "tmp/${DIRNAME}/bin"
+              cp giraffecloud-${PLATFORM}-${ARCH} "tmp/${DIRNAME}/bin/giraffecloud"
+              chmod +x "tmp/${DIRNAME}/bin/giraffecloud"
 
-                            # Create tar archive from the directory with simplified name
-              tar -czf giraffecloud-${PLATFORM}-${ARCH}-${SHORT_VERSION}.tar.gz -C tmp giraffecloud-${PLATFORM}-${ARCH}-${VERSION}
-              rm -rf tmp/giraffecloud-${PLATFORM}-${ARCH}-${VERSION}
+              # Create tar archive from the directory with simplified name
+              tar -czf "${DIRNAME}.tar.gz" -C tmp "${DIRNAME}"
+              rm -rf "tmp/${DIRNAME}"
             done
           done
 
           # Create zip archives for Windows with proper directory structure
           for ARCH in amd64 arm64; do
             # Create a temporary directory with the proper structure
-            mkdir -p tmp/giraffecloud-windows-${ARCH}-${VERSION}/bin
-            cp giraffecloud-windows-${ARCH}.exe tmp/giraffecloud-windows-${ARCH}-${VERSION}/bin/giraffecloud.exe
-            chmod +x tmp/giraffecloud-windows-${ARCH}-${VERSION}/bin/giraffecloud.exe
+            DIRNAME="giraffecloud_windows_${ARCH}_${SHORT_VERSION}"
+            mkdir -p "tmp/${DIRNAME}/bin"
+            cp giraffecloud-windows-${ARCH}.exe "tmp/${DIRNAME}/bin/giraffecloud.exe"
+            chmod +x "tmp/${DIRNAME}/bin/giraffecloud.exe"
 
             # Create zip archive from the directory with simplified name
-            (cd tmp && zip -r ../giraffecloud-windows-${ARCH}-${SHORT_VERSION}.zip giraffecloud-windows-${ARCH}-${VERSION})
+            (cd tmp && zip -r "../${DIRNAME}.zip" "${DIRNAME}")
             rm -rf tmp/giraffecloud-windows-${ARCH}-${VERSION}
           done
 
@@ -244,9 +247,9 @@ jobs:
 
               # Construct platform-specific download URL
               if [[ "$CHANNEL" == "stable" ]]; then
-                PLATFORM_URL="$BASE_URL/latest/download/giraffecloud-${PLATFORM}-${ARCH}-${SHORT_VERSION}${EXT}"
+                PLATFORM_URL="$BASE_URL/latest/download/giraffecloud_${PLATFORM}_${ARCH}_${SHORT_VERSION}${EXT}"
               else
-                PLATFORM_URL="$BASE_URL/download/${RELEASE_TAG}/giraffecloud-${PLATFORM}-${ARCH}-${SHORT_VERSION}${EXT}"
+                PLATFORM_URL="$BASE_URL/download/${RELEASE_TAG}/giraffecloud_${PLATFORM}_${ARCH}_${SHORT_VERSION}${EXT}"
               fi
 
               echo "Updating database for $PLATFORM $ARCH with URL: $PLATFORM_URL"
