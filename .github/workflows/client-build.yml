@@ -129,14 +129,14 @@ jobs:
           cd bin
 
           # Create tar.gz archives for Unix systems
-          tar -czf giraffecloud_${VERSION}_linux_amd64.tar.gz giraffecloud-linux-amd64
-          tar -czf giraffecloud_${VERSION}_linux_arm64.tar.gz giraffecloud-linux-arm64
-          tar -czf giraffecloud_${VERSION}_darwin_amd64.tar.gz giraffecloud-darwin-amd64
-          tar -czf giraffecloud_${VERSION}_darwin_arm64.tar.gz giraffecloud-darwin-arm64
+          tar -czf giraffecloud-linux-amd64-${VERSION}.tar.gz giraffecloud-linux-amd64
+          tar -czf giraffecloud-linux-arm64-${VERSION}.tar.gz giraffecloud-linux-arm64
+          tar -czf giraffecloud-darwin-amd64-${VERSION}.tar.gz giraffecloud-darwin-amd64
+          tar -czf giraffecloud-darwin-arm64-${VERSION}.tar.gz giraffecloud-darwin-arm64
 
           # Create zip archives for Windows
-          zip giraffecloud_${VERSION}_windows_amd64.zip giraffecloud-windows-amd64.exe
-          zip giraffecloud_${VERSION}_windows_arm64.zip giraffecloud-windows-arm64.exe
+          zip giraffecloud-windows-amd64-${VERSION}.zip giraffecloud-windows-amd64.exe
+          zip giraffecloud-windows-arm64-${VERSION}.zip giraffecloud-windows-arm64.exe
 
           # Update checksums to include archives
           sha256sum *.tar.gz *.zip > checksums.txt
@@ -188,27 +188,44 @@ jobs:
             DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/$VERSION"
           fi
 
-          # Update version configuration via API
-          curl -X POST "$API_ENDPOINT/api/v1/admin/version/update" \
-            -H "Authorization: Bearer $API_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "{
-              \"channel\": \"$CHANNEL\",
-              \"platform\": \"all\",
-              \"arch\": \"all\",
-              \"latest_version\": \"$VERSION\",
-              \"minimum_version\": \"v1.0.0\",
-              \"download_url\": \"$DOWNLOAD_URL\",
-              \"release_notes\": \"Automated build from ${GITHUB_REF#refs/heads/} branch\",
-              \"auto_update_enabled\": $([ "$CHANNEL" = "stable" ] && echo "true" || echo "false"),
-              \"force_update\": false,
-              \"metadata\": {
-                \"git_commit\": \"$(git rev-parse HEAD)\",
-                \"branch\": \"${GITHUB_REF#refs/heads/}\",
-                \"build_number\": \"${{ github.run_number }}\",
-                \"build_url\": \"https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\"
-              }
-            }" || echo "Failed to update database - continuing..."
+          # Update version configuration for each platform/arch combination
+          PLATFORMS=("darwin" "linux" "windows")
+          ARCHES=("amd64" "arm64")
+
+          for PLATFORM in "${PLATFORMS[@]}"; do
+            for ARCH in "${ARCHES[@]}"; do
+              # Determine file extension based on platform
+              EXT=".tar.gz"
+              if [[ "$PLATFORM" == "windows" ]]; then
+                EXT=".zip"
+              fi
+
+              # Construct platform-specific download URL
+              PLATFORM_URL="$DOWNLOAD_URL/giraffecloud-${PLATFORM}-${ARCH}-${VERSION}${EXT}"
+
+              # Update version configuration via API
+              curl -X POST "$API_ENDPOINT/api/v1/admin/version/update" \
+                -H "Authorization: Bearer $API_TOKEN" \
+                -H "Content-Type: application/json" \
+                -d "{
+                  \"channel\": \"$CHANNEL\",
+                  \"platform\": \"$PLATFORM\",
+                  \"arch\": \"$ARCH\",
+                  \"latest_version\": \"$VERSION\",
+                  \"minimum_version\": \"v1.0.0\",
+                  \"download_url\": \"$PLATFORM_URL\",
+                  \"release_notes\": \"Automated build from ${GITHUB_REF#refs/heads/} branch\",
+                  \"auto_update_enabled\": $([ "$CHANNEL" = "stable" ] && echo "true" || echo "false"),
+                  \"force_update\": false,
+                  \"metadata\": {
+                    \"git_commit\": \"$(git rev-parse HEAD)\",
+                    \"branch\": \"${GITHUB_REF#refs/heads/}\",
+                    \"build_number\": \"${{ github.run_number }}\",
+                    \"build_url\": \"https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\"
+                  }
+                }" || echo "Failed to update database for $PLATFORM $ARCH - continuing..."
+            done
+          done
 
   # Notification
   notify:
