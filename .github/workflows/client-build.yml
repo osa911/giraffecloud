@@ -104,12 +104,16 @@ jobs:
           fi
 
           # Export variables for later steps
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "release_tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
-          echo "short_version=$SHORT_VERSION" >> $GITHUB_OUTPUT
+          {
+            echo "version=$VERSION"
+            echo "release_tag=$RELEASE_TAG"
+            echo "short_version=$SHORT_VERSION"
+          } >> $GITHUB_OUTPUT
 
+          # Debug output - this is just for logging, not for variable export
           echo "Generated version: $VERSION"
           echo "Release tag: $RELEASE_TAG"
+          echo "Short version: $SHORT_VERSION"
 
   # Build client binaries
   build:
@@ -220,13 +224,11 @@ jobs:
           API_TOKEN: ${{ secrets.API_TOKEN }}
           VERSION: ${{ needs.determine-channel.outputs.version }}
           CHANNEL: ${{ needs.determine-channel.outputs.channel }}
+          RELEASE_TAG: ${{ needs.determine-channel.outputs.release_tag }}
+          SHORT_VERSION: ${{ needs.determine-channel.outputs.short_version }}
         run: |
-          # Determine download URL based on channel
-          if [[ "$CHANNEL" == "stable" ]]; then
-            DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/latest/download"
-          else
-            DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/$VERSION"
-          fi
+          # Base download URL
+          BASE_URL="https://github.com/${{ github.repository }}/releases"
 
           # Update version configuration for each platform/arch combination
           PLATFORMS=("darwin" "linux" "windows")
@@ -241,7 +243,13 @@ jobs:
               fi
 
               # Construct platform-specific download URL
-              PLATFORM_URL="$DOWNLOAD_URL/giraffecloud-${PLATFORM}-${ARCH}-${VERSION}${EXT}"
+              if [[ "$CHANNEL" == "stable" ]]; then
+                PLATFORM_URL="$BASE_URL/latest/download/giraffecloud-${PLATFORM}-${ARCH}-${SHORT_VERSION}${EXT}"
+              else
+                PLATFORM_URL="$BASE_URL/download/${RELEASE_TAG}/giraffecloud-${PLATFORM}-${ARCH}-${SHORT_VERSION}${EXT}"
+              fi
+
+              echo "Updating database for $PLATFORM $ARCH with URL: $PLATFORM_URL"
 
               # Update version configuration via API
               curl -X POST "$API_ENDPOINT/api/v1/admin/version/update" \
