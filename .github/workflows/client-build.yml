@@ -156,7 +156,25 @@ jobs:
               chmod +x "tmp/${DIRNAME}/bin/giraffecloud"
 
               # Create tar archive from the directory with simplified name
-              tar -czf "${DIRNAME}.tar.gz" -C tmp "${DIRNAME}"
+              echo "Creating archive for ${DIRNAME}"
+              echo "Contents of tmp directory:"
+              ls -la tmp/
+              echo "Contents of tmp/${DIRNAME}:"
+              ls -la "tmp/${DIRNAME}"
+              echo "Contents of tmp/${DIRNAME}/bin:"
+              ls -la "tmp/${DIRNAME}/bin"
+
+              # Create archive with verbose output
+              tar -czvf "${DIRNAME}.tar.gz" -C tmp "${DIRNAME}" || {
+                echo "Tar command failed with exit code $?"
+                echo "Trying alternative approach..."
+                (cd tmp && tar -czvf "../${DIRNAME}.tar.gz" "${DIRNAME}")
+              }
+
+              # Verify the archive
+              echo "Verifying archive ${DIRNAME}.tar.gz"
+              tar -tvf "${DIRNAME}.tar.gz"
+
               rm -rf "tmp/${DIRNAME}"
             done
           done
@@ -170,8 +188,26 @@ jobs:
             chmod +x "tmp/${DIRNAME}/bin/giraffecloud.exe"
 
             # Create zip archive from the directory with simplified name
-            (cd tmp && zip -r "../${DIRNAME}.zip" "${DIRNAME}")
-            rm -rf tmp/giraffecloud-windows-${ARCH}-${VERSION}
+            echo "Creating archive for ${DIRNAME}"
+            echo "Contents of tmp directory:"
+            ls -la tmp/
+            echo "Contents of tmp/${DIRNAME}:"
+            ls -la "tmp/${DIRNAME}"
+            echo "Contents of tmp/${DIRNAME}/bin:"
+            ls -la "tmp/${DIRNAME}/bin"
+
+            # Create archive with verbose output
+            (cd tmp && zip -rv "../${DIRNAME}.zip" "${DIRNAME}") || {
+              echo "Zip command failed with exit code $?"
+              echo "Trying alternative approach..."
+              zip -rv "${DIRNAME}.zip" "tmp/${DIRNAME}"
+            }
+
+            # Verify the archive
+            echo "Verifying archive ${DIRNAME}.zip"
+            unzip -l "${DIRNAME}.zip"
+
+            rm -rf "tmp/${DIRNAME}"
           done
 
           # Cleanup temp directory
@@ -230,8 +266,13 @@ jobs:
           RELEASE_TAG: ${{ needs.determine-channel.outputs.release_tag }}
           SHORT_VERSION: ${{ needs.determine-channel.outputs.short_version }}
         run: |
-          # Base download URL
+          # Base download URL - this is what clients will use to construct their platform-specific URLs
           BASE_URL="https://github.com/${{ github.repository }}/releases"
+          if [[ "$CHANNEL" == "stable" ]]; then
+            DOWNLOAD_URL="$BASE_URL/latest/download"
+          else
+            DOWNLOAD_URL="$BASE_URL/download/${RELEASE_TAG}"
+          fi
 
           # Update version configuration for each platform/arch combination
           PLATFORMS=("darwin" "linux" "windows")
@@ -239,17 +280,14 @@ jobs:
 
           for PLATFORM in "${PLATFORMS[@]}"; do
             for ARCH in "${ARCHES[@]}"; do
-              # Determine file extension based on platform
+              # For logging/verification only - show what URLs clients will construct
               EXT=".tar.gz"
               if [[ "$PLATFORM" == "windows" ]]; then
                 EXT=".zip"
               fi
+              echo "Client will construct URL: ${DOWNLOAD_URL}/giraffecloud_${PLATFORM}_${ARCH}_${SHORT_VERSION}${EXT}"
 
-              # Construct platform-specific download URL
-              if [[ "$CHANNEL" == "stable" ]]; then
-                PLATFORM_URL="$BASE_URL/latest/download/giraffecloud_${PLATFORM}_${ARCH}_${SHORT_VERSION}${EXT}"
-              else
-                PLATFORM_URL="$BASE_URL/download/${RELEASE_TAG}/giraffecloud_${PLATFORM}_${ARCH}_${SHORT_VERSION}${EXT}"
+              # Store only the base download URL - let clients construct the full URL
               fi
 
               echo "Updating database for $PLATFORM $ARCH with URL: $PLATFORM_URL"
@@ -264,7 +302,7 @@ jobs:
                   \"arch\": \"$ARCH\",
                   \"latest_version\": \"$VERSION\",
                   \"minimum_version\": \"v1.0.0\",
-                  \"download_url\": \"$PLATFORM_URL\",
+                  \"download_url\": \"$DOWNLOAD_URL\",
                   \"release_notes\": \"Automated build from ${GITHUB_REF#refs/heads/} branch\",
                   \"auto_update_enabled\": $([ "$CHANNEL" = "stable" ] && echo "true" || echo "false"),
                   \"force_update\": false,
@@ -272,7 +310,8 @@ jobs:
                     \"git_commit\": \"$(git rev-parse HEAD)\",
                     \"branch\": \"${GITHUB_REF#refs/heads/}\",
                     \"build_number\": \"${{ github.run_number }}\",
-                    \"build_url\": \"https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\"
+                    \"build_url\": \"https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\",
+                    \"release_tag\": \"$RELEASE_TAG\"
                   }
                 }" || echo "Failed to update database for $PLATFORM $ARCH - continuing..."
             done
