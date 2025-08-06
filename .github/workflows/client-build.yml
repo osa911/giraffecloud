@@ -287,10 +287,7 @@ jobs:
               fi
               echo "Client will construct URL: ${DOWNLOAD_URL}/giraffecloud_${PLATFORM}_${ARCH}_${SHORT_VERSION}${EXT}"
 
-              # Store only the base download URL - let clients construct the full URL
-              fi
-
-              echo "Updating database for $PLATFORM $ARCH with URL: $PLATFORM_URL"
+              echo "Updating database for $PLATFORM $ARCH with URL: ${DOWNLOAD_URL}"
 
               # Update version configuration via API
               curl -X POST "$API_ENDPOINT/api/v1/admin/version/update" \
