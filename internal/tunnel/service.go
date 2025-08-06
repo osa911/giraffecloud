@@ -28,19 +28,39 @@ func NewServiceManager() (*ServiceManager, error) {
 }
 
 func (sm *ServiceManager) Install() error {
+	// Install service based on OS
+	var err error
 	switch runtime.GOOS {
 	case "darwin":
-		return sm.installDarwin()
+		err = sm.installDarwin()
 	case "linux":
-		return sm.installLinux()
+		err = sm.installLinux()
 	case "windows":
-		return sm.installWindows()
+		err = sm.installWindows()
 	default:
 		return fmt.Errorf("unsupported operating system: %s", runtime.GOOS)
 	}
+
+	if err != nil {
+		return err
+	}
+
+	// Add to PATH after successful service installation
+	if err := sm.AddToPath(); err != nil {
+		sm.logger.Warn("Failed to add to PATH: %v", err)
+		// Don't fail installation if PATH update fails
+	}
+
+	return nil
 }
 
 func (sm *ServiceManager) Uninstall() error {
+	// Remove from PATH first (don't fail if this fails)
+	if err := sm.RemoveFromPath(); err != nil {
+		sm.logger.Warn("Failed to remove from PATH: %v", err)
+	}
+
+	// Uninstall service based on OS
 	switch runtime.GOOS {
 	case "darwin":
 		return sm.uninstallDarwin()
