@@ -35,6 +35,8 @@ jobs:
       channel: ${{ steps.channel.outputs.channel }}
       should_release: ${{ steps.channel.outputs.should_release }}
       version: ${{ steps.version.outputs.version }}
+      release_tag: ${{ steps.version.outputs.release_tag }}
+      short_version: ${{ steps.version.outputs.short_version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -106,8 +108,8 @@ jobs:
           echo "release_tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
           echo "short_version=$SHORT_VERSION" >> $GITHUB_OUTPUT
 
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Generated version: $VERSION"
+          echo "Release tag: $RELEASE_TAG"
 
   # Build client binaries
   build:
@@ -176,6 +178,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.determine-channel.outputs.version }}
           CHANNEL: ${{ needs.determine-channel.outputs.channel }}
+          RELEASE_TAG: ${{ needs.determine-channel.outputs.release_tag }}
         run: |
           PRERELEASE=""
           if [[ "$CHANNEL" != "stable" ]]; then
@@ -190,8 +193,15 @@ jobs:
           ## Changes
           $(git log --oneline --since='24 hours ago' | head -10)"
 
-                    # Create release
-          gh release create "${{ needs.determine-channel.outputs.release_tag }}" \
+                    # Create release with explicit tag
+          RELEASE_TAG="${{ needs.determine-channel.outputs.release_tag }}"
+          if [[ -z "$RELEASE_TAG" ]]; then
+            echo "Error: Release tag is empty"
+            exit 1
+          fi
+          echo "Creating release with tag: $RELEASE_TAG"
+
+          gh release create "$RELEASE_TAG" \
             bin/*.tar.gz bin/*.zip bin/checksums.txt \
             --title "GiraffeCloud CLI Client $VERSION ($CHANNEL)" \
             --notes "$RELEASE_NOTES" \
