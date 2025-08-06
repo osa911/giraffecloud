@@ -16,8 +16,8 @@ import (
 // updateCmd handles manual client updates
 var updateCmd = &cobra.Command{
 	Use:   "update",
-	Short: "Update GiraffeCloud client to the latest version",
-	Long: `Check for and install updates to the GiraffeCloud client.
+	Short: "Update GiraffeCloud CLI client to the latest version",
+	Long: `Check for and install updates to the GiraffeCloud CLI client.
 This will download the latest version from GitHub releases and replace the current executable.
 
 Examples:
@@ -121,7 +121,7 @@ Examples:
 var autoUpdateCmd = &cobra.Command{
 	Use:   "auto-update",
 	Short: "Manage automatic updates",
-	Long:  `Configure and manage automatic updates for the GiraffeCloud client.`,
+	Long:  `Configure and manage automatic updates for the GiraffeCloud CLI client.`,
 }
 
 var autoUpdateStatusCmd = &cobra.Command{

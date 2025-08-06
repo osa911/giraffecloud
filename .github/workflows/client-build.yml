@@ -163,7 +163,7 @@ jobs:
           # Create release
           gh release create "$VERSION" \
             bin/*.tar.gz bin/*.zip bin/checksums.txt \
-            --title "GiraffeCloud Client $VERSION ($CHANNEL)" \
+            --title "GiraffeCloud CLI Client $VERSION ($CHANNEL)" \
             --notes "$RELEASE_NOTES" \
             $PRERELEASE
 
@@ -227,7 +227,7 @@ jobs:
             STATUS="❌ Failed"
           fi
 
-          MESSAGE="$STATUS GiraffeCloud Client Build
+          MESSAGE="$STATUS GiraffeCloud CLI Client Build
           **Channel:** $CHANNEL
           **Version:** $VERSION
           **Release:** https://github.com/${{ github.repository }}/releases/tag/$VERSION"
