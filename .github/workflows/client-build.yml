@@ -1,8 +1,9 @@
 name: Client Build and Release
 
 on:
+  # Run on pushes to main
   push:
-    branches: [main, "osa911/*"]
+    branches: [main]
     paths:
       - "cmd/giraffecloud/**"
       - "internal/tunnel/**"
@@ -13,8 +14,10 @@ on:
       - ".goreleaser.yml"
       - "scripts/build-cli.sh"
       - ".github/workflows/client-build.yml"
+
+  # Run on PRs to main only
   pull_request:
-    branches: [main, "osa911/*"]
+    branches: [main]
     paths:
       - "cmd/giraffecloud/**"
       - "internal/tunnel/**"
