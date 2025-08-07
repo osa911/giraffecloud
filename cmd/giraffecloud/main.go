@@ -387,7 +387,7 @@ func checkVersionCompatibility(serverAddr string) {
 func init() {
 	// Initialize logger first
 	initLogger()
-	logger.Info("Initializing GiraffeCloud CLI")
+	logger.Info("🦒 Initializing GiraffeCloud CLI")
 
 	// Setup core commands
 	rootCmd.AddCommand(connectCmd)
