@@ -269,6 +269,15 @@ jobs:
         run: |
           # Get short commit hash
           COMMIT_SHORT=$(git rev-parse --short HEAD)
+
+          # Load version config
+          VERSION_CONFIG=$(cat configs/version.json)
+          MIN_VERSION=$(echo "$VERSION_CONFIG" | jq -r ".minimum_versions.$CHANNEL")
+          if [[ "$MIN_VERSION" == "null" ]]; then
+            echo "No minimum version configured for channel: $CHANNEL"
+            exit 1
+          fi
+
           # Base download URL - this is what clients will use to construct their platform-specific URLs
           BASE_URL="https://github.com/${{ github.repository }}/releases"
           if [[ "$CHANNEL" == "stable" ]]; then
@@ -306,7 +315,7 @@ jobs:
                   \"platform\": \"$PLATFORM\",
                   \"arch\": \"$ARCH\",
                   \"latest_version\": \"$VERSION\",
-                  \"minimum_version\": \"v1.0.0\",
+                  \"minimum_version\": \"$MIN_VERSION\",
                   \"download_url\": \"$DOWNLOAD_URL\",
                   \"release_notes\": \"Automated build from ${GITHUB_REF#refs/heads/} branch\",
                   \"auto_update_enabled\": $([ "$CHANNEL" = "stable" ] && echo "true" || echo "false"),

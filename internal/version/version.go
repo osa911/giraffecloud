@@ -28,21 +28,21 @@ type BuildInfo struct {
 	Compiler    string `json:"compiler"`
 }
 
-// ServerVersionInfo contains version information from the server
-type ServerVersionInfo struct {
-	ServerVersion        string `json:"server_version"`
-	BuildTime           string `json:"build_time"`
-	GitCommit           string `json:"git_commit"`
-	GoVersion           string `json:"go_version"`
-	Platform            string `json:"platform"`
-	MinimumClientVersion string `json:"minimum_client_version"`
-	ClientVersion       string `json:"client_version,omitempty"`
-	UpdateAvailable     bool   `json:"update_available"`
-	UpdateRequired      bool   `json:"update_required"`
-	DownloadURL         string `json:"download_url"`
-	ReleaseTag          string `json:"release_tag"`           // e.g., "test-dcbb755"
-	Channel             string `json:"channel"`               // "stable", "beta", or "test"
-	ShortVersion        string `json:"short_version"`         // e.g., "v0.0.0-test.dcbb755"
+// ClientVersionInfo contains version information for the client
+type ClientVersionInfo struct {
+	// Version information
+	LatestVersion     string `json:"latest_version"`      // Latest available version
+	MinimumVersion    string `json:"minimum_version"`     // Minimum required version
+	CurrentVersion    string `json:"current_version"`     // Current client version (from request)
+	UpdateAvailable   bool   `json:"update_available"`    // Whether an update is available
+	UpdateRequired    bool   `json:"update_required"`     // Whether an update is required
+
+	// Release information
+	Channel           string `json:"channel"`             // "stable", "beta", or "test"
+	ReleaseTag       string `json:"release_tag"`         // e.g., "test-dcbb755"
+	ShortVersion     string `json:"short_version"`       // e.g., "v0.0.0-test.dcbb755"
+	DownloadURL      string `json:"download_url"`        // Base URL for downloads
+	ReleaseNotes     string `json:"release_notes"`       // Release notes for this version
 }
 
 // GetBuildInfo returns complete build information
@@ -133,7 +133,7 @@ func CheckServerVersion(serverURL string) (*ServerVersionInfo, error) {
 	return &versionInfo, nil
 }
 
-// CompareVersions compares two semantic version strings
+// CompareVersions compares two version strings
 // Returns: -1 if v1 < v2, 0 if v1 == v2, 1 if v1 > v2
 func CompareVersions(v1, v2 string) int {
 	// Remove 'v' prefix if present
@@ -149,6 +149,29 @@ func CompareVersions(v1, v2 string) int {
 	}
 	if v2 == "dev" || v2 == "unknown" {
 		return 1
+	}
+
+	// Extract commit hashes from test versions
+	// Format: test-1c0f5f7-30-g6c89e8d or v0.0.0-test.9207eca
+	hash1 := extractCommitHash(v1)
+	hash2 := extractCommitHash(v2)
+
+	// If both are test versions with commit hashes, compare them
+	if hash1 != "" && hash2 != "" {
+		if hash1 == hash2 {
+			return 0
+		}
+		// Different commits = different versions
+		// Consider newer commit (v2) as higher version
+		return -1
+	}
+
+	// If only one is a test version, consider it older
+	if hash1 != "" {
+		return -1 // v1 is test version
+	}
+	if hash2 != "" {
+		return 1 // v2 is test version
 	}
 
 	// Split versions into parts
@@ -183,6 +206,27 @@ func CompareVersions(v1, v2 string) int {
 	}
 
 	return 0
+}
+
+// extractCommitHash extracts commit hash from test version string
+func extractCommitHash(version string) string {
+	// Format 1: test-1c0f5f7-30-g6c89e8d
+	if strings.HasPrefix(version, "test-") {
+		parts := strings.Split(version, "-")
+		if len(parts) > 1 {
+			return parts[1]
+		}
+	}
+
+	// Format 2: v0.0.0-test.9207eca
+	if strings.Contains(version, "-test.") {
+		parts := strings.Split(version, ".")
+		if len(parts) > 0 {
+			return parts[len(parts)-1]
+		}
+	}
+
+	return ""
 }
 
 // parseVersionPart extracts the numeric part from a version component

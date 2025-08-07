@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"giraffecloud/internal/db/ent"
-	"giraffecloud/internal/db/ent/clientversion"
+	clientVersionEntity "giraffecloud/internal/db/ent/clientversion"
 	"giraffecloud/internal/logging"
 	"giraffecloud/internal/version"
 	"runtime"
@@ -18,23 +18,19 @@ type VersionService struct {
 
 // ClientVersionInfo represents version information for a specific client
 type ClientVersionInfo struct {
-	ServerVersion        string                 `json:"server_version"`
-	BuildTime           string                 `json:"build_time"`
-	GitCommit           string                 `json:"git_commit"`
-	GoVersion           string                 `json:"go_version"`
-	Platform            string                 `json:"platform"`
-	MinimumClientVersion string                 `json:"minimum_client_version"`
-	LatestClientVersion  string                 `json:"latest_client_version"`
-	ClientVersion       string                 `json:"client_version,omitempty"`
-	UpdateAvailable     bool                   `json:"update_available"`
-	UpdateRequired      bool                   `json:"update_required"`
-	DownloadURL         string                 `json:"download_url"`
-	ReleaseNotes        string                 `json:"release_notes,omitempty"`
-	Channel             string                 `json:"channel"`
-	ForceUpdate         bool                   `json:"force_update"`
-	Metadata            map[string]interface{} `json:"metadata,omitempty"`
-	ReleaseTag          string                 `json:"release_tag"`           // e.g., "test-dcbb755"
-	ShortVersion        string                 `json:"short_version"`         // e.g., "v0.0.0-test.dcbb755"
+	// Version information
+	LatestVersion     string                 `json:"latest_version"`      // Latest available version
+	MinimumVersion    string                 `json:"minimum_version"`     // Minimum required version
+	CurrentVersion    string                 `json:"current_version"`     // Current client version (from request)
+	UpdateAvailable   bool                   `json:"update_available"`    // Whether an update is available
+	UpdateRequired    bool                   `json:"update_required"`     // Whether an update is required
+
+	// Release information
+	Channel           string                 `json:"channel"`             // "stable", "beta", or "test"
+	ReleaseTag       string                 `json:"release_tag"`         // e.g., "test-dcbb755"
+	ShortVersion     string                 `json:"short_version"`       // e.g., "v0.0.0-test.dcbb755"
+	DownloadURL      string                 `json:"download_url"`        // Base URL for downloads
+	ReleaseNotes     string                 `json:"release_notes"`       // Release notes for this version
 }
 
 // NewVersionService creates a new version service
@@ -84,27 +80,19 @@ func (v *VersionService) GetVersionInfo(ctx context.Context, clientVersion, chan
 
 	// Build response
 	response := &ClientVersionInfo{
-		ServerVersion:        buildInfo.Version,
-		BuildTime:           buildInfo.BuildTime,
-		GitCommit:           buildInfo.GitCommit,
-		GoVersion:           buildInfo.GoVersion,
-		Platform:            buildInfo.Platform,
-		MinimumClientVersion: clientVersionConfig.MinimumVersion,
-		LatestClientVersion:  clientVersionConfig.LatestVersion,
-		DownloadURL:         clientVersionConfig.DownloadURL,
-		ReleaseNotes:        clientVersionConfig.ReleaseNotes,
-		Channel:             clientVersionConfig.Channel,
-		ForceUpdate:         clientVersionConfig.ForceUpdate,
-		Metadata:            clientVersionConfig.Metadata,
-		ReleaseTag:          releaseTag,
-		ShortVersion:        shortVersion,
-	}
+		// Version information
+		MinimumVersion:    clientVersionConfig.MinimumVersion,
+		LatestVersion:     clientVersionConfig.LatestVersion,
+		CurrentVersion:    clientVersion,
+		UpdateAvailable:   version.IsUpdateAvailable(clientVersion, clientVersionConfig.LatestVersion),
+		UpdateRequired:    version.IsUpdateRequired(clientVersion, clientVersionConfig.MinimumVersion),
 
-	// Add client-specific information if version provided
-	if clientVersion != "" {
-		response.ClientVersion = clientVersion
-		response.UpdateAvailable = version.IsUpdateAvailable(clientVersion, clientVersionConfig.LatestVersion)
-		response.UpdateRequired = version.IsUpdateRequired(clientVersion, clientVersionConfig.MinimumVersion)
+		// Release information
+		Channel:           clientVersionConfig.Channel,
+		ReleaseTag:       releaseTag,
+		ShortVersion:     shortVersion,
+		DownloadURL:      clientVersionConfig.DownloadURL,
+		ReleaseNotes:     clientVersionConfig.ReleaseNotes,
 	}
 
 	return response, nil
@@ -115,9 +103,9 @@ func (v *VersionService) getClientVersionConfig(ctx context.Context, channel, pl
 	// Try exact match first
 	config, err := v.db.ClientVersion.Query().
 		Where(
-			clientversion.Channel(channel),
-			clientversion.Platform(platform),
-			clientversion.Arch(arch),
+			clientVersionEntity.Channel(channel),
+			clientVersionEntity.Platform(platform),
+			clientVersionEntity.Arch(arch),
 		).
 		Only(ctx)
 
@@ -128,9 +116,9 @@ func (v *VersionService) getClientVersionConfig(ctx context.Context, channel, pl
 	// Try platform-specific, any arch
 	config, err = v.db.ClientVersion.Query().
 		Where(
-			clientversion.Channel(channel),
-			clientversion.Platform(platform),
-			clientversion.Arch("all"),
+			clientVersionEntity.Channel(channel),
+			clientVersionEntity.Platform(platform),
+			clientVersionEntity.Arch("all"),
 		).
 		Only(ctx)
 
@@ -141,9 +129,9 @@ func (v *VersionService) getClientVersionConfig(ctx context.Context, channel, pl
 	// Try any platform, specific arch
 	config, err = v.db.ClientVersion.Query().
 		Where(
-			clientversion.Channel(channel),
-			clientversion.Platform("all"),
-			clientversion.Arch(arch),
+			clientVersionEntity.Channel(channel),
+			clientVersionEntity.Platform("all"),
+			clientVersionEntity.Arch(arch),
 		).
 		Only(ctx)
 
@@ -154,9 +142,9 @@ func (v *VersionService) getClientVersionConfig(ctx context.Context, channel, pl
 	// Try generic config for this channel
 	config, err = v.db.ClientVersion.Query().
 		Where(
-			clientversion.Channel(channel),
-			clientversion.Platform("all"),
-			clientversion.Arch("all"),
+			clientVersionEntity.Channel(channel),
+			clientVersionEntity.Platform("all"),
+			clientVersionEntity.Arch("all"),
 		).
 		Only(ctx)
 
@@ -165,38 +153,22 @@ func (v *VersionService) getClientVersionConfig(ctx context.Context, channel, pl
 
 // getFallbackVersionInfo returns fallback version info when database is unavailable
 func (v *VersionService) getFallbackVersionInfo(buildInfo version.BuildInfo, clientVersion, channel string) *ClientVersionInfo {
-	// For fallback, we'll use the build info to construct the version info
-	shortVersion := buildInfo.Version
-	releaseTag := "stable"
-	if channel != "stable" {
-		// For non-stable channels, use commit hash
-		shortVersion = fmt.Sprintf("v0.0.0-%s.%s", channel, buildInfo.GitCommit[:8])
-		releaseTag = fmt.Sprintf("%s-%s", channel, buildInfo.GitCommit[:8])
-	}
-
+	// When database is unavailable, use client's current version as both minimum and latest
+	// This means no updates will be required or available until DB is back
 	response := &ClientVersionInfo{
-		ServerVersion:        buildInfo.Version,
-		BuildTime:           buildInfo.BuildTime,
-		GitCommit:           buildInfo.GitCommit,
-		GoVersion:           buildInfo.GoVersion,
-		Platform:            buildInfo.Platform,
-		MinimumClientVersion: "v1.0.0",
-		LatestClientVersion:  buildInfo.Version,
-		DownloadURL:         "https://github.com/osa911/giraffecloud/releases/latest",
-		Channel:             channel,
-		ForceUpdate:         false,
-		Metadata:            map[string]interface{}{
-			"release_tag":   releaseTag,
-			"short_version": shortVersion,
-		},
-		ReleaseTag:          releaseTag,
-		ShortVersion:        shortVersion,
-	}
+		// Version information
+		MinimumVersion:    clientVersion, // Use client's version as minimum
+		LatestVersion:     clientVersion, // Use client's version as latest
+		CurrentVersion:    clientVersion,
+		UpdateAvailable:   false, // No updates during DB outage
+		UpdateRequired:    false, // No forced updates during DB outage
 
-	if clientVersion != "" {
-		response.ClientVersion = clientVersion
-		response.UpdateAvailable = version.IsUpdateAvailable(clientVersion, buildInfo.Version)
-		response.UpdateRequired = version.IsUpdateRequired(clientVersion, "v1.0.0")
+		// Release information
+		Channel:           channel,
+		ReleaseTag:       "", // No release info during DB outage
+		ShortVersion:     clientVersion,
+		DownloadURL:      "", // No downloads during DB outage
+		ReleaseNotes:     "Version service temporarily unavailable",
 	}
 
 	return response
@@ -207,9 +179,9 @@ func (v *VersionService) UpdateClientVersionConfig(ctx context.Context, config C
 	// Check if config exists
 	existing, err := v.db.ClientVersion.Query().
 		Where(
-			clientversion.Channel(config.Channel),
-			clientversion.Platform(config.Platform),
-			clientversion.Arch(config.Arch),
+			clientVersionEntity.Channel(config.Channel),
+			clientVersionEntity.Platform(config.Platform),
+			clientVersionEntity.Arch(config.Arch),
 		).
 		Only(ctx)
 
@@ -276,7 +248,7 @@ type ClientVersionConfigUpdate struct {
 // GetActiveChannels returns all active release channels
 func (v *VersionService) GetActiveChannels(ctx context.Context) ([]string, error) {
 	channels, err := v.db.ClientVersion.Query().
-		GroupBy(clientversion.FieldChannel).
+		GroupBy(clientVersionEntity.FieldChannel).
 		Strings(ctx)
 
 	if err != nil {
@@ -294,7 +266,7 @@ func (v *VersionService) InitializeDefaultConfigs(ctx context.Context) error {
 			Platform:          "all",
 			Arch:              "all",
 			LatestVersion:     version.Version,
-			MinimumVersion:    "v1.0.0",
+			MinimumVersion:    "v0.0.0", // Most permissive default
 			DownloadURL:       "https://github.com/osa911/giraffecloud/releases/latest",
 			ReleaseNotes:      "Stable release",
 			AutoUpdateEnabled: true,
@@ -306,7 +278,7 @@ func (v *VersionService) InitializeDefaultConfigs(ctx context.Context) error {
 			Platform:          "all",
 			Arch:              "all",
 			LatestVersion:     version.Version,
-			MinimumVersion:    "v1.0.0",
+			MinimumVersion:    "v0.0.0", // Most permissive default
 			DownloadURL:       "https://github.com/osa911/giraffecloud/releases",
 			ReleaseNotes:      "Beta release",
 			AutoUpdateEnabled: false,
@@ -318,7 +290,7 @@ func (v *VersionService) InitializeDefaultConfigs(ctx context.Context) error {
 			Platform:          "all",
 			Arch:              "all",
 			LatestVersion:     version.Version,
-			MinimumVersion:    "v1.0.0",
+			MinimumVersion:    "v0.0.0", // Most permissive default
 			DownloadURL:       "https://github.com/osa911/giraffecloud/releases",
 			ReleaseNotes:      "Test release",
 			AutoUpdateEnabled: false,
@@ -331,9 +303,9 @@ func (v *VersionService) InitializeDefaultConfigs(ctx context.Context) error {
 		// Check if exists
 		existing, err := v.db.ClientVersion.Query().
 			Where(
-				clientversion.Channel(config.Channel),
-				clientversion.Platform(config.Platform),
-				clientversion.Arch(config.Arch),
+				clientVersionEntity.Channel(config.Channel),
+				clientVersionEntity.Platform(config.Platform),
+				clientVersionEntity.Arch(config.Arch),
 			).
 			Exist(ctx)
 
