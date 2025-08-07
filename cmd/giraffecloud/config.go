@@ -27,8 +27,15 @@ var configPathCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		configPath := filepath.Join(homeDir, ".giraffecloud", "config.json")
-		fmt.Println(configPath)
+		baseDir := filepath.Join(homeDir, ".giraffecloud")
+		configPath := filepath.Join(baseDir, "config.json")
+		certsDir := filepath.Join(baseDir, "certs")
+		logPath := filepath.Join(baseDir, "client.log")
+
+		fmt.Printf("Configuration directory: %s\n", baseDir)
+		fmt.Printf("Config file:            %s\n", configPath)
+		fmt.Printf("Certificates directory: %s\n", certsDir)
+		fmt.Printf("Log file:              %s\n", logPath)
 	},
 }
 

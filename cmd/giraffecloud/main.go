@@ -398,10 +398,10 @@ func init() {
 	rootCmd.AddCommand(configCmd)
 
 	// Setup update commands (from update.go)
-	rootCmd.AddCommand(updateCmd)
-	rootCmd.AddCommand(autoUpdateCmd)
-	rootCmd.AddCommand(testModeCmd)
 	initUpdateCommands()
+
+	// Setup test mode commands (from test_mode.go)
+	initTestModeCommands()
 
 	// Setup service commands (from service.go)
 	initServiceCommands()

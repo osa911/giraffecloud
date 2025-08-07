@@ -179,22 +179,32 @@ var autoUpdateEnableCmd = &cobra.Command{
 	Use:   "enable",
 	Short: "Enable automatic updates",
 	Run: func(cmd *cobra.Command, args []string) {
-		cfg, err := tunnel.LoadConfig()
-		if err != nil {
+		// Load existing config
+		existingCfg, err := tunnel.LoadConfig()
+		if err != nil && !os.IsNotExist(err) {
 			logger.Error("Error loading config: %v", err)
 			os.Exit(1)
 		}
 
-		cfg.AutoUpdate.Enabled = true
+		// Create new config with auto-update enabled
+		newCfg := &tunnel.Config{
+			AutoUpdate: tunnel.AutoUpdateConfig{
+				Enabled: true,
+			},
+		}
 
-		if err := tunnel.SaveConfig(cfg); err != nil {
+		// Merge changes
+		mergedCfg := tunnel.MergeConfig(existingCfg, newCfg)
+
+		// Save config
+		if err := tunnel.SaveConfig(mergedCfg); err != nil {
 			logger.Error("Failed to save config: %v", err)
 			os.Exit(1)
 		}
 
 		logger.Info("✅ Automatic updates enabled")
-		logger.Info("💡 Updates will be checked every %v", cfg.AutoUpdate.CheckInterval)
-		if cfg.AutoUpdate.RequiredOnly {
+		logger.Info("💡 Updates will be checked every %v", mergedCfg.AutoUpdate.CheckInterval)
+		if mergedCfg.AutoUpdate.RequiredOnly {
 			logger.Info("💡 Only required updates will be installed automatically")
 		}
 	},
@@ -204,15 +214,25 @@ var autoUpdateDisableCmd = &cobra.Command{
 	Use:   "disable",
 	Short: "Disable automatic updates",
 	Run: func(cmd *cobra.Command, args []string) {
-		cfg, err := tunnel.LoadConfig()
-		if err != nil {
+		// Load existing config
+		existingCfg, err := tunnel.LoadConfig()
+		if err != nil && !os.IsNotExist(err) {
 			logger.Error("Error loading config: %v", err)
 			os.Exit(1)
 		}
 
-		cfg.AutoUpdate.Enabled = false
+		// Create new config with auto-update disabled
+		newCfg := &tunnel.Config{
+			AutoUpdate: tunnel.AutoUpdateConfig{
+				Enabled: false,
+			},
+		}
 
-		if err := tunnel.SaveConfig(cfg); err != nil {
+		// Merge changes
+		mergedCfg := tunnel.MergeConfig(existingCfg, newCfg)
+
+		// Save config
+		if err := tunnel.SaveConfig(mergedCfg); err != nil {
 			logger.Error("Failed to save config: %v", err)
 			os.Exit(1)
 		}
@@ -232,16 +252,22 @@ Examples:
   giraffecloud auto-update config --required-only   # Only install required updates
   giraffecloud auto-update config --window=2,6,UTC  # Update between 2-6 AM UTC`,
 	Run: func(cmd *cobra.Command, args []string) {
-		cfg, err := tunnel.LoadConfig()
-		if err != nil {
+		// Load existing config
+		existingCfg, err := tunnel.LoadConfig()
+		if err != nil && !os.IsNotExist(err) {
 			logger.Error("Error loading config: %v", err)
 			os.Exit(1)
+		}
+
+		// Create new config with auto-update settings
+		newCfg := &tunnel.Config{
+			AutoUpdate: tunnel.AutoUpdateConfig{},
 		}
 
 		// Update settings from flags
 		if interval, _ := cmd.Flags().GetString("interval"); interval != "" {
 			if duration, err := time.ParseDuration(interval); err == nil {
-				cfg.AutoUpdate.CheckInterval = duration
+				newCfg.AutoUpdate.CheckInterval = duration
 				logger.Info("✅ Check interval set to: %v", duration)
 			} else {
 				logger.Error("Invalid interval format: %s", interval)
@@ -250,17 +276,17 @@ Examples:
 		}
 
 		if requiredOnly, _ := cmd.Flags().GetBool("required-only"); cmd.Flags().Changed("required-only") {
-			cfg.AutoUpdate.RequiredOnly = requiredOnly
+			newCfg.AutoUpdate.RequiredOnly = requiredOnly
 			logger.Info("✅ Required-only mode: %v", requiredOnly)
 		}
 
 		if preserveConn, _ := cmd.Flags().GetBool("preserve-connection"); cmd.Flags().Changed("preserve-connection") {
-			cfg.AutoUpdate.PreserveConnection = preserveConn
+			newCfg.AutoUpdate.PreserveConnection = preserveConn
 			logger.Info("✅ Preserve connection: %v", preserveConn)
 		}
 
 		if restartService, _ := cmd.Flags().GetBool("restart-service"); cmd.Flags().Changed("restart-service") {
-			cfg.AutoUpdate.RestartService = restartService
+			newCfg.AutoUpdate.RestartService = restartService
 			logger.Info("✅ Restart service: %v", restartService)
 		}
 
@@ -274,7 +300,7 @@ Examples:
 					if _, err2 := fmt.Sscanf(parts[1], "%d", &endHour); err2 == nil {
 						if startHour >= 0 && startHour <= 23 && endHour >= 0 && endHour <= 23 {
 							timezone = strings.TrimSpace(parts[2])
-							cfg.AutoUpdate.UpdateWindow = &tunnel.TimeWindow{
+							newCfg.AutoUpdate.UpdateWindow = &tunnel.TimeWindow{
 								StartHour: startHour,
 								EndHour:   endHour,
 								Timezone:  timezone,
@@ -298,7 +324,11 @@ Examples:
 			}
 		}
 
-		if err := tunnel.SaveConfig(cfg); err != nil {
+		// Merge changes
+		mergedCfg := tunnel.MergeConfig(existingCfg, newCfg)
+
+		// Save config
+		if err := tunnel.SaveConfig(mergedCfg); err != nil {
 			logger.Error("Failed to save config: %v", err)
 			os.Exit(1)
 		}
@@ -307,171 +337,12 @@ Examples:
 	},
 }
 
-// testModeCmd handles test mode configuration for pre-release testing
-var testModeCmd = &cobra.Command{
-	Use:   "test-mode",
-	Short: "Manage test mode settings",
-	Long:  `Configure and manage test mode settings for receiving pre-release updates.`,
-}
-
-var testModeEnableCmd = &cobra.Command{
-	Use:   "enable [channel]",
-	Short: "Enable test mode with optional channel",
-	Long: `Enable test mode to receive pre-release updates.
-Channels: stable, beta, test
-
-Examples:
-  giraffecloud test-mode enable         # Enable with stable channel
-  giraffecloud test-mode enable beta    # Enable with beta channel
-  giraffecloud test-mode enable test    # Enable with test channel`,
-	Run: func(cmd *cobra.Command, args []string) {
-		cfg, err := tunnel.LoadConfig()
-		if err != nil {
-			logger.Error("Error loading config: %v", err)
-			os.Exit(1)
-		}
-
-		// Determine channel
-		channel := "stable"
-		if len(args) > 0 {
-			switch args[0] {
-			case "stable", "beta", "test":
-				channel = args[0]
-			default:
-				logger.Error("Invalid channel: %s. Valid channels: stable, beta, test", args[0])
-				os.Exit(1)
-			}
-		}
-
-		// Update config
-		cfg.TestMode.Enabled = true
-		cfg.TestMode.Channel = channel
-		cfg.AutoUpdate.Channel = channel
-
-		// Save config
-		if err := tunnel.SaveConfig(cfg); err != nil {
-			logger.Error("Failed to save config: %v", err)
-			os.Exit(1)
-		}
-
-		logger.Info("✅ Test mode enabled with channel: %s", channel)
-		logger.Info("💡 Use 'giraffecloud update --check-only' to check for updates")
-		logger.Info("💡 Use 'giraffecloud test-mode disable' to disable test mode")
-	},
-}
-
-var testModeDisableCmd = &cobra.Command{
-	Use:   "disable",
-	Short: "Disable test mode",
-	Long:  `Disable test mode and return to stable release channel.`,
-	Run: func(cmd *cobra.Command, args []string) {
-		cfg, err := tunnel.LoadConfig()
-		if err != nil {
-			logger.Error("Error loading config: %v", err)
-			os.Exit(1)
-		}
-
-		// Update config
-		cfg.TestMode.Enabled = false
-		cfg.TestMode.Channel = "stable"
-		cfg.AutoUpdate.Channel = "stable"
-
-		// Save config
-		if err := tunnel.SaveConfig(cfg); err != nil {
-			logger.Error("Failed to save config: %v", err)
-			os.Exit(1)
-		}
-
-		logger.Info("✅ Test mode disabled")
-		logger.Info("💡 Switched back to stable release channel")
-	},
-}
-
-var testModeStatusCmd = &cobra.Command{
-	Use:   "status",
-	Short: "Show test mode status",
-	Long:  `Display current test mode configuration and status.`,
-	Run: func(cmd *cobra.Command, args []string) {
-		cfg, err := tunnel.LoadConfig()
-		if err != nil {
-			logger.Error("Error loading config: %v", err)
-			os.Exit(1)
-		}
-
-		logger.Info("=== Test Mode Status ===")
-		if cfg.TestMode.Enabled {
-			logger.Info("Status: ✅ ENABLED")
-			logger.Info("Channel: %s", cfg.TestMode.Channel)
-			if cfg.TestMode.UserID != "" {
-				logger.Info("User ID: %s", cfg.TestMode.UserID)
-			}
-			if len(cfg.TestMode.Groups) > 0 {
-				logger.Info("Test Groups: %v", cfg.TestMode.Groups)
-			}
-		} else {
-			logger.Info("Status: ❌ DISABLED")
-			logger.Info("Channel: stable (default)")
-		}
-
-		logger.Info("")
-		logger.Info("Auto-Update Channel: %s", cfg.AutoUpdate.Channel)
-		logger.Info("Auto-Update Enabled: %t", cfg.AutoUpdate.Enabled)
-
-		// Check for updates
-		if cfg.API.Host != "" {
-			logger.Info("")
-			logger.Info("Checking for updates...")
-			serverURL := fmt.Sprintf("https://%s:%d", cfg.API.Host, cfg.API.Port)
-
-			// Add channel parameter for version check
-			versionURL := serverURL + "/api/v1/tunnels/version"
-			versionURL += "?client_version=" + version.Version
-			if cfg.TestMode.Enabled {
-				versionURL += "&channel=" + cfg.TestMode.Channel
-			}
-
-			versionInfo, err := version.CheckServerVersion(serverURL)
-			if err != nil {
-				logger.Warn("Could not check server version: %v", err)
-			} else {
-				if versionInfo.UpdateAvailable {
-					logger.Info("📢 Update available: %s -> %s", version.Version, versionInfo.ServerVersion)
-					if versionInfo.UpdateRequired {
-						logger.Info("⚠️  This update is REQUIRED")
-					}
-				} else {
-					logger.Info("✅ You are running the latest version")
-				}
-			}
-		}
-	},
-}
-
-var testModeSetUserCmd = &cobra.Command{
-	Use:   "set-user [user-id]",
-	Short: "Set user ID for test targeting",
-	Long:  `Set a user ID for test targeting. This allows server-side configuration of which users receive specific test versions.`,
-	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
-		cfg, err := tunnel.LoadConfig()
-		if err != nil {
-			logger.Error("Error loading config: %v", err)
-			os.Exit(1)
-		}
-
-		cfg.TestMode.UserID = args[0]
-
-		if err := tunnel.SaveConfig(cfg); err != nil {
-			logger.Error("Failed to save config: %v", err)
-			os.Exit(1)
-		}
-
-		logger.Info("✅ Test user ID set to: %s", args[0])
-	},
-}
-
 // initUpdateCommands sets up all update-related commands and their flags
 func initUpdateCommands() {
+	// Add update commands to root
+	rootCmd.AddCommand(updateCmd)
+	rootCmd.AddCommand(autoUpdateCmd)
+
 	// Add flags to update command
 	updateCmd.Flags().Bool("check-only", false, "Only check for updates, don't install")
 	updateCmd.Flags().Bool("force", false, "Force update even if same version")
@@ -488,10 +359,4 @@ func initUpdateCommands() {
 	autoUpdateConfigCmd.Flags().Bool("preserve-connection", false, "Preserve existing tunnel connection during update")
 	autoUpdateConfigCmd.Flags().Bool("restart-service", false, "Restart the GiraffeCloud service after update")
 	autoUpdateConfigCmd.Flags().String("window", "", "Update window in HH:MM-HH:MM format (e.g., 2,6,UTC)")
-
-	// Add subcommands to test-mode
-	testModeCmd.AddCommand(testModeEnableCmd)
-	testModeCmd.AddCommand(testModeDisableCmd)
-	testModeCmd.AddCommand(testModeStatusCmd)
-	testModeCmd.AddCommand(testModeSetUserCmd)
 }

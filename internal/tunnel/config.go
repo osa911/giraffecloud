@@ -188,6 +188,57 @@ func LoadConfig() (*Config, error) {
 	return &cfg, nil
 }
 
+// MergeConfig merges changes from new config into existing config
+func MergeConfig(existing, new *Config) *Config {
+	// If no existing config, start with default
+	if existing == nil {
+		existing = &DefaultConfig
+	}
+
+	// Create a copy to avoid modifying the input
+	merged := *existing
+
+	// Merge changes from new config
+	if new.Token != "" {
+		merged.Token = new.Token
+	}
+	if new.Domain != "" {
+		merged.Domain = new.Domain
+	}
+	if new.LocalPort != 0 {
+		merged.LocalPort = new.LocalPort
+	}
+	if new.Server.Host != "" {
+		merged.Server.Host = new.Server.Host
+	}
+	if new.Server.Port != 0 {
+		merged.Server.Port = new.Server.Port
+	}
+	if new.API.Host != "" {
+		merged.API.Host = new.API.Host
+	}
+	if new.API.Port != 0 {
+		merged.API.Port = new.API.Port
+	}
+
+	// Always update test mode and auto-update settings
+	merged.TestMode = new.TestMode
+	merged.AutoUpdate = new.AutoUpdate
+
+	// Security settings are only updated when explicitly set
+	if new.Security.CACert != "" {
+		merged.Security.CACert = new.Security.CACert
+	}
+	if new.Security.ClientCert != "" {
+		merged.Security.ClientCert = new.Security.ClientCert
+	}
+	if new.Security.ClientKey != "" {
+		merged.Security.ClientKey = new.Security.ClientKey
+	}
+
+	return &merged
+}
+
 // SaveConfig saves the configuration to the default location
 func SaveConfig(cfg *Config) error {
 	if err := cfg.Validate(); err != nil {
