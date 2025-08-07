@@ -83,10 +83,14 @@ func Info() string {
 		return fmt.Sprintf("%s (built %s)", buildInfo.Version, buildInfo.BuildTime)
 	}
 
+	commitInfo := buildInfo.GitCommit
+	if commitInfo != "unknown" && len(commitInfo) >= 8 {
+		commitInfo = commitInfo[:8]
+	}
 	return fmt.Sprintf("%s (built %s, commit %s)",
 		buildInfo.Version,
 		buildTime.Format("2006-01-02 15:04:05 UTC"),
-		buildInfo.GitCommit[:8])
+		commitInfo)
 }
 
 // CheckServerVersion checks the server version and compares it with the client
