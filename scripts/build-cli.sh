@@ -3,7 +3,8 @@ set -e
 
 VERSION=$(git describe --tags --always --dirty)
 BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-LDFLAGS="-s -w -X giraffecloud/internal/version.Version=${VERSION} -X giraffecloud/internal/version.BuildTime=${BUILD_TIME}"
+GIT_COMMIT=$(git rev-parse HEAD)
+LDFLAGS="-s -w -X giraffecloud/internal/version.Version=${VERSION} -X giraffecloud/internal/version.BuildTime=${BUILD_TIME} -X giraffecloud/internal/version.GitCommit=${GIT_COMMIT}"
 
 # Build for multiple platforms
 GOOS=darwin GOARCH=amd64 go build -ldflags="${LDFLAGS}" -o bin/giraffecloud-darwin-amd64 ./cmd/giraffecloud
