@@ -313,7 +313,8 @@ jobs:
                     \"branch\": \"${GITHUB_REF#refs/heads/}\",
                     \"build_number\": \"${{ github.run_number }}\",
                     \"build_url\": \"https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\",
-                    \"release_tag\": \"$RELEASE_TAG\"
+                    \"release_tag\": \"$RELEASE_TAG\",
+                    \"short_version\": \"$SHORT_VERSION\"
                   }
                 }" || echo "Failed to update database for $PLATFORM $ARCH - continuing..."
             done
