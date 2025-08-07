@@ -160,7 +160,7 @@ var autoUpdateStatusCmd = &cobra.Command{
 			logger.Error("Failed to check server version: %v", err)
 		} else {
 			logger.Info("Current Version: %s", version.Version)
-			logger.Info("Server Version: %s", versionInfo.ServerVersion)
+			logger.Info("Latest Version: %s", versionInfo.LatestVersion)
 			if versionInfo.UpdateAvailable {
 				logger.Info("Update Available: ✅ YES")
 				if versionInfo.UpdateRequired {

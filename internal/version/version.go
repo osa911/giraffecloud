@@ -93,8 +93,8 @@ func Info() string {
 		commitInfo)
 }
 
-// CheckServerVersion checks the server version and compares it with the client
-func CheckServerVersion(serverURL string) (*ServerVersionInfo, error) {
+// CheckServerVersion checks for client updates from the version service
+func CheckServerVersion(serverURL string) (*ClientVersionInfo, error) {
 	// Remove any trailing slashes and add the version endpoint
 	serverURL = strings.TrimRight(serverURL, "/")
 	versionURL := serverURL + "/api/v1/tunnels/version"
@@ -110,12 +110,12 @@ func CheckServerVersion(serverURL string) (*ServerVersionInfo, error) {
 	// Make request
 	resp, err := client.Get(versionURL)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check server version: %w", err)
+		return nil, fmt.Errorf("failed to check version service: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("server returned status %d", resp.StatusCode)
+		return nil, fmt.Errorf("version service returned status %d", resp.StatusCode)
 	}
 
 	// Read response
@@ -125,7 +125,7 @@ func CheckServerVersion(serverURL string) (*ServerVersionInfo, error) {
 	}
 
 	// Parse JSON response
-	var versionInfo ServerVersionInfo
+	var versionInfo ClientVersionInfo
 	if err := json.Unmarshal(body, &versionInfo); err != nil {
 		return nil, fmt.Errorf("failed to parse version response: %w", err)
 	}

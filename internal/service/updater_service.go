@@ -82,7 +82,7 @@ func (u *UpdaterService) CheckForUpdates(serverURL string) (*UpdateInfo, error) 
 
 	if !versionInfo.UpdateAvailable {
 		u.logger.Info("No updates available. Current version: %s, Server version: %s",
-			version.Version, versionInfo.ServerVersion)
+			version.Version, versionInfo.LatestVersion)
 		return nil, nil
 	}
 
@@ -119,7 +119,7 @@ func (u *UpdaterService) CheckForUpdates(serverURL string) (*UpdateInfo, error) 
 	}
 
 	updateInfo := &UpdateInfo{
-		Version:        versionInfo.ServerVersion,
+		Version:        versionInfo.LatestVersion,
 		DownloadURL:    downloadURL,
 		ChecksumURL:    downloadURL + ".sha256",
 		IsRequired:     versionInfo.UpdateRequired,

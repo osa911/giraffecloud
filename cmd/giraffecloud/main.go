@@ -369,14 +369,14 @@ func checkVersionCompatibility(serverAddr string) {
 
 	if versionInfo.UpdateRequired {
 		logger.Error("❌ Client version %s is incompatible with server", version.Version)
-		logger.Error("❌ Minimum required version: %s", versionInfo.MinimumClientVersion)
-		logger.Error("❌ Server version: %s", versionInfo.ServerVersion)
+		logger.Error("❌ Minimum required version: %s", versionInfo.MinimumVersion)
+		logger.Error("❌ Latest version: %s", versionInfo.LatestVersion)
 		logger.Info("💡 Run 'giraffecloud update' to update to the latest version")
 		os.Exit(1)
 	}
 
 	if versionInfo.UpdateAvailable {
-		logger.Info("📢 A newer version is available: %s -> %s", version.Version, versionInfo.ServerVersion)
+		logger.Info("📢 A newer version is available: %s -> %s", version.Version, versionInfo.LatestVersion)
 		logger.Info("💡 Run 'giraffecloud update' to upgrade")
 		time.Sleep(2 * time.Second) // Give user time to read
 	} else {

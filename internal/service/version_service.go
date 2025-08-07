@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"giraffecloud/internal/db/ent"
-	clientVersionEntity "giraffecloud/internal/db/ent/clientversion"
+	clientVersionEntity "giraffecloud/internal/db/ent/clientversion" // Entity for client version management
 	"giraffecloud/internal/logging"
 	"giraffecloud/internal/version"
 	"runtime"
