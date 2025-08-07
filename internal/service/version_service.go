@@ -268,7 +268,7 @@ func (v *VersionService) InitializeDefaultConfigs(ctx context.Context) error {
 			LatestVersion:     version.Version,
 			MinimumVersion:    "v0.0.0", // Most permissive default
 			DownloadURL:       "https://github.com/osa911/giraffecloud/releases/latest",
-			ReleaseNotes:      "Stable release",
+			ReleaseNotes:      "GiraffeCloud CLI Client - Stable Channel",
 			AutoUpdateEnabled: true,
 			ForceUpdate:       false,
 			Metadata:          map[string]interface{}{"release_type": "stable"},
@@ -280,7 +280,7 @@ func (v *VersionService) InitializeDefaultConfigs(ctx context.Context) error {
 			LatestVersion:     version.Version,
 			MinimumVersion:    "v0.0.0", // Most permissive default
 			DownloadURL:       "https://github.com/osa911/giraffecloud/releases",
-			ReleaseNotes:      "Beta release",
+			ReleaseNotes:      "GiraffeCloud CLI Client - Beta Channel",
 			AutoUpdateEnabled: false,
 			ForceUpdate:       false,
 			Metadata:          map[string]interface{}{"release_type": "beta"},
@@ -292,7 +292,7 @@ func (v *VersionService) InitializeDefaultConfigs(ctx context.Context) error {
 			LatestVersion:     version.Version,
 			MinimumVersion:    "v0.0.0", // Most permissive default
 			DownloadURL:       "https://github.com/osa911/giraffecloud/releases",
-			ReleaseNotes:      "Test release",
+			ReleaseNotes:      "GiraffeCloud CLI Client - Test Channel",
 			AutoUpdateEnabled: false,
 			ForceUpdate:       false,
 			Metadata:          map[string]interface{}{"release_type": "test"},

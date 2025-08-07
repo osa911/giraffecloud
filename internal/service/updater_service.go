@@ -81,7 +81,7 @@ func (u *UpdaterService) CheckForUpdates(serverURL string) (*UpdateInfo, error) 
 	}
 
 	if !versionInfo.UpdateAvailable {
-		u.logger.Info("No updates available. Current version: %s, Server version: %s",
+		u.logger.Info("No updates available. Current version: %s, Latest version: %s",
 			version.Version, versionInfo.LatestVersion)
 		return nil, nil
 	}

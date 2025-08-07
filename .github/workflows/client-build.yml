@@ -317,7 +317,7 @@ jobs:
                   \"latest_version\": \"$VERSION\",
                   \"minimum_version\": \"$MIN_VERSION\",
                   \"download_url\": \"$DOWNLOAD_URL\",
-                  \"release_notes\": \"Automated build from ${GITHUB_REF#refs/heads/} branch\",
+                  \"release_notes\": \"GiraffeCloud CLI Client ${VERSION}\\n\\nChannel: ${CHANNEL}\\nBranch: ${GITHUB_REF#refs/heads/}\\nCommit: $(git rev-parse HEAD)\\nBuild: #${{ github.run_number }} (${{ github.run_id }})\\n\\nChanges:\\n$(git log --oneline -n 5)\",
                   \"auto_update_enabled\": $([ "$CHANNEL" = "stable" ] && echo "true" || echo "false"),
                   \"force_update\": false,
                   \"metadata\": {

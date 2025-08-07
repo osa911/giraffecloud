@@ -30,6 +30,17 @@ func NewTunnelHandler(tunnelService interfaces.TunnelService, versionService *se
 // GetVersion returns the server version information for client version checking
 // This endpoint doesn't require authentication as it's used during tunnel connection
 func (h *TunnelHandler) GetVersion(c *gin.Context) {
+	logger := logging.GetGlobalLogger()
+
+	// Log request details
+	logger.Debug("📥 Version check request:")
+	logger.Debug("   Method: %s", c.Request.Method)
+	logger.Debug("   URL: %s", c.Request.URL.String())
+	logger.Debug("   Headers:")
+	for k, v := range c.Request.Header {
+		logger.Debug("     %s: %s", k, v)
+	}
+
 	// Get client information from query parameters or headers
 	clientVersion := c.Query("client_version")
 	if clientVersion == "" {
@@ -52,15 +63,31 @@ func (h *TunnelHandler) GetVersion(c *gin.Context) {
 		arch = c.GetHeader("X-Client-Arch")
 	}
 
+	// Log parsed parameters
+	logger.Debug("🔍 Parsed parameters:")
+	logger.Debug("   Client Version: %s", clientVersion)
+	logger.Debug("   Channel: %s", channel)
+	logger.Debug("   Platform: %s", platform)
+	logger.Debug("   Architecture: %s", arch)
+
 	// Get version information from service
 	versionInfo, err := h.versionService.GetVersionInfo(c.Request.Context(), clientVersion, channel, platform, arch)
 	if err != nil {
-		logging.GetGlobalLogger().Error("Failed to get version info: %v", err)
+		logger.Error("❌ Failed to get version info: %v", err)
 		c.JSON(500, gin.H{
 			"error": "Failed to retrieve version information",
 		})
 		return
 	}
+
+	// Log response
+	logger.Debug("📤 Sending version response:")
+	logger.Debug("   Latest Version: %s", versionInfo.LatestVersion)
+	logger.Debug("   Minimum Version: %s", versionInfo.MinimumVersion)
+	logger.Debug("   Channel: %s", versionInfo.Channel)
+	logger.Debug("   Update Available: %v", versionInfo.UpdateAvailable)
+	logger.Debug("   Update Required: %v", versionInfo.UpdateRequired)
+	logger.Debug("   Download URL: %s", versionInfo.DownloadURL)
 
 	c.JSON(200, versionInfo)
 }

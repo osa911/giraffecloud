@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"giraffecloud/internal/logging"
 )
 
 // These variables are set at build time via -ldflags
@@ -100,7 +102,20 @@ func CheckServerVersion(serverURL string) (*ClientVersionInfo, error) {
 	versionURL := serverURL + "/api/v1/tunnels/version"
 
 	// Add client version and platform info as query parameters
+	params := map[string]string{
+		"client_version": Version,
+		"platform":      runtime.GOOS,
+		"arch":         runtime.GOARCH,
+	}
 	versionURL += fmt.Sprintf("?client_version=%s&platform=%s&arch=%s", Version, runtime.GOOS, runtime.GOARCH)
+
+	// Log request details
+	logger := logging.GetGlobalLogger()
+	logger.Debug("🔍 Checking version with parameters:")
+	logger.Debug("   URL: %s", versionURL)
+	logger.Debug("   Client Version: %s", params["client_version"])
+	logger.Debug("   Platform: %s", params["platform"])
+	logger.Debug("   Architecture: %s", params["arch"])
 
 	// Create HTTP client with timeout
 	client := &http.Client{
@@ -124,11 +139,24 @@ func CheckServerVersion(serverURL string) (*ClientVersionInfo, error) {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
+	// Log raw response for debugging
+	logger.Debug("📥 Received version response:")
+	logger.Debug("   Status: %d", resp.StatusCode)
+	logger.Debug("   Body: %s", string(body))
+
 	// Parse JSON response
 	var versionInfo ClientVersionInfo
 	if err := json.Unmarshal(body, &versionInfo); err != nil {
 		return nil, fmt.Errorf("failed to parse version response: %w", err)
 	}
+
+	// Log parsed version info
+	logger.Debug("✅ Parsed version info:")
+	logger.Debug("   Latest Version: %s", versionInfo.LatestVersion)
+	logger.Debug("   Minimum Version: %s", versionInfo.MinimumVersion)
+	logger.Debug("   Channel: %s", versionInfo.Channel)
+	logger.Debug("   Update Available: %v", versionInfo.UpdateAvailable)
+	logger.Debug("   Update Required: %v", versionInfo.UpdateRequired)
 
 	return &versionInfo, nil
 }
@@ -162,8 +190,8 @@ func CompareVersions(v1, v2 string) int {
 			return 0
 		}
 		// Different commits = different versions
-		// Consider newer commit (v2) as higher version
-		return -1
+		// For test versions, consider them equal since we can't determine which commit is newer
+		return 0
 	}
 
 	// If only one is a test version, consider it older
