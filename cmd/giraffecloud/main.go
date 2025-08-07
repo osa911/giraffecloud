@@ -395,6 +395,7 @@ func init() {
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(serviceCmd)
+	rootCmd.AddCommand(configCmd)
 
 	// Setup update commands (from update.go)
 	rootCmd.AddCommand(updateCmd)
@@ -404,6 +405,9 @@ func init() {
 
 	// Setup service commands (from service.go)
 	initServiceCommands()
+
+	// Setup config commands (from config.go)
+	initConfigCommands()
 
 	// Add host flags to connect command
 	connectCmd.Flags().String("tunnel-host", "", "Tunnel host to connect to (default: tunnel.giraffecloud.xyz)")
