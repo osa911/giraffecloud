@@ -99,8 +99,8 @@ func CheckServerVersion(serverURL string) (*ServerVersionInfo, error) {
 	serverURL = strings.TrimRight(serverURL, "/")
 	versionURL := serverURL + "/api/v1/tunnels/version"
 
-	// Add client version as query parameter
-	versionURL += "?client_version=" + Version
+	// Add client version and platform info as query parameters
+	versionURL += fmt.Sprintf("?client_version=%s&platform=%s&arch=%s", Version, runtime.GOOS, runtime.GOARCH)
 
 	// Create HTTP client with timeout
 	client := &http.Client{
