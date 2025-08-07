@@ -86,20 +86,37 @@ func (u *UpdaterService) CheckForUpdates(serverURL string) (*UpdateInfo, error) 
 		return nil, nil
 	}
 
-	// Construct download URL for current platform
+	// Get platform info
 	platform := runtime.GOOS
 	arch := runtime.GOARCH
-	filename := fmt.Sprintf("giraffecloud-%s-%s", platform, arch)
+
+	// Construct filename with correct format
+	ext := ".tar.gz"
 	if platform == "windows" {
-		filename += ".exe"
+		ext = ".zip"
 	}
 
-	downloadURL := fmt.Sprintf("%s/v%s/giraffecloud_%s_%s_%s.tar.gz",
-		strings.TrimRight(u.downloadBaseURL, "/"),
-		strings.TrimPrefix(versionInfo.ServerVersion, "v"),
-		strings.TrimPrefix(versionInfo.ServerVersion, "v"),
+	// Construct filename using short version (e.g., v0.0.0-test.dcbb755)
+	filename := fmt.Sprintf("giraffecloud_%s_%s_%s%s",
 		platform,
-		arch)
+		arch,
+		versionInfo.ShortVersion,
+		ext)
+
+	// Construct full URL using base URL and release tag
+	// For stable: /releases/latest/download/giraffecloud_darwin_arm64_v1.0.0.tar.gz
+	// For beta/test: /releases/download/test-dcbb755/giraffecloud_darwin_arm64_v0.0.0-test.dcbb755.tar.gz
+	var downloadURL string
+	if versionInfo.Channel == "stable" {
+		downloadURL = fmt.Sprintf("%s/%s",
+			strings.TrimRight(versionInfo.DownloadURL, "/"),
+			filename)
+	} else {
+		downloadURL = fmt.Sprintf("%s/download/%s/%s",
+			strings.TrimSuffix(versionInfo.DownloadURL, "/releases"),
+			versionInfo.ReleaseTag,
+			filename)
+	}
 
 	updateInfo := &UpdateInfo{
 		Version:        versionInfo.ServerVersion,

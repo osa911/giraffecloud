@@ -33,6 +33,8 @@ type ClientVersionInfo struct {
 	Channel             string                 `json:"channel"`
 	ForceUpdate         bool                   `json:"force_update"`
 	Metadata            map[string]interface{} `json:"metadata,omitempty"`
+	ReleaseTag          string                 `json:"release_tag"`           // e.g., "test-dcbb755"
+	ShortVersion        string                 `json:"short_version"`         // e.g., "v0.0.0-test.dcbb755"
 }
 
 // NewVersionService creates a new version service
@@ -69,6 +71,17 @@ func (v *VersionService) GetVersionInfo(ctx context.Context, clientVersion, chan
 		return v.getFallbackVersionInfo(buildInfo, clientVersion, channel), nil
 	}
 
+	// Extract release tag and short version from metadata
+	var releaseTag, shortVersion string
+	if clientVersionConfig.Metadata != nil {
+		if rt, ok := clientVersionConfig.Metadata["release_tag"].(string); ok {
+			releaseTag = rt
+		}
+		if sv, ok := clientVersionConfig.Metadata["short_version"].(string); ok {
+			shortVersion = sv
+		}
+	}
+
 	// Build response
 	response := &ClientVersionInfo{
 		ServerVersion:        buildInfo.Version,
@@ -83,6 +96,8 @@ func (v *VersionService) GetVersionInfo(ctx context.Context, clientVersion, chan
 		Channel:             clientVersionConfig.Channel,
 		ForceUpdate:         clientVersionConfig.ForceUpdate,
 		Metadata:            clientVersionConfig.Metadata,
+		ReleaseTag:          releaseTag,
+		ShortVersion:        shortVersion,
 	}
 
 	// Add client-specific information if version provided
@@ -150,6 +165,15 @@ func (v *VersionService) getClientVersionConfig(ctx context.Context, channel, pl
 
 // getFallbackVersionInfo returns fallback version info when database is unavailable
 func (v *VersionService) getFallbackVersionInfo(buildInfo version.BuildInfo, clientVersion, channel string) *ClientVersionInfo {
+	// For fallback, we'll use the build info to construct the version info
+	shortVersion := buildInfo.Version
+	releaseTag := "stable"
+	if channel != "stable" {
+		// For non-stable channels, use commit hash
+		shortVersion = fmt.Sprintf("v0.0.0-%s.%s", channel, buildInfo.GitCommit[:8])
+		releaseTag = fmt.Sprintf("%s-%s", channel, buildInfo.GitCommit[:8])
+	}
+
 	response := &ClientVersionInfo{
 		ServerVersion:        buildInfo.Version,
 		BuildTime:           buildInfo.BuildTime,
@@ -161,6 +185,12 @@ func (v *VersionService) getFallbackVersionInfo(buildInfo version.BuildInfo, cli
 		DownloadURL:         "https://github.com/osa911/giraffecloud/releases/latest",
 		Channel:             channel,
 		ForceUpdate:         false,
+		Metadata:            map[string]interface{}{
+			"release_tag":   releaseTag,
+			"short_version": shortVersion,
+		},
+		ReleaseTag:          releaseTag,
+		ShortVersion:        shortVersion,
 	}
 
 	if clientVersion != "" {

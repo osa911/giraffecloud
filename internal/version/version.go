@@ -40,6 +40,9 @@ type ServerVersionInfo struct {
 	UpdateAvailable     bool   `json:"update_available"`
 	UpdateRequired      bool   `json:"update_required"`
 	DownloadURL         string `json:"download_url"`
+	ReleaseTag          string `json:"release_tag"`           // e.g., "test-dcbb755"
+	Channel             string `json:"channel"`               // "stable", "beta", or "test"
+	ShortVersion        string `json:"short_version"`         // e.g., "v0.0.0-test.dcbb755"
 }
 
 // GetBuildInfo returns complete build information

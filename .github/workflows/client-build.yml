@@ -250,6 +250,11 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Update version in database
         env:
           API_ENDPOINT: ${{ secrets.API_ENDPOINT }}
@@ -259,12 +264,19 @@ jobs:
           RELEASE_TAG: ${{ needs.determine-channel.outputs.release_tag }}
           SHORT_VERSION: ${{ needs.determine-channel.outputs.short_version }}
         run: |
+          # Get short commit hash
+          COMMIT_SHORT=$(git rev-parse --short HEAD)
           # Base download URL - this is what clients will use to construct their platform-specific URLs
           BASE_URL="https://github.com/${{ github.repository }}/releases"
           if [[ "$CHANNEL" == "stable" ]]; then
             DOWNLOAD_URL="$BASE_URL/latest/download"
+          elif [[ "$CHANNEL" == "beta" ]]; then
+            DOWNLOAD_URL="$BASE_URL/download/beta-${COMMIT_SHORT}"
+          elif [[ "$CHANNEL" == "test" ]]; then
+            DOWNLOAD_URL="$BASE_URL/download/test-${COMMIT_SHORT}"
           else
-            DOWNLOAD_URL="$BASE_URL/download/${RELEASE_TAG}"
+            echo "Unknown channel: $CHANNEL"
+            exit 1
           fi
 
           # Update version configuration for each platform/arch combination
