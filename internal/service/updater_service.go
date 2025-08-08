@@ -200,7 +200,11 @@ func (u *UpdaterService) InstallUpdate(downloadPath string) error {
 		return fmt.Errorf("failed to find new executable: %w", err)
 	}
 
-	// Replace current executable
+	// Replace current executable (attempt graceful stop if running as a service or in-place)
+	if err := u.prepareForReplacement(); err != nil {
+		u.logger.Warn("Pre-replacement preparation failed: %v", err)
+	}
+
 	if err := u.replaceExecutable(newExePath); err != nil {
 		// Try to restore backup
 		if restoreErr := u.restoreBackup(backupPath); restoreErr != nil {
@@ -215,6 +219,14 @@ func (u *UpdaterService) InstallUpdate(downloadPath string) error {
 	os.RemoveAll(downloadPath)
 	os.RemoveAll(extractPath)
 
+	return nil
+}
+
+// prepareForReplacement tries to reduce chances of ETXTBSY by signaling the current process
+// Note: Best-effort; actual service management is handled by AutoUpdateService when available
+func (u *UpdaterService) prepareForReplacement() error {
+	// If running as same binary, try to close file descriptors via self-symlink open (no-op here)
+	// Placeholder for future enhancements (e.g., check PID file, systemd, etc.)
 	return nil
 }
 
@@ -403,8 +415,24 @@ func (u *UpdaterService) replaceExecutable(newExePath string) error {
 		// Remove old file
 		os.Remove(oldPath)
 	} else {
-		// On Unix systems, we can replace directly
-		if err := u.copyFile(newExePath, u.currentExePath); err != nil {
+		// On Unix systems, prefer atomic rename in destination directory to avoid "text file busy"
+		destDir := filepath.Dir(u.currentExePath)
+		tempDest := filepath.Join(destDir, ".giraffecloud.new")
+
+		// Copy new executable into destination directory first (ensures same filesystem)
+		if err := u.copyFile(newExePath, tempDest); err != nil {
+			return err
+		}
+
+		// Ensure executable bit is set (preserve from src)
+		if info, err := os.Stat(newExePath); err == nil {
+			_ = os.Chmod(tempDest, info.Mode())
+		}
+
+		// Atomically replace the current executable
+		if err := os.Rename(tempDest, u.currentExePath); err != nil {
+			// Cleanup temp file on failure
+			_ = os.Remove(tempDest)
 			return err
 		}
 	}

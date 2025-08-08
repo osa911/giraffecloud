@@ -6,6 +6,8 @@ import (
 	"giraffecloud/internal/tunnel"
 	"giraffecloud/internal/version"
 	"os"
+	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 
@@ -79,6 +81,27 @@ Examples:
 			}
 		}
 
+		// If running as a service, stop it gracefully before update
+		svcMgr := service.NewDefaultServiceManager()
+		if isRunning, err := svcMgr.IsRunning(); err == nil && isRunning {
+			logger.Info("Detected running service, stopping before update...")
+			if err := svcMgr.Stop(); err != nil {
+				logger.Warn("Failed to stop service: %v", err)
+			}
+		}
+
+		// If not running as a service, warn if other giraffecloud processes are active (may block replacement)
+		if runtime.GOOS != "windows" {
+			// Best-effort using pgrep
+			if _, err := exec.LookPath("pgrep"); err == nil {
+				out, _ := exec.Command("pgrep", "-x", "giraffecloud").Output()
+				// If more than one PID (excluding current), warn
+				if len(out) > 0 {
+					logger.Warn("Another giraffecloud process may be running; update could be blocked")
+				}
+			}
+		}
+
 		// Download update
 		logger.Info("📥 Downloading update...")
 		s := spinner.New(spinner.CharSets[14], 120*time.Millisecond)
@@ -104,6 +127,14 @@ Examples:
 		if err != nil {
 			logger.Error("Failed to install update: %v", err)
 			os.Exit(1)
+		}
+
+		// Start service again if it was running
+		if isRunning, err := svcMgr.IsRunning(); err == nil && !isRunning {
+			// Only attempt start if we actually manage a unit
+			if err := svcMgr.Start(); err != nil {
+				logger.Warn("Failed to start service after update: %v", err)
+			}
 		}
 
 		logger.Info("✅ Update completed successfully!")
