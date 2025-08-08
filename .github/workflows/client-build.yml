@@ -321,9 +321,14 @@ jobs:
 
               echo "Updating database for $PLATFORM $ARCH with URL: ${DOWNLOAD_URL}"
 
-              # Prepare release notes and payload safely with jq to escape newlines
-              RELEASE_NOTES=$(printf "GiraffeCloud CLI Client %s\n\nChannel: %s\nBranch: %s\nCommit: %s\nBuild: #%s (%s)\n\nChanges:\n%s" \
-                "$VERSION" "$CHANNEL" "$BRANCH_NAME" "$(git rev-parse HEAD)" "${{ github.run_number }}" "${{ github.run_id }}" "$(git log --oneline -n 5)")
+              # Prepare short release notes for DB
+              if [ "$CHANNEL" = "stable" ]; then
+                RELEASE_NOTES="Stable release"
+              elif [ "$CHANNEL" = "beta" ]; then
+                RELEASE_NOTES="Beta release"
+              else
+                RELEASE_NOTES="Automated build from ${BRANCH_NAME} branch"
+              fi
 
               AUTO_ENABLED=$([ "$CHANNEL" = "stable" ] && echo true || echo false)
 
