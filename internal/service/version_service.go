@@ -274,18 +274,6 @@ func (v *VersionService) InitializeDefaultConfigs(ctx context.Context) error {
 			Metadata:          map[string]interface{}{"release_type": "stable"},
 		},
 		{
-			Channel:           "beta",
-			Platform:          "all",
-			Arch:              "all",
-			LatestVersion:     version.Version,
-			MinimumVersion:    "v0.0.0", // Most permissive default
-			DownloadURL:       "https://github.com/osa911/giraffecloud/releases",
-			ReleaseNotes:      "GiraffeCloud CLI Client - Beta Channel",
-			AutoUpdateEnabled: false,
-			ForceUpdate:       false,
-			Metadata:          map[string]interface{}{"release_type": "beta"},
-		},
-		{
 			Channel:           "test",
 			Platform:          "all",
 			Arch:              "all",

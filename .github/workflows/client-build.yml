@@ -62,9 +62,6 @@ jobs:
           if [[ "$BRANCH_NAME" == "main" ]]; then
             CHANNEL="stable"
             SHOULD_RELEASE="true"
-          elif [[ "$BRANCH_NAME" == "develop" ]]; then
-            CHANNEL="beta"
-            SHOULD_RELEASE="true"
           elif [[ "$BRANCH_NAME" == feature/* ]] || [[ "$BRANCH_NAME" == test/* ]] || [[ "$BRANCH_NAME" == osa911/* ]]; then
             CHANNEL="test"
             SHOULD_RELEASE="true"
@@ -88,12 +85,6 @@ jobs:
             VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "v1.0.0")
             RELEASE_TAG="$VERSION"
             SHORT_VERSION="$VERSION"
-          elif [[ "${{ steps.channel.outputs.channel }}" == "beta" ]]; then
-            # For beta, use version with beta suffix
-            BASE_VERSION=$(git describe --tags --always 2>/dev/null | sed 's/-.*//g' || echo "v1.0.0")
-            VERSION="${BASE_VERSION}-beta.${TIMESTAMP}.${COMMIT_SHORT}"
-            RELEASE_TAG="beta-${COMMIT_SHORT}"
-            SHORT_VERSION="${BASE_VERSION}-beta.${COMMIT_SHORT}"
           else
             # For test, use branch name and commit
             if [[ "${{ github.event_name }}" == "pull_request" ]]; then
@@ -297,8 +288,6 @@ jobs:
           BASE_URL="https://github.com/${{ github.repository }}/releases"
           if [[ "$CHANNEL" == "stable" ]]; then
             DOWNLOAD_URL="$BASE_URL/latest/download"
-          elif [[ "$CHANNEL" == "beta" ]]; then
-            DOWNLOAD_URL="$BASE_URL/download/beta-${COMMIT_SHORT}"
           elif [[ "$CHANNEL" == "test" ]]; then
             DOWNLOAD_URL="$BASE_URL/download/test-${COMMIT_SHORT}"
           else
@@ -324,8 +313,6 @@ jobs:
               # Prepare short release notes for DB
               if [ "$CHANNEL" = "stable" ]; then
                 RELEASE_NOTES="Stable release"
-              elif [ "$CHANNEL" = "beta" ]; then
-                RELEASE_NOTES="Beta release"
               else
                 RELEASE_NOTES="Automated build from ${BRANCH_NAME} branch"
               fi

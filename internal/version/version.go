@@ -199,10 +199,10 @@ func CompareVersions(v1, v2 string) int {
 	hash1 := extractCommitHash(v1)
 	hash2 := extractCommitHash(v2)
 
-	// If both are pre-release (test/beta) builds, compare by commit hash when possible.
+	// If both are pre-release (test) builds, compare by commit hash when possible.
 	// If hashes are equal -> equal; if different -> server is considered newer.
-	isPre1 := strings.Contains(v1, "-test") || strings.HasPrefix(v1, "test-") || strings.Contains(v1, "-beta")
-	isPre2 := strings.Contains(v2, "-test") || strings.HasPrefix(v2, "test-") || strings.Contains(v2, "-beta")
+	isPre1 := strings.Contains(v1, "-test") || strings.HasPrefix(v1, "test-")
+	isPre2 := strings.Contains(v2, "-test") || strings.HasPrefix(v2, "test-")
 	if isPre1 && isPre2 {
 		if hash1 != "" && hash2 != "" {
 			if hash1 == hash2 {
@@ -275,8 +275,8 @@ func extractCommitHash(version string) string {
 		}
 	}
 
-	// Format 2: v0.0.0-test.<commit> or vX.Y.Z-beta.<commit>
-	if strings.Contains(version, "-test.") || strings.Contains(version, "-beta.") {
+	// Format 2: v0.0.0-test.<commit>
+	if strings.Contains(version, "-test.") {
 		parts := strings.Split(version, ".")
 		if len(parts) > 0 {
 			return parts[len(parts)-1]
