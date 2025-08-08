@@ -15,15 +15,9 @@ var testModeCmd = &cobra.Command{
 }
 
 var testModeEnableCmd = &cobra.Command{
-	Use:   "enable [channel]",
-	Short: "Enable test mode with optional channel",
-	Long: `Enable test mode to receive pre-release updates.
-Channels: stable, beta, test
-
-Examples:
-  giraffecloud test-mode enable         # Enable with stable channel
-  giraffecloud test-mode enable beta    # Enable with beta channel
-  giraffecloud test-mode enable test    # Enable with test channel`,
+	Use:   "enable",
+	Short: "Enable test mode (test channel)",
+	Long:  `Enable test mode to receive pre-release updates from the test channel.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		// Load existing config
 		existingCfg, err := tunnel.LoadConfig()
@@ -32,17 +26,8 @@ Examples:
 			os.Exit(1)
 		}
 
-		// Determine channel
-		channel := "stable"
-		if len(args) > 0 {
-			switch args[0] {
-			case "stable", "beta", "test":
-				channel = args[0]
-			default:
-				logger.Error("Invalid channel: %s. Valid channels: stable, beta, test", args[0])
-				os.Exit(1)
-			}
-		}
+		// Force test channel when enabling test mode
+		channel := "test"
 
 		// Base auto-update on existing (or defaults) to avoid overwriting unrelated fields
 		baseAuto := tunnel.DefaultConfig.AutoUpdate
@@ -74,7 +59,7 @@ Examples:
 			os.Exit(1)
 		}
 
-		logger.Info("✅ Test mode enabled with channel: %s", channel)
+		logger.Info("✅ Test mode enabled (channel: %s)", channel)
 		logger.Info("💡 Use 'giraffecloud update --check-only' to check for updates")
 		logger.Info("💡 Use 'giraffecloud test-mode disable' to disable test mode")
 	},
@@ -122,8 +107,8 @@ var testModeDisableCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		logger.Info("✅ Test mode disabled")
-		logger.Info("💡 Switched back to stable release channel")
+		logger.Info("✅ Test mode disabled (channel: stable)")
+		logger.Info("💡 Use 'giraffecloud update --check-only' to check for updates")
 	},
 }
 
