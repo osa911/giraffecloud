@@ -314,29 +314,53 @@ jobs:
 
               echo "Updating database for $PLATFORM $ARCH with URL: ${DOWNLOAD_URL}"
 
+              # Prepare release notes and payload safely with jq to escape newlines
+              RELEASE_NOTES=$(printf "GiraffeCloud CLI Client %s\n\nChannel: %s\nBranch: %s\nCommit: %s\nBuild: #%s (%s)\n\nChanges:\n%s" \
+                "$VERSION" "$CHANNEL" "${GITHUB_REF#refs/heads/}" "$(git rev-parse HEAD)" "${{ github.run_number }}" "${{ github.run_id }}" "$(git log --oneline -n 5)")
+
+              AUTO_ENABLED=$([ "$CHANNEL" = "stable" ] && echo true || echo false)
+
+              PAYLOAD=$(jq -n \
+                --arg channel "$CHANNEL" \
+                --arg platform "$PLATFORM" \
+                --arg arch "$ARCH" \
+                --arg version "$VERSION" \
+                --arg min "$MIN_VERSION" \
+                --arg download_url "$DOWNLOAD_URL" \
+                --arg release_notes "$RELEASE_NOTES" \
+                --arg git_commit "$(git rev-parse HEAD)" \
+                --arg branch "${GITHUB_REF#refs/heads/}" \
+                --arg build_number "${{ github.run_number }}" \
+                --arg build_url "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+                --arg release_tag "$RELEASE_TAG" \
+                --arg short_version "$SHORT_VERSION" \
+                --argjson auto_update_enabled $AUTO_ENABLED \
+                --argjson force_update false \
+                '{
+                  channel: $channel,
+                  platform: $platform,
+                  arch: $arch,
+                  latest_version: $version,
+                  minimum_version: $min,
+                  download_url: $download_url,
+                  release_notes: $release_notes,
+                  auto_update_enabled: $auto_update_enabled,
+                  force_update: $force_update,
+                  metadata: {
+                    git_commit: $git_commit,
+                    branch: $branch,
+                    build_number: $build_number,
+                    build_url: $build_url,
+                    release_tag: $release_tag,
+                    short_version: $short_version
+                  }
+                }')
+
               # Update version configuration via API
               curl -X POST "$API_ENDPOINT/api/v1/admin/version/update" \
                 -H "Authorization: Bearer $API_TOKEN" \
                 -H "Content-Type: application/json" \
-                -d "{
-                  \"channel\": \"$CHANNEL\",
-                  \"platform\": \"$PLATFORM\",
-                  \"arch\": \"$ARCH\",
-                  \"latest_version\": \"$VERSION\",
-                  \"minimum_version\": \"$MIN_VERSION\",
-                  \"download_url\": \"$DOWNLOAD_URL\",
-                  \"release_notes\": \"GiraffeCloud CLI Client ${VERSION}\\n\\nChannel: ${CHANNEL}\\nBranch: ${GITHUB_REF#refs/heads/}\\nCommit: $(git rev-parse HEAD)\\nBuild: #${{ github.run_number }} (${{ github.run_id }})\\n\\nChanges:\\n$(git log --oneline -n 5)\",
-                  \"auto_update_enabled\": $([ "$CHANNEL" = "stable" ] && echo "true" || echo "false"),
-                  \"force_update\": false,
-                  \"metadata\": {
-                    \"git_commit\": \"$(git rev-parse HEAD)\",
-                    \"branch\": \"${GITHUB_REF#refs/heads/}\",
-                    \"build_number\": \"${{ github.run_number }}\",
-                    \"build_url\": \"https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\",
-                    \"release_tag\": \"$RELEASE_TAG\",
-                    \"short_version\": \"$SHORT_VERSION\"
-                  }
-                }" || echo "Failed to update database for $PLATFORM $ARCH - continuing..."
+                -d "$PAYLOAD" || echo "Failed to update database for $PLATFORM $ARCH - continuing..."
             done
           done
 
