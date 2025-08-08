@@ -12,9 +12,11 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -46,6 +48,11 @@ func NewUpdaterService(downloadBaseURL string) (*UpdaterService, error) {
 	exePath, err := os.Executable()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get executable path: %w", err)
+	}
+
+	// Resolve symlinks so we replace the real target, not the symlink itself
+	if resolved, err := filepath.EvalSymlinks(exePath); err == nil && resolved != "" {
+		exePath = resolved
 	}
 
 	// Create backup and temp directories
@@ -215,6 +222,11 @@ func (u *UpdaterService) InstallUpdate(downloadPath string) error {
 
 	u.logger.Info("Update installed successfully!")
 
+	// Apply original ownership and best-effort labels
+	if info, err := os.Stat(u.currentExePath); err == nil {
+		_ = u.applyPostInstallAttributes(info)
+	}
+
 	// Clean up
 	os.RemoveAll(downloadPath)
 	os.RemoveAll(extractPath)
@@ -227,6 +239,29 @@ func (u *UpdaterService) InstallUpdate(downloadPath string) error {
 func (u *UpdaterService) prepareForReplacement() error {
 	// If running as same binary, try to close file descriptors via self-symlink open (no-op here)
 	// Placeholder for future enhancements (e.g., check PID file, systemd, etc.)
+	return nil
+}
+
+// applyPostInstallAttributes preserves owner/group and best-effort labels
+func (u *UpdaterService) applyPostInstallAttributes(originalInfo os.FileInfo) error {
+	// Preserve owner/group on Unix
+	if runtime.GOOS != "windows" {
+		if stat, ok := originalInfo.Sys().(*syscall.Stat_t); ok {
+			_ = os.Chown(u.currentExePath, int(stat.Uid), int(stat.Gid))
+		}
+		// Linux: try restorecon if available (SELinux)
+		if runtime.GOOS == "linux" {
+			if _, err := exec.LookPath("restorecon"); err == nil {
+				_ = exec.Command("restorecon", "-F", u.currentExePath).Run()
+			}
+		}
+		// macOS: remove quarantine xattr if present
+		if runtime.GOOS == "darwin" {
+			if _, err := exec.LookPath("xattr"); err == nil {
+				_ = exec.Command("xattr", "-d", "com.apple.quarantine", u.currentExePath).Run()
+			}
+		}
+	}
 	return nil
 }
 
