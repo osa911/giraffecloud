@@ -11,14 +11,14 @@ import (
 
 // Token represents the domain model for tokens
 type Token struct {
-	ID          uuid.UUID  `json:"id"`
-	UserID      uint32     `json:"user_id"`
-	Name        string     `json:"name"`
-	TokenHash   string     `json:"-"`
-	CreatedAt   time.Time  `json:"created_at"`
-	LastUsedAt  time.Time  `json:"last_used_at"`
-	ExpiresAt   time.Time  `json:"expires_at"`
-	RevokedAt   *time.Time `json:"revoked_at,omitempty"`
+	ID         uuid.UUID  `json:"id"`
+	UserID     uint32     `json:"user_id"`
+	Name       string     `json:"name"`
+	TokenHash  string     `json:"-"`
+	CreatedAt  time.Time  `json:"created_at"`
+	LastUsedAt time.Time  `json:"last_used_at"`
+	ExpiresAt  time.Time  `json:"expires_at"`
+	RevokedAt  *time.Time `json:"revoked_at,omitempty"`
 }
 
 // TokenFromEnt converts an Ent token model to a domain Token

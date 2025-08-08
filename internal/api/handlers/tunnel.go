@@ -92,7 +92,6 @@ func (h *TunnelHandler) GetVersion(c *gin.Context) {
 	c.JSON(200, versionInfo)
 }
 
-
 // CreateTunnel creates a new tunnel
 func (h *TunnelHandler) CreateTunnel(c *gin.Context) {
 	var req struct {

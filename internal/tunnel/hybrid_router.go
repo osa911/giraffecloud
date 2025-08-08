@@ -18,16 +18,16 @@ import (
 // This is the main entry point for all tunnel traffic - competing with Cloudflare!
 type HybridTunnelRouter struct {
 	// Core services
-	grpcTunnel *GRPCTunnelServer  // Handles HTTP traffic with unlimited concurrency
-	tcpTunnel  *TunnelServer      // Handles WebSocket traffic (legacy)
+	grpcTunnel *GRPCTunnelServer // Handles HTTP traffic with unlimited concurrency
+	tcpTunnel  *TunnelServer     // Handles WebSocket traffic (legacy)
 	logger     *logging.Logger
 
 	// Performance metrics
-	totalRequests      int64
-	grpcRequests       int64
-	tcpRequests        int64
-	websocketUpgrades  int64
-	routingErrors      int64
+	totalRequests     int64
+	grpcRequests      int64
+	tcpRequests       int64
+	websocketUpgrades int64
+	routingErrors     int64
 
 	// Configuration
 	config *HybridRouterConfig
@@ -40,8 +40,8 @@ type HybridRouterConfig struct {
 	TCPAddress  string
 
 	// Request classification
-	ForceGRPCPaths    []string // Paths that must use gRPC
-	ForceTCPPaths     []string // Paths that must use TCP
+	ForceGRPCPaths []string // Paths that must use gRPC
+	ForceTCPPaths  []string // Paths that must use TCP
 
 	// Large file handling
 	LargeFileExtensions []string // File extensions for large files (videos, etc.)
@@ -49,8 +49,8 @@ type HybridRouterConfig struct {
 	LargeFilePaths      []string // URL patterns that likely contain large files
 
 	// Performance settings
-	EnableMetrics     bool
-	MetricsInterval   time.Duration
+	EnableMetrics   bool
+	MetricsInterval time.Duration
 
 	// Security settings
 	EnableRateLimit   bool
@@ -60,17 +60,17 @@ type HybridRouterConfig struct {
 // DefaultHybridRouterConfig returns production-ready configuration
 func DefaultHybridRouterConfig() *HybridRouterConfig {
 	return &HybridRouterConfig{
-		GRPCAddress:       ":4444", // Different port for gRPC
-		TCPAddress:        ":4443", // Original port for TCP/WebSocket
-		ForceGRPCPaths:    []string{"/assets/", "/media/", "/static/"}, // Removed /api/ to allow WebSocket routing
-		ForceTCPPaths:     []string{"/ws/", "/websocket/", "/socket.io/", "socket.io", "transport=websocket"}, // Enhanced WebSocket patterns
+		GRPCAddress:    ":4444",                                                                            // Different port for gRPC
+		TCPAddress:     ":4443",                                                                            // Original port for TCP/WebSocket
+		ForceGRPCPaths: []string{"/assets/", "/media/", "/static/"},                                        // Removed /api/ to allow WebSocket routing
+		ForceTCPPaths:  []string{"/ws/", "/websocket/", "/socket.io/", "socket.io", "transport=websocket"}, // Enhanced WebSocket patterns
 
 		// Large file handling - route big files to TCP streaming
 		LargeFileExtensions: []string{".mp4", ".avi", ".mov", ".mkv", ".webm", ".m4v", ".flv", ".wmv", // Videos
 			".zip", ".rar", ".7z", ".tar", ".gz", ".bz2", // Archives
 			".iso", ".img", ".dmg", ".exe", ".msi", ".deb", ".rpm"}, // Large binaries
-		MaxGRPCFileSize:     50 * 1024 * 1024, // 50MB - files larger than this use TCP streaming
-		LargeFilePaths:      []string{"/video/", "/download/", "/file/", "/original/", "/raw/"}, // Paths likely to contain large files
+		MaxGRPCFileSize: 50 * 1024 * 1024,                                                   // 50MB - files larger than this use TCP streaming
+		LargeFilePaths:  []string{"/video/", "/download/", "/file/", "/original/", "/raw/"}, // Paths likely to contain large files
 
 		EnableMetrics:     true,
 		MetricsInterval:   1 * time.Minute,

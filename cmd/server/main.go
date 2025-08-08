@@ -29,9 +29,9 @@ func main() {
 	// Initialize logger configuration
 	logConfig := &logging.LogConfig{
 		File:       os.Getenv("LOG_FILE"),
-		MaxSize:    100,    // 100MB
-		MaxBackups: 10,     // Keep 10 backups
-		MaxAge:     30,     // Keep logs for 30 days
+		MaxSize:    100,                    // 100MB
+		MaxBackups: 10,                     // Keep 10 backups
+		MaxAge:     30,                     // Keep logs for 30 days
 		Level:      os.Getenv("LOG_LEVEL"), // Default to empty string, will use INFO level
 	}
 

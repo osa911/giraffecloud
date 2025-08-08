@@ -19,18 +19,18 @@ type VersionService struct {
 // ClientVersionInfo represents version information for a specific client
 type ClientVersionInfo struct {
 	// Version information
-	LatestVersion     string                 `json:"latest_version"`      // Latest available version
-	MinimumVersion    string                 `json:"minimum_version"`     // Minimum required version
-	CurrentVersion    string                 `json:"current_version"`     // Current client version (from request)
-	UpdateAvailable   bool                   `json:"update_available"`    // Whether an update is available
-	UpdateRequired    bool                   `json:"update_required"`     // Whether an update is required
+	LatestVersion   string `json:"latest_version"`   // Latest available version
+	MinimumVersion  string `json:"minimum_version"`  // Minimum required version
+	CurrentVersion  string `json:"current_version"`  // Current client version (from request)
+	UpdateAvailable bool   `json:"update_available"` // Whether an update is available
+	UpdateRequired  bool   `json:"update_required"`  // Whether an update is required
 
 	// Release information
-	Channel           string                 `json:"channel"`             // "stable", "beta", or "test"
-	ReleaseTag       string                 `json:"release_tag"`         // e.g., "test-dcbb755"
-	ShortVersion     string                 `json:"short_version"`       // e.g., "v0.0.0-test.dcbb755"
-	DownloadURL      string                 `json:"download_url"`        // Base URL for downloads
-	ReleaseNotes     string                 `json:"release_notes"`       // Release notes for this version
+	Channel      string `json:"channel"`       // "stable", "beta", or "test"
+	ReleaseTag   string `json:"release_tag"`   // e.g., "test-dcbb755"
+	ShortVersion string `json:"short_version"` // e.g., "v0.0.0-test.dcbb755"
+	DownloadURL  string `json:"download_url"`  // Base URL for downloads
+	ReleaseNotes string `json:"release_notes"` // Release notes for this version
 }
 
 // NewVersionService creates a new version service
@@ -81,18 +81,18 @@ func (v *VersionService) GetVersionInfo(ctx context.Context, clientVersion, chan
 	// Build response
 	response := &ClientVersionInfo{
 		// Version information
-		MinimumVersion:    clientVersionConfig.MinimumVersion,
-		LatestVersion:     clientVersionConfig.LatestVersion,
-		CurrentVersion:    clientVersion,
-		UpdateAvailable:   version.IsUpdateAvailable(clientVersion, clientVersionConfig.LatestVersion),
-		UpdateRequired:    version.IsUpdateRequired(clientVersion, clientVersionConfig.MinimumVersion),
+		MinimumVersion:  clientVersionConfig.MinimumVersion,
+		LatestVersion:   clientVersionConfig.LatestVersion,
+		CurrentVersion:  clientVersion,
+		UpdateAvailable: version.IsUpdateAvailable(clientVersion, clientVersionConfig.LatestVersion),
+		UpdateRequired:  version.IsUpdateRequired(clientVersion, clientVersionConfig.MinimumVersion),
 
 		// Release information
-		Channel:           clientVersionConfig.Channel,
-		ReleaseTag:       releaseTag,
-		ShortVersion:     shortVersion,
-		DownloadURL:      clientVersionConfig.DownloadURL,
-		ReleaseNotes:     clientVersionConfig.ReleaseNotes,
+		Channel:      clientVersionConfig.Channel,
+		ReleaseTag:   releaseTag,
+		ShortVersion: shortVersion,
+		DownloadURL:  clientVersionConfig.DownloadURL,
+		ReleaseNotes: clientVersionConfig.ReleaseNotes,
 	}
 
 	return response, nil
@@ -157,18 +157,18 @@ func (v *VersionService) getFallbackVersionInfo(buildInfo version.BuildInfo, cli
 	// This means no updates will be required or available until DB is back
 	response := &ClientVersionInfo{
 		// Version information
-		MinimumVersion:    clientVersion, // Use client's version as minimum
-		LatestVersion:     clientVersion, // Use client's version as latest
-		CurrentVersion:    clientVersion,
-		UpdateAvailable:   false, // No updates during DB outage
-		UpdateRequired:    false, // No forced updates during DB outage
+		MinimumVersion:  clientVersion, // Use client's version as minimum
+		LatestVersion:   clientVersion, // Use client's version as latest
+		CurrentVersion:  clientVersion,
+		UpdateAvailable: false, // No updates during DB outage
+		UpdateRequired:  false, // No forced updates during DB outage
 
 		// Release information
-		Channel:           channel,
-		ReleaseTag:       "", // No release info during DB outage
-		ShortVersion:     clientVersion,
-		DownloadURL:      "", // No downloads during DB outage
-		ReleaseNotes:     "Version service temporarily unavailable",
+		Channel:      channel,
+		ReleaseTag:   "", // No release info during DB outage
+		ShortVersion: clientVersion,
+		DownloadURL:  "", // No downloads during DB outage
+		ReleaseNotes: "Version service temporarily unavailable",
 	}
 
 	return response

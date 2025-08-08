@@ -22,23 +22,23 @@ type RateLimitConfig struct {
 
 // IPRateLimiter stores rate limiters for different IP addresses
 type IPRateLimiter struct {
-	ips      map[string]*rate.Limiter
-	mu       *sync.RWMutex
-	rps      rate.Limit
-	burst    int
+	ips             map[string]*rate.Limiter
+	mu              *sync.RWMutex
+	rps             rate.Limit
+	burst           int
 	cleanupInterval time.Duration
-	lastCleanup time.Time
+	lastCleanup     time.Time
 }
 
 // NewIPRateLimiter creates a new IP-based rate limiter
 func NewIPRateLimiter(rps int, burst int) *IPRateLimiter {
 	return &IPRateLimiter{
-		ips:      make(map[string]*rate.Limiter),
-		mu:       &sync.RWMutex{},
-		rps:      rate.Limit(rps),
-		burst:    burst,
+		ips:             make(map[string]*rate.Limiter),
+		mu:              &sync.RWMutex{},
+		rps:             rate.Limit(rps),
+		burst:           burst,
 		cleanupInterval: 10 * time.Minute,
-		lastCleanup: time.Now(),
+		lastCleanup:     time.Now(),
 	}
 }
 

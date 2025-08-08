@@ -52,52 +52,50 @@ func (s ConnectionState) String() string {
 
 // RetryConfig holds configuration for retry logic
 type RetryConfig struct {
-	MaxRetries      int           `json:"max_retries"`
-	InitialDelay    time.Duration `json:"initial_delay"`
-	MaxDelay        time.Duration `json:"max_delay"`
-	BackoffFactor   float64       `json:"backoff_factor"`
-	JitterEnabled   bool          `json:"jitter_enabled"`
+	MaxRetries          int           `json:"max_retries"`
+	InitialDelay        time.Duration `json:"initial_delay"`
+	MaxDelay            time.Duration `json:"max_delay"`
+	BackoffFactor       float64       `json:"backoff_factor"`
+	JitterEnabled       bool          `json:"jitter_enabled"`
 	HealthCheckInterval time.Duration `json:"health_check_interval"`
 }
 
 // DefaultRetryConfig returns sensible defaults for retry configuration
 func DefaultRetryConfig() *RetryConfig {
 	return &RetryConfig{
-		MaxRetries:      -1, // Infinite retries
-		InitialDelay:    1 * time.Second,
-		MaxDelay:        5 * time.Minute,
-		BackoffFactor:   2.0,
-		JitterEnabled:   true,
+		MaxRetries:          -1, // Infinite retries
+		InitialDelay:        1 * time.Second,
+		MaxDelay:            5 * time.Minute,
+		BackoffFactor:       2.0,
+		JitterEnabled:       true,
 		HealthCheckInterval: 30 * time.Second,
 	}
 }
 
-
-
 // Tunnel represents a secure tunnel connection with enhanced reliability
 type Tunnel struct {
-	conn         net.Conn
-	stopChan     chan struct{}
-	token        string
-	domain       string
-	localPort    int
-	logger       *logging.Logger
+	conn      net.Conn
+	stopChan  chan struct{}
+	token     string
+	domain    string
+	localPort int
+	logger    *logging.Logger
 
 	// Enhanced connection management
-	state        ConnectionState
-	stateMutex   sync.RWMutex
-	retryConfig  *RetryConfig
-	retryCount   int
-	lastError    error
+	state       ConnectionState
+	stateMutex  sync.RWMutex
+	retryConfig *RetryConfig
+	retryCount  int
+	lastError   error
 
 	// Health monitoring
 	healthTicker *time.Ticker
 	lastPing     time.Time
 
 	// Graceful shutdown
-	ctx          context.Context
-	cancel       context.CancelFunc
-	wg           sync.WaitGroup
+	ctx    context.Context
+	cancel context.CancelFunc
+	wg     sync.WaitGroup
 
 	// WebSocket connection
 	wsConn net.Conn
@@ -106,33 +104,36 @@ type Tunnel struct {
 	httpConnections []net.Conn
 
 	// Reconnection coordination
-	reconnectMutex sync.Mutex
-	isReconnecting bool
+	reconnectMutex         sync.Mutex
+	isReconnecting         bool
 	isIntentionalReconnect bool // Flag to prevent race conditions during WebSocket recycling
 
 	// Streaming configuration
 	streamConfig *StreamingConfig
 
 	// PRODUCTION-GRADE: gRPC Tunnel Client for unlimited HTTP concurrency
-	grpcClient   *GRPCTunnelClient
-	grpcEnabled  bool
+	grpcClient  *GRPCTunnelClient
+	grpcEnabled bool
+
+	// Hook invoked each time a connection is successfully established (including reconnects)
+	onConnectHook func()
 }
 
 // TunnelState represents preserved tunnel state for connection restoration
 type TunnelState struct {
-	Token       string            `json:"token"`
-	Domain      string            `json:"domain"`
-	LocalPort   int               `json:"local_port"`
-	ServerAddr  string            `json:"server_addr"`
-	TLSConfig   *tls.Config       `json:"-"` // Can't serialize, will need to recreate
-	State       ConnectionState   `json:"state"`
-	Timestamp   time.Time         `json:"timestamp"`
+	Token      string          `json:"token"`
+	Domain     string          `json:"domain"`
+	LocalPort  int             `json:"local_port"`
+	ServerAddr string          `json:"server_addr"`
+	TLSConfig  *tls.Config     `json:"-"` // Can't serialize, will need to recreate
+	State      ConnectionState `json:"state"`
+	Timestamp  time.Time       `json:"timestamp"`
 
 	// Connection details
-	GRPCEnabled bool              `json:"grpc_enabled"`
+	GRPCEnabled bool `json:"grpc_enabled"`
 
 	// Configuration
-	RetryConfig *RetryConfig      `json:"retry_config"`
+	RetryConfig  *RetryConfig     `json:"retry_config"`
 	StreamConfig *StreamingConfig `json:"stream_config"`
 }
 
@@ -145,6 +146,11 @@ func NewTunnel() *Tunnel {
 		retryConfig:  DefaultRetryConfig(),
 		streamConfig: DefaultStreamingConfig(), // Use default streaming config
 	}
+}
+
+// SetOnConnectHook registers a hook to be called after each successful connection establishment
+func (t *Tunnel) SetOnConnectHook(hook func()) {
+	t.onConnectHook = hook
 }
 
 // SetRetryConfig allows customization of retry behavior
@@ -222,6 +228,13 @@ func (t *Tunnel) connectWithRetry(serverAddr string, tlsConfig *tls.Config) erro
 			t.retryCount = 0
 			t.setState(StateConnected)
 			t.startHealthMonitoring()
+			if t.onConnectHook != nil {
+				// Invoke hook safely in a separate goroutine
+				go func() {
+					defer func() { _ = recover() }()
+					t.onConnectHook()
+				}()
+			}
 			return nil
 		}
 
@@ -262,10 +275,10 @@ func (t *Tunnel) attemptDualConnections(serverAddr string, tlsConfig *tls.Config
 
 		// CRITICAL: Force fresh TLS state during reconnection to prevent ERR_SSL_PROTOCOL_ERROR
 		tlsConfig = tlsConfig.Clone()
-		tlsConfig.ClientSessionCache = nil                             // Completely disable session cache
-		tlsConfig.SessionTicketsDisabled = true                       // Disable session tickets
-		tlsConfig.Renegotiation = tls.RenegotiateNever                 // Disable renegotiation
-		tlsConfig.Time = func() time.Time { return time.Now() }       // Force fresh time for each connection
+		tlsConfig.ClientSessionCache = nil                      // Completely disable session cache
+		tlsConfig.SessionTicketsDisabled = true                 // Disable session tickets
+		tlsConfig.Renegotiation = tls.RenegotiateNever          // Disable renegotiation
+		tlsConfig.Time = func() time.Time { return time.Now() } // Force fresh time for each connection
 	}
 
 	t.logger.Info("🚀 Starting PRODUCTION-GRADE tunnel establishment...")
@@ -293,7 +306,7 @@ func (t *Tunnel) attemptDualConnections(serverAddr string, tlsConfig *tls.Config
 	// Step 2: Establish TCP tunnel for WebSocket traffic (existing functionality)
 	t.logger.Info("🔌 Establishing TCP tunnel for WebSocket traffic...")
 
-		if t.grpcEnabled {
+	if t.grpcEnabled {
 		// In hybrid mode: gRPC handles ALL HTTP traffic (including large files via chunked streaming)
 		// TCP only handles WebSocket traffic
 		t.logger.Info("Hybrid mode: Establishing TCP connection for WebSocket traffic...")
@@ -333,15 +346,15 @@ func (t *Tunnel) attemptDualConnections(serverAddr string, tlsConfig *tls.Config
 	httpConnections := make([]net.Conn, 0, poolSize)
 	for i := 0; i < poolSize; i++ {
 		t.logger.Info("Establishing TCP HTTP tunnel %d/%d...", i+1, poolSize)
-	httpConn, err := t.establishConnection(serverAddr, tlsConfig, "http")
-	if err != nil {
+		httpConn, err := t.establishConnection(serverAddr, tlsConfig, "http")
+		if err != nil {
 			// Clean up previously established connections
 			for _, conn := range httpConnections {
 				conn.Close()
 			}
 			t.logger.Error("Failed to establish TCP HTTP tunnel %d: %v", i+1, err)
 			return fmt.Errorf("failed to establish TCP HTTP tunnel %d: %w", i+1, err)
-	}
+		}
 		httpConnections = append(httpConnections, httpConn)
 		t.logger.Info("TCP HTTP tunnel %d/%d established successfully", i+1, poolSize)
 	}
@@ -464,7 +477,7 @@ func (t *Tunnel) handleHTTPConnection(conn net.Conn, connIndex ...int) {
 		if len(connIndex) > 0 {
 			t.logger.Info("HTTP tunnel connection %d closed", connIndex[0])
 		} else {
-		t.logger.Info("HTTP tunnel connection closed")
+			t.logger.Info("HTTP tunnel connection closed")
 		}
 	}()
 
@@ -472,7 +485,7 @@ func (t *Tunnel) handleHTTPConnection(conn net.Conn, connIndex ...int) {
 	if len(connIndex) > 0 {
 		t.logger.Info("Starting HTTP forwarding for tunnel connection %d", connIndex[0])
 	} else {
-	t.logger.Info("Starting HTTP forwarding for tunnel connection")
+		t.logger.Info("Starting HTTP forwarding for tunnel connection")
 	}
 
 	// Create buffered reader for parsing HTTP
@@ -713,7 +726,7 @@ func (t *Tunnel) isMediaRequest(request *http.Request) bool {
 func (t *Tunnel) handleMediaResponse(localConn, tunnelConn net.Conn) {
 	t.logger.Info("Starting optimized media streaming")
 
-		// Use larger buffers for media streaming
+	// Use larger buffers for media streaming
 	buffer := make([]byte, t.streamConfig.MediaBufferSize)
 
 	// Start bidirectional copying with optimized buffers
@@ -991,15 +1004,15 @@ func (t *Tunnel) GetStats() map[string]interface{} {
 	defer t.stateMutex.RUnlock()
 
 	stats := map[string]interface{}{
-		"state":        t.state.String(),
-		"retry_count":  t.retryCount,
-		"domain":       t.domain,
-		"local_port":   t.localPort,
-		"last_ping":    t.lastPing,
+		"state":              t.state.String(),
+		"retry_count":        t.retryCount,
+		"domain":             t.domain,
+		"local_port":         t.localPort,
+		"last_ping":          t.lastPing,
 		"media_optimization": t.streamConfig.EnableMediaOptimization,
 		"media_buffer_size":  t.streamConfig.MediaBufferSize,
-		"grpc_enabled": t.grpcEnabled,
-		"tunnel_mode":  "hybrid", // New production-grade hybrid mode
+		"grpc_enabled":       t.grpcEnabled,
+		"tunnel_mode":        "hybrid", // New production-grade hybrid mode
 	}
 
 	if t.lastError != nil {
@@ -1073,11 +1086,11 @@ func isMaintenanceError(err error) bool {
 // contains is a simple string contains check (case-insensitive)
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) &&
-		   (s == substr ||
-		    (len(s) > len(substr) &&
-		     (s[:len(substr)] == substr ||
-		      s[len(s)-len(substr):] == substr ||
-		      indexOf(s, substr) >= 0)))
+		(s == substr ||
+			(len(s) > len(substr) &&
+				(s[:len(substr)] == substr ||
+					s[len(s)-len(substr):] == substr ||
+					indexOf(s, substr) >= 0)))
 }
 
 func indexOf(s, substr string) int {

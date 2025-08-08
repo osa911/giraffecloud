@@ -12,7 +12,7 @@ import (
 
 type ServiceManager struct {
 	executablePath string
-	logger        *logging.Logger
+	logger         *logging.Logger
 }
 
 func NewServiceManager() (*ServiceManager, error) {
@@ -23,7 +23,7 @@ func NewServiceManager() (*ServiceManager, error) {
 
 	return &ServiceManager{
 		executablePath: executablePath,
-		logger:        logging.GetGlobalLogger(),
+		logger:         logging.GetGlobalLogger(),
 	}, nil
 }
 
@@ -249,8 +249,8 @@ func (sm *ServiceManager) installWindows() error {
 
 	// Configure service to restart on failure
 	cmd = exec.Command("sc", "failure", serviceName,
-		"reset=", "86400",  // Reset failure count after 24 hours
-		"actions=", "restart/5000/restart/10000/restart/30000")  // Restart after 5s, 10s, 30s
+		"reset=", "86400", // Reset failure count after 24 hours
+		"actions=", "restart/5000/restart/10000/restart/30000") // Restart after 5s, 10s, 30s
 	if err := cmd.Run(); err != nil {
 		// Don't fail if failure action setting fails
 		sm.logger.Info("Warning: Failed to set service failure actions")

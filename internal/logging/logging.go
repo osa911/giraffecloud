@@ -164,9 +164,9 @@ func newLogger(config *LogConfig) (*Logger, error) {
 	// Set up log rotation
 	fileWriter := &lumberjack.Logger{
 		Filename:   logFile,
-		MaxSize:    config.MaxSize,    // MB
+		MaxSize:    config.MaxSize, // MB
 		MaxBackups: config.MaxBackups,
-		MaxAge:     config.MaxAge,     // days
+		MaxAge:     config.MaxAge, // days
 		Compress:   true,
 	}
 

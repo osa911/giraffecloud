@@ -29,7 +29,7 @@ func (h *AdminHandler) UpdateVersionConfig(c *gin.Context) {
 	if err := c.ShouldBindJSON(&config); err != nil {
 		h.logger.Error("Invalid version config request: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Invalid request format",
+			"error":   "Invalid request format",
 			"details": err.Error(),
 		})
 		return
@@ -55,7 +55,7 @@ func (h *AdminHandler) UpdateVersionConfig(c *gin.Context) {
 	if err != nil {
 		h.logger.Error("Failed to update version config: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to update version configuration",
+			"error":   "Failed to update version configuration",
 			"details": err.Error(),
 		})
 		return
