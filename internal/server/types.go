@@ -11,7 +11,7 @@ import (
 // Server represents the HTTP server
 type Server struct {
 	router       *gin.Engine
-	db          *db.Database
+	db           *db.Database
 	tunnelRouter *tunnel.HybridTunnelRouter // Changed from TunnelServer to HybridTunnelRouter
 }
 

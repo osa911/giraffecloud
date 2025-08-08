@@ -16,18 +16,18 @@ type AuditEventType string
 
 const (
 	// Authentication events
-	AuditEventLogin           AuditEventType = "LOGIN"
-	AuditEventLoginFailed     AuditEventType = "LOGIN_FAILED"
-	AuditEventLogout          AuditEventType = "LOGOUT"
-	AuditEventSessionCreated  AuditEventType = "SESSION_CREATED"
-	AuditEventSessionRevoked  AuditEventType = "SESSION_REVOKED"
-	AuditEventSessionExpired  AuditEventType = "SESSION_EXPIRED"
-	AuditEventTokenRefreshed  AuditEventType = "TOKEN_REFRESHED"
-	AuditEventTokenInvalid    AuditEventType = "TOKEN_INVALID"
+	AuditEventLogin          AuditEventType = "LOGIN"
+	AuditEventLoginFailed    AuditEventType = "LOGIN_FAILED"
+	AuditEventLogout         AuditEventType = "LOGOUT"
+	AuditEventSessionCreated AuditEventType = "SESSION_CREATED"
+	AuditEventSessionRevoked AuditEventType = "SESSION_REVOKED"
+	AuditEventSessionExpired AuditEventType = "SESSION_EXPIRED"
+	AuditEventTokenRefreshed AuditEventType = "TOKEN_REFRESHED"
+	AuditEventTokenInvalid   AuditEventType = "TOKEN_INVALID"
 )
 
 // AuditService handles audit logging
-type AuditService struct {}
+type AuditService struct{}
 
 // NewAuditService creates a new audit service
 func NewAuditService() *AuditService {
@@ -40,7 +40,7 @@ func (s *AuditService) LogAuthEvent(ctx context.Context, eventType AuditEventTyp
 
 	// Prepare event details
 	event := map[string]interface{}{
-		"timestamp":   time.Now().UTC(),
+		"timestamp":  time.Now().UTC(),
 		"event_type": eventType,
 		"user_id":    user.ID,
 		"user_email": user.Email,
@@ -69,7 +69,7 @@ func (s *AuditService) LogFailedAuthAttempt(ctx context.Context, c *gin.Context,
 	ip := utils.GetRealIP(c)
 
 	details := map[string]interface{}{
-		"timestamp":   time.Now().UTC(),
+		"timestamp":  time.Now().UTC(),
 		"event_type": AuditEventLoginFailed,
 		"ip_address": ip,
 		"reason":     reason,
@@ -103,7 +103,7 @@ func (s *AuditService) LogSessionEvent(ctx context.Context, eventType AuditEvent
 
 	// Prepare event details
 	event := map[string]interface{}{
-		"timestamp":    time.Now().UTC(),
+		"timestamp":   time.Now().UTC(),
 		"event_type":  eventType,
 		"session_id":  session.ID,
 		"user_id":     session.Edges.Owner.ID,

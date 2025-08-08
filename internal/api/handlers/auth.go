@@ -298,8 +298,8 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		constants.CookieDuration30d, // 30 days
 		constants.CookiePathRoot,    // Changed from CookiePathAPI
 		cookieDomain,
-		true,  // Secure
-		true,  // HttpOnly
+		true, // Secure
+		true, // HttpOnly
 	)
 
 	// Generate and set CSRF token cookie (not HttpOnly)
@@ -318,7 +318,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			constants.CookieDuration30d,
 			constants.CookiePathRoot,
 			cookieDomain,
-			true, // Secure
+			true,  // Secure
 			false, // NOT HttpOnly
 		)
 	}

@@ -159,8 +159,8 @@ func (p *TunnelConnectionPool) Close() {
 // DomainConnections holds both HTTP pool and WebSocket connections for a domain
 type DomainConnections struct {
 	domain     string
-	httpPool   *TunnelConnectionPool  // Pool of HTTP connections for concurrency
-	wsConn     *TunnelConnection      // Single WebSocket connection
+	httpPool   *TunnelConnectionPool // Pool of HTTP connections for concurrency
+	wsConn     *TunnelConnection     // Single WebSocket connection
 	targetPort int
 	mu         sync.RWMutex
 }

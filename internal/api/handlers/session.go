@@ -33,10 +33,10 @@ func (h *SessionHandler) GetSessions(c *gin.Context) {
 	var sessionResponses []gin.H
 	for _, s := range sessions {
 		sessionResponses = append(sessionResponses, gin.H{
-			"id":         s.ID,
-			"lastUsed":   s.LastUsed,
-			"ipAddress":  s.IPAddress,
-			"createdAt":  s.CreatedAt,
+			"id":        s.ID,
+			"lastUsed":  s.LastUsed,
+			"ipAddress": s.IPAddress,
+			"createdAt": s.CreatedAt,
 		})
 	}
 

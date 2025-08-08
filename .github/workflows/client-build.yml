@@ -1,0 +1,401 @@
+name: Client Build and Release
+
+on:
+  # Run on pushes to main
+  push:
+    branches: [main]
+    paths:
+      - "cmd/giraffecloud/**"
+      - "internal/tunnel/**"
+      - "internal/version/**"
+      - "internal/service/**"
+      - "go.mod"
+      - "go.sum"
+      - ".goreleaser.yml"
+      - "scripts/build-cli.sh"
+      - ".github/workflows/client-build.yml"
+
+  # Run on PRs to main only
+  pull_request:
+    branches: [main]
+    paths:
+      - "cmd/giraffecloud/**"
+      - "internal/tunnel/**"
+      - "internal/version/**"
+      - "internal/service/**"
+      - "scripts/build-cli.sh"
+
+# Add permissions block at workflow level
+permissions:
+  contents: write # This allows creating releases and uploading assets
+  pull-requests: read
+
+jobs:
+  # Determine release channel based on branch
+  determine-channel:
+    runs-on: ubuntu-latest
+    outputs:
+      channel: ${{ steps.channel.outputs.channel }}
+      should_release: ${{ steps.channel.outputs.should_release }}
+      version: ${{ steps.version.outputs.version }}
+      release_tag: ${{ steps.version.outputs.release_tag }}
+      short_version: ${{ steps.version.outputs.short_version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine channel and version
+        id: channel
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            # For pull requests, use the head branch name
+            BRANCH_NAME="${{ github.head_ref }}"
+          else
+            # For pushes, use the regular branch name
+            BRANCH_NAME=${GITHUB_REF#refs/heads/}
+          fi
+          echo "Branch: $BRANCH_NAME"
+
+          # Determine channel based on branch
+          if [[ "$BRANCH_NAME" == "main" ]]; then
+            CHANNEL="stable"
+            SHOULD_RELEASE="true"
+          elif [[ "$BRANCH_NAME" == feature/* ]] || [[ "$BRANCH_NAME" == test/* ]] || [[ "$BRANCH_NAME" == osa911/* ]]; then
+            CHANNEL="test"
+            SHOULD_RELEASE="true"
+          else
+            CHANNEL="test"
+            SHOULD_RELEASE="false"
+          fi
+
+          echo "channel=$CHANNEL" >> $GITHUB_OUTPUT
+          echo "should_release=$SHOULD_RELEASE" >> $GITHUB_OUTPUT
+
+      - name: Generate version
+        id: version
+        run: |
+          # Generate version based on channel
+          COMMIT_SHORT=$(git rev-parse --short HEAD)
+          TIMESTAMP=$(date +%Y%m%d)
+
+          if [[ "${{ steps.channel.outputs.channel }}" == "stable" ]]; then
+            # For stable, use semantic versioning with git tags
+            VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "v1.0.0")
+            RELEASE_TAG="$VERSION"
+            SHORT_VERSION="$VERSION"
+          else
+            # For test, use branch name and commit
+            if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+              BRANCH_CLEAN=$(echo "${{ github.head_ref }}" | sed 's/[^a-zA-Z0-9-]/-/g')
+            else
+              BRANCH_CLEAN=$(echo "${GITHUB_REF#refs/heads/}" | sed 's/[^a-zA-Z0-9-]/-/g')
+            fi
+            VERSION="v0.0.0-test.${BRANCH_CLEAN}.${TIMESTAMP}.${COMMIT_SHORT}"
+            RELEASE_TAG="test-${COMMIT_SHORT}"
+            SHORT_VERSION="v0.0.0-test.${COMMIT_SHORT}"
+          fi
+
+          # Export variables for later steps
+          {
+            echo "version=$VERSION"
+            echo "release_tag=$RELEASE_TAG"
+            echo "short_version=$SHORT_VERSION"
+          } >> $GITHUB_OUTPUT
+
+          # Debug output - this is just for logging, not for variable export
+          echo "Generated version: $VERSION"
+          echo "Release tag: $RELEASE_TAG"
+          echo "Short version: $SHORT_VERSION"
+
+  # Build client binaries
+  build:
+    needs: determine-channel
+    if: needs.determine-channel.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.21"
+
+      - name: Verify formatting
+        run: |
+          UNFORMATTED=$(gofmt -l .)
+          if [ -n "$UNFORMATTED" ]; then
+            echo "These files are not gofmt-formatted:" && echo "$UNFORMATTED"
+            exit 1
+          fi
+
+      - name: Build binaries
+        env:
+          VERSION: ${{ needs.determine-channel.outputs.version }}
+          CHANNEL: ${{ needs.determine-channel.outputs.channel }}
+        run: |
+          chmod +x ./scripts/build-cli.sh
+          ./scripts/build-cli.sh
+
+      - name: Create archives
+        env:
+          VERSION: ${{ needs.determine-channel.outputs.version }}
+          SHORT_VERSION: ${{ needs.determine-channel.outputs.short_version }}
+        run: |
+          cd bin
+
+          # Create tar.gz archives for Unix systems
+          for PLATFORM in linux darwin; do
+            for ARCH in amd64 arm64; do
+              FILENAME="giraffecloud_${PLATFORM}_${ARCH}_${SHORT_VERSION}"
+
+              # Rename binary to final name and make executable
+              cp "giraffecloud-${PLATFORM}-${ARCH}" "giraffecloud"
+              chmod +x "giraffecloud"
+
+              echo "Creating archive for ${FILENAME}"
+              echo "Binary contents:"
+              ls -la "giraffecloud"
+
+              # Create archive with verbose output
+              tar -czvf "${FILENAME}.tar.gz" "giraffecloud" || {
+                echo "Tar command failed with exit code $?"
+                echo "Trying alternative approach..."
+                tar -czvf "${FILENAME}.tar.gz" --transform 's,^,giraffecloud/,' "giraffecloud"
+              }
+
+              # Verify the archive
+              echo "Verifying archive ${FILENAME}.tar.gz"
+              tar -tvf "${FILENAME}.tar.gz"
+
+              rm "giraffecloud"
+            done
+          done
+
+          # Create zip archives for Windows
+          for ARCH in amd64 arm64; do
+            FILENAME="giraffecloud_windows_${ARCH}_${SHORT_VERSION}"
+
+            # Rename binary to final name
+            cp "giraffecloud-windows-${ARCH}.exe" "giraffecloud.exe"
+            chmod +x "giraffecloud.exe"
+
+            echo "Creating archive for ${FILENAME}"
+            echo "Binary contents:"
+            ls -la "giraffecloud.exe"
+
+            # Create archive with verbose output
+            zip -v "${FILENAME}.zip" "giraffecloud.exe" || {
+              echo "Zip command failed with exit code $?"
+              echo "Trying alternative approach..."
+              mkdir -p "giraffecloud"
+              mv "giraffecloud.exe" "giraffecloud/"
+              zip -rv "${FILENAME}.zip" "giraffecloud"
+              rm -rf "giraffecloud"
+            }
+
+            # Verify the archive
+            echo "Verifying archive ${FILENAME}.zip"
+            unzip -l "${FILENAME}.zip"
+
+            rm -f "giraffecloud.exe"
+          done
+
+          # Cleanup temp directory
+          rm -rf tmp
+
+          # Update checksums to include archives
+          sha256sum *.tar.gz *.zip > checksums.txt
+
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.determine-channel.outputs.version }}
+          CHANNEL: ${{ needs.determine-channel.outputs.channel }}
+          RELEASE_TAG: ${{ needs.determine-channel.outputs.release_tag }}
+        run: |
+          # Resolve branch name (use head_ref for PRs)
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            BRANCH_NAME="${{ github.head_ref }}"
+          else
+            BRANCH_NAME="${GITHUB_REF#refs/heads/}"
+          fi
+
+          PRERELEASE=""
+          if [[ "$CHANNEL" != "stable" ]]; then
+            PRERELEASE="--prerelease"
+          fi
+
+          RELEASE_NOTES="**Channel:** $CHANNEL
+          **Version:** $VERSION
+          **Commit:** $(git rev-parse HEAD)
+          **Branch:** $BRANCH_NAME
+
+          ## Changes
+          $(git log --oneline --since='24 hours ago' | head -10)"
+
+                    # Create release with explicit tag
+          RELEASE_TAG="${{ needs.determine-channel.outputs.release_tag }}"
+          if [[ -z "$RELEASE_TAG" ]]; then
+            echo "Error: Release tag is empty"
+            exit 1
+          fi
+          echo "Creating release with tag: $RELEASE_TAG"
+
+          gh release create "$RELEASE_TAG" \
+            bin/*.tar.gz bin/*.zip bin/checksums.txt \
+            --title "GiraffeCloud CLI Client $VERSION ($CHANNEL)" \
+            --notes "$RELEASE_NOTES" \
+            $PRERELEASE
+
+  # Update database with version information
+  update-database:
+    needs: [determine-channel, build]
+    if: needs.determine-channel.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Update version in database
+        env:
+          API_ENDPOINT: ${{ secrets.API_ENDPOINT }}
+          API_TOKEN: ${{ secrets.API_TOKEN }}
+          VERSION: ${{ needs.determine-channel.outputs.version }}
+          CHANNEL: ${{ needs.determine-channel.outputs.channel }}
+          RELEASE_TAG: ${{ needs.determine-channel.outputs.release_tag }}
+          SHORT_VERSION: ${{ needs.determine-channel.outputs.short_version }}
+        run: |
+          # Get short commit hash
+          COMMIT_SHORT=$(git rev-parse --short HEAD)
+
+          # Resolve branch name (use head_ref for PRs)
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            BRANCH_NAME="${{ github.head_ref }}"
+          else
+            BRANCH_NAME="${GITHUB_REF#refs/heads/}"
+          fi
+
+          # Load version config
+          VERSION_CONFIG=$(cat configs/version.json)
+          MIN_VERSION=$(echo "$VERSION_CONFIG" | jq -r ".minimum_versions.$CHANNEL")
+          if [[ "$MIN_VERSION" == "null" ]]; then
+            echo "No minimum version configured for channel: $CHANNEL"
+            exit 1
+          fi
+
+          # Base download URL - this is what clients will use to construct their platform-specific URLs
+          BASE_URL="https://github.com/${{ github.repository }}/releases"
+          if [[ "$CHANNEL" == "stable" ]]; then
+            DOWNLOAD_URL="$BASE_URL/latest/download"
+          elif [[ "$CHANNEL" == "test" ]]; then
+            DOWNLOAD_URL="$BASE_URL/download/test-${COMMIT_SHORT}"
+          else
+            echo "Unknown channel: $CHANNEL"
+            exit 1
+          fi
+
+          # Update version configuration for each platform/arch combination
+          PLATFORMS=("darwin" "linux" "windows")
+          ARCHES=("amd64" "arm64")
+
+          for PLATFORM in "${PLATFORMS[@]}"; do
+            for ARCH in "${ARCHES[@]}"; do
+              # For logging/verification only - show what URLs clients will construct
+              EXT=".tar.gz"
+              if [[ "$PLATFORM" == "windows" ]]; then
+                EXT=".zip"
+              fi
+              echo "Client will construct URL: ${DOWNLOAD_URL}/giraffecloud_${PLATFORM}_${ARCH}_${SHORT_VERSION}${EXT}"
+
+              echo "Updating database for $PLATFORM $ARCH with URL: ${DOWNLOAD_URL}"
+
+              # Prepare short release notes for DB
+              if [ "$CHANNEL" = "stable" ]; then
+                RELEASE_NOTES="Stable release"
+              else
+                RELEASE_NOTES="Automated build from ${BRANCH_NAME} branch"
+              fi
+
+              AUTO_ENABLED=$([ "$CHANNEL" = "stable" ] && echo true || echo false)
+
+              PAYLOAD=$(jq -n \
+                --arg channel "$CHANNEL" \
+                --arg platform "$PLATFORM" \
+                --arg arch "$ARCH" \
+                --arg version "$VERSION" \
+                --arg min "$MIN_VERSION" \
+                --arg download_url "$DOWNLOAD_URL" \
+                --arg release_notes "$RELEASE_NOTES" \
+                --arg git_commit "$(git rev-parse HEAD)" \
+                --arg branch "$BRANCH_NAME" \
+                --arg build_number "${{ github.run_number }}" \
+                --arg build_url "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+                --arg release_tag "$RELEASE_TAG" \
+                --arg short_version "$SHORT_VERSION" \
+                --argjson auto_update_enabled $AUTO_ENABLED \
+                --argjson force_update false \
+                '{
+                  channel: $channel,
+                  platform: $platform,
+                  arch: $arch,
+                  latest_version: $version,
+                  minimum_version: $min,
+                  download_url: $download_url,
+                  release_notes: $release_notes,
+                  auto_update_enabled: $auto_update_enabled,
+                  force_update: $force_update,
+                  metadata: {
+                    git_commit: $git_commit,
+                    branch: $branch,
+                    build_number: $build_number,
+                    build_url: $build_url,
+                    release_tag: $release_tag,
+                    short_version: $short_version
+                  }
+                }')
+
+              # Update version configuration via API
+              curl -X POST "$API_ENDPOINT/api/v1/admin/version/update" \
+                -H "Authorization: Bearer $API_TOKEN" \
+                -H "Content-Type: application/json" \
+                -d "$PAYLOAD" || echo "Failed to update database for $PLATFORM $ARCH - continuing..."
+            done
+          done
+
+  # Notification
+  notify:
+    needs: [determine-channel, build, update-database]
+    if: always() && needs.determine-channel.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify completion
+        env:
+          VERSION: ${{ needs.determine-channel.outputs.version }}
+          CHANNEL: ${{ needs.determine-channel.outputs.channel }}
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          STATUS="✅ Success"
+          if [[ "${{ needs.build.result }}" != "success" ]]; then
+            STATUS="❌ Failed"
+          fi
+
+          MESSAGE="$STATUS GiraffeCloud CLI Client Build
+          **Channel:** $CHANNEL
+          **Version:** $VERSION
+          **Release:** https://github.com/${{ github.repository }}/releases/tag/$VERSION"
+
+          if [[ -n "$SLACK_WEBHOOK" ]]; then
+            curl -X POST -H 'Content-type: application/json' \
+              --data "{\"text\":\"$MESSAGE\"}" \
+              "$SLACK_WEBHOOK" || echo "Slack notification failed"
+          fi
+
+          echo "$MESSAGE"

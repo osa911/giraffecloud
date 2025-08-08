@@ -103,9 +103,9 @@ func (s *caddyService) ConfigureRoute(domain string, targetIP string, targetPort
 				"headers": map[string]interface{}{
 					"request": map[string]interface{}{
 						"set": map[string]interface{}{
-							"Host": []string{domain}, // Preserve the original host
-							"X-Real-IP": []string{"{http.request.remote.host}"},
-							"X-Forwarded-For": []string{"{http.request.remote.host}"},
+							"Host":              []string{domain}, // Preserve the original host
+							"X-Real-IP":         []string{"{http.request.remote.host}"},
+							"X-Forwarded-For":   []string{"{http.request.remote.host}"},
 							"X-Forwarded-Proto": []string{"{http.request.scheme}"},
 						},
 					},

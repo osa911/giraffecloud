@@ -1,3 +1,4 @@
-h1:MlYsRdxpNBxTSe01snad390219RjVAqRAuuOUcvsJEs=
+h1:fwj1TYcDWvx4hceqD6Yw+Jf39xfh0AP95LXuQTln9Jw=
 20250413231213_init.sql h1:aFPmluxLCjb7pS/D/SssJ3hvqFimX3Kyu88Mcg8ADW0=
 20250418161339_add_token_table.sql h1:ew+KUbsaqDx40XiJDvxBmg62cCMgIIWh/wrUvsvbNAY=
+20250728202348_add_client_version_and_tunnels_table.sql h1:j07lj6f382sTCK1TkDdUvfuxsPP4HAA1OebOfHcjgOA=

@@ -330,8 +330,8 @@ func (s *GRPCTunnelServer) httpToGRPC(req *http.Request, clientIP string) (*prot
 	// Determine request type
 	reqType := proto.RequestType_REQUEST_TYPE_API
 	if strings.Contains(req.URL.Path, "/api/assets/") ||
-	   strings.Contains(req.URL.Path, "/media/") ||
-	   strings.Contains(req.URL.Path, "/static/") {
+		strings.Contains(req.URL.Path, "/media/") ||
+		strings.Contains(req.URL.Path, "/static/") {
 		reqType = proto.RequestType_REQUEST_TYPE_MEDIA
 	}
 

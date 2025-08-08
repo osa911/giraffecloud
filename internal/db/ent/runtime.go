@@ -3,6 +3,7 @@
 package ent
 
 import (
+	"giraffecloud/internal/db/ent/clientversion"
 	"giraffecloud/internal/db/ent/schema"
 	"giraffecloud/internal/db/ent/session"
 	"giraffecloud/internal/db/ent/token"
@@ -17,6 +18,38 @@ import (
 // (default values, validators, hooks and policies) and stitches it
 // to their package variables.
 func init() {
+	clientversionFields := schema.ClientVersion{}.Fields()
+	_ = clientversionFields
+	// clientversionDescChannel is the schema descriptor for channel field.
+	clientversionDescChannel := clientversionFields[1].Descriptor()
+	// clientversion.DefaultChannel holds the default value on creation for the channel field.
+	clientversion.DefaultChannel = clientversionDescChannel.Default.(string)
+	// clientversionDescPlatform is the schema descriptor for platform field.
+	clientversionDescPlatform := clientversionFields[2].Descriptor()
+	// clientversion.DefaultPlatform holds the default value on creation for the platform field.
+	clientversion.DefaultPlatform = clientversionDescPlatform.Default.(string)
+	// clientversionDescArch is the schema descriptor for arch field.
+	clientversionDescArch := clientversionFields[3].Descriptor()
+	// clientversion.DefaultArch holds the default value on creation for the arch field.
+	clientversion.DefaultArch = clientversionDescArch.Default.(string)
+	// clientversionDescAutoUpdateEnabled is the schema descriptor for auto_update_enabled field.
+	clientversionDescAutoUpdateEnabled := clientversionFields[8].Descriptor()
+	// clientversion.DefaultAutoUpdateEnabled holds the default value on creation for the auto_update_enabled field.
+	clientversion.DefaultAutoUpdateEnabled = clientversionDescAutoUpdateEnabled.Default.(bool)
+	// clientversionDescForceUpdate is the schema descriptor for force_update field.
+	clientversionDescForceUpdate := clientversionFields[9].Descriptor()
+	// clientversion.DefaultForceUpdate holds the default value on creation for the force_update field.
+	clientversion.DefaultForceUpdate = clientversionDescForceUpdate.Default.(bool)
+	// clientversionDescCreatedAt is the schema descriptor for created_at field.
+	clientversionDescCreatedAt := clientversionFields[11].Descriptor()
+	// clientversion.DefaultCreatedAt holds the default value on creation for the created_at field.
+	clientversion.DefaultCreatedAt = clientversionDescCreatedAt.Default.(func() time.Time)
+	// clientversionDescUpdatedAt is the schema descriptor for updated_at field.
+	clientversionDescUpdatedAt := clientversionFields[12].Descriptor()
+	// clientversion.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	clientversion.DefaultUpdatedAt = clientversionDescUpdatedAt.Default.(func() time.Time)
+	// clientversion.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	clientversion.UpdateDefaultUpdatedAt = clientversionDescUpdatedAt.UpdateDefault.(func() time.Time)
 	sessionMixin := schema.Session{}.Mixin()
 	sessionMixinFields0 := sessionMixin[0].Fields()
 	_ = sessionMixinFields0

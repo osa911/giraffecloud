@@ -152,8 +152,8 @@ func (p *ConnectionPool) Stats() map[string]interface{} {
 
 	return map[string]interface{}{
 		"available_connections": len(p.connections),
-		"max_size":             p.maxSize,
-		"closed":               p.closed,
-		"target":               fmt.Sprintf("%s:%d", p.host, p.port),
+		"max_size":              p.maxSize,
+		"closed":                p.closed,
+		"target":                fmt.Sprintf("%s:%d", p.host, p.port),
 	}
 }

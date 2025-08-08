@@ -228,4 +228,3 @@ func (h *UserHandler) DeleteUser(c *gin.Context) {
 		"message": "User deleted successfully",
 	})
 }
-

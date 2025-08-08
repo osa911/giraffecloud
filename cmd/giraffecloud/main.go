@@ -7,12 +7,14 @@ import (
 	"fmt"
 	"giraffecloud/internal/api/handlers"
 	"giraffecloud/internal/logging"
+	"giraffecloud/internal/service"
 	"giraffecloud/internal/tunnel"
 	"giraffecloud/internal/version"
 	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -138,6 +140,12 @@ Example:
 		s := spinner.New(spinner.CharSets[14], 120*time.Millisecond)
 		s.Suffix = " Connecting to GiraffeCloud..."
 		s.Start()
+
+		// Check version compatibility (respect test/beta channel if enabled)
+		checkVersionCompatibility(serverAddr)
+
+		// Do not register extra on-connect hooks for update checks. Auto-update service will handle checks when enabled.
+
 		err = t.Connect(ctx, serverAddr, cfg.Token, cfg.Domain, cfg.LocalPort, tlsConfig)
 		s.Stop()
 
@@ -148,202 +156,23 @@ Example:
 
 		logger.Info("Tunnel is running. Press Ctrl+C to stop.")
 
+		// Start auto-update background service
+		apiServerURL := fmt.Sprintf("https://%s:%d", cfg.API.Host, cfg.API.Port)
+		autoUpdateSvc, err := service.NewAutoUpdateService(&cfg.AutoUpdate, t, nil)
+		if err != nil {
+			logger.Warn("Auto-update service initialization failed: %v", err)
+		} else {
+			if startErr := autoUpdateSvc.Start(ctx, apiServerURL); startErr != nil {
+				logger.Warn("Failed to start auto-update service: %v", startErr)
+			} else if cfg.AutoUpdate.Enabled {
+				// Only force an immediate check when auto-update is enabled
+				autoUpdateSvc.CheckNow(apiServerURL)
+			}
+		}
+
 		<-ctx.Done()
 		logger.Info("Shutting down tunnel...")
 		t.Disconnect()
-	},
-}
-
-var serviceCmd = &cobra.Command{
-	Use:   "service",
-	Short: "Manage GiraffeCloud service",
-	Long:  `Install, uninstall, or manage the GiraffeCloud service on your system.`,
-}
-
-var installCmd = &cobra.Command{
-	Use:   "install",
-	Short: "Install GiraffeCloud as a system service",
-	Run: func(cmd *cobra.Command, args []string) {
-		sm, err := tunnel.NewServiceManager()
-		if err != nil {
-			logger.Error("Failed to create service manager: %v", err)
-			os.Exit(1)
-		}
-
-		if err := sm.Install(); err != nil {
-			logger.Error("Failed to install service: %v", err)
-			os.Exit(1)
-		}
-
-		logger.Info("Successfully installed GiraffeCloud service")
-	},
-}
-
-var uninstallCmd = &cobra.Command{
-	Use:   "uninstall",
-	Short: "Uninstall GiraffeCloud system service",
-	Run: func(cmd *cobra.Command, args []string) {
-		sm, err := tunnel.NewServiceManager()
-		if err != nil {
-			logger.Error("Failed to create service manager: %v", err)
-			os.Exit(1)
-		}
-
-		if err := sm.Uninstall(); err != nil {
-			logger.Error("Failed to uninstall service: %v", err)
-			os.Exit(1)
-		}
-
-		logger.Info("Successfully uninstalled GiraffeCloud service")
-	},
-}
-
-var healthCheckCmd = &cobra.Command{
-	Use:   "health-check",
-	Short: "Check GiraffeCloud system service health and status",
-	Long: `Check the status and health of the installed GiraffeCloud system service including:
-- Service installation status
-- Service running status
-- Service logs and recent activity
-- Configuration validity
-- Certificate status
-
-This helps diagnose issues with the system service.`,
-	Run: func(cmd *cobra.Command, args []string) {
-		logger.Info("=== GiraffeCloud System Service Health Check ===")
-
-		// Create service manager
-		sm, err := tunnel.NewServiceManager()
-		if err != nil {
-			logger.Error("❌ Service Manager: Failed to create service manager: %v", err)
-			os.Exit(1)
-		}
-		logger.Info("✅ Service Manager: Initialized")
-
-		// Check if service is installed
-		isInstalled, err := sm.IsInstalled()
-		if err != nil {
-			logger.Error("❌ Installation Check: Failed to check service installation: %v", err)
-		} else if !isInstalled {
-			logger.Error("❌ Installation: GiraffeCloud service is not installed")
-			logger.Info("💡 Tip: Run 'giraffecloud service install' to install the service")
-			os.Exit(1)
-		} else {
-			logger.Info("✅ Installation: GiraffeCloud service is installed")
-		}
-
-		// Check if service is running
-		isRunning, err := sm.IsRunning()
-		if err != nil {
-			logger.Error("❌ Service Status: Failed to check service status: %v", err)
-		} else if !isRunning {
-			logger.Error("❌ Service Status: GiraffeCloud service is not running")
-			logger.Info("💡 Tip: Run 'giraffecloud service start' to start the service")
-		} else {
-			logger.Info("✅ Service Status: GiraffeCloud service is running")
-		}
-
-		// Load configuration to check validity
-		cfg, err := tunnel.LoadConfig()
-		if err != nil {
-			logger.Error("❌ Configuration: Failed to load config file: %v", err)
-			logger.Info("💡 Tip: Run 'giraffecloud login --token YOUR_TOKEN' to create configuration")
-		} else {
-			logger.Info("✅ Configuration: Config file loaded successfully")
-
-			// Check if we have a token
-			if cfg.Token == "" {
-				logger.Error("❌ Authentication: No API token found in configuration")
-				logger.Info("💡 Tip: Run 'giraffecloud login --token YOUR_TOKEN' to authenticate")
-			} else {
-				logger.Info("✅ Authentication: API token present")
-			}
-
-			// Check certificates
-			certificatesOK := true
-			if cfg.Security.CACert != "" {
-				if _, err := os.Stat(cfg.Security.CACert); os.IsNotExist(err) {
-					logger.Error("❌ Certificates: CA certificate not found at %s", cfg.Security.CACert)
-					certificatesOK = false
-				} else {
-					logger.Info("✅ Certificates: CA certificate found")
-				}
-			}
-
-			if cfg.Security.ClientCert != "" {
-				if _, err := os.Stat(cfg.Security.ClientCert); os.IsNotExist(err) {
-					logger.Error("❌ Certificates: Client certificate not found at %s", cfg.Security.ClientCert)
-					certificatesOK = false
-				} else {
-					logger.Info("✅ Certificates: Client certificate found")
-				}
-			}
-
-			if cfg.Security.ClientKey != "" {
-				if _, err := os.Stat(cfg.Security.ClientKey); os.IsNotExist(err) {
-					logger.Error("❌ Certificates: Client key not found at %s", cfg.Security.ClientKey)
-					certificatesOK = false
-				} else {
-					logger.Info("✅ Certificates: Client key found")
-				}
-			}
-
-			if !certificatesOK {
-				logger.Info("💡 Tip: Run 'giraffecloud login --token YOUR_TOKEN' to download certificates")
-			}
-
-			// Check tunnel server connectivity
-			logger.Info("🔍 Testing tunnel server connectivity...")
-			serverAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
-
-			conn, err := net.DialTimeout("tcp", serverAddr, 10*time.Second)
-			if err != nil {
-				logger.Error("❌ Tunnel Server: Cannot connect to %s - %v", serverAddr, err)
-				logger.Info("💡 Tip: Check your internet connection and firewall settings")
-			} else {
-				conn.Close()
-				logger.Info("✅ Tunnel Server: %s is reachable", serverAddr)
-			}
-		}
-
-		// Try to get service logs if available
-		// example: giraffecloud service health-check --show-logs
-		showLogs, _ := cmd.Flags().GetBool("show-logs")
-		if showLogs {
-			logger.Info("🔍 Fetching recent service logs...")
-			logs, err := sm.GetLogs()
-			if err != nil {
-				logger.Error("❌ Service Logs: Failed to get service logs: %v", err)
-			} else if logs == "" {
-				logger.Info("ℹ️  Service Logs: No recent logs available")
-			} else {
-				logger.Info("📋 Recent Service Logs:")
-				logger.Info("%s", logs)
-			}
-		}
-
-		// Summary
-		logger.Info("")
-		logger.Info("=== Health Check Summary ===")
-		if cfg != nil {
-			logger.Info("Domain: %s", cfg.Domain)
-			logger.Info("Local Port: %d", cfg.LocalPort)
-			logger.Info("Tunnel Server: %s:%d", cfg.Server.Host, cfg.Server.Port)
-		}
-
-		if isInstalled && isRunning {
-			logger.Info("🎉 System service is installed and running!")
-			if cfg != nil && cfg.Token != "" {
-				logger.Info("💡 Your tunnel should be active at: https://%s", cfg.Domain)
-			}
-		} else {
-			logger.Info("⚠️  System service issues found. Please address them.")
-			if !isInstalled {
-				logger.Info("💡 Next step: giraffecloud service install")
-			} else if !isRunning {
-				logger.Info("💡 Next step: giraffecloud service start")
-			}
-		}
 	},
 }
 
@@ -536,20 +365,68 @@ var statusCmd = &cobra.Command{
 	},
 }
 
+func checkVersionCompatibility(serverAddr string) {
+	// Extract base URL for version checking
+	parts := strings.Split(serverAddr, ":")
+	if len(parts) != 2 {
+		logger.Warn("Could not parse server address for version checking")
+		return
+	}
+
+	serverURL := fmt.Sprintf("https://%s", parts[0])
+
+	logger.Info("🔍 Checking client version compatibility...")
+
+	// Respect channel from config (test-mode or auto-update channel override)
+	selectedChannel := tunnel.ResolveReleaseChannel()
+
+	versionInfo, err := version.CheckServerVersionWithChannel(serverURL, selectedChannel)
+	if err != nil {
+		logger.Warn("Could not check server version: %v", err)
+		return
+	}
+
+	if versionInfo.UpdateRequired {
+		logger.Error("❌ Client version %s is incompatible with server", version.Version)
+		logger.Error("❌ Minimum required version: %s", versionInfo.MinimumVersion)
+		logger.Error("❌ Latest version: %s", versionInfo.LatestVersion)
+		logger.Info("💡 Run 'giraffecloud update' to update to the latest version")
+		os.Exit(1)
+	}
+
+	if versionInfo.UpdateAvailable {
+		logger.Info("📢 A newer version is available: %s -> %s", version.Version, versionInfo.LatestVersion)
+		logger.Info("💡 Run 'giraffecloud update' to upgrade")
+		time.Sleep(2 * time.Second) // Give user time to read
+	} else {
+		logger.Info("✅ Client version %s is compatible", version.Version)
+	}
+}
+
 func init() {
 	// Initialize logger first
 	initLogger()
-	logger.Info("Initializing GiraffeCloud CLI")
+	logger.Info("🦒 Initializing GiraffeCloud CLI 🦒")
 
+	// Setup core commands
 	rootCmd.AddCommand(connectCmd)
-	rootCmd.AddCommand(serviceCmd)
-	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(loginCmd)
 	rootCmd.AddCommand(statusCmd)
+	rootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(serviceCmd)
+	rootCmd.AddCommand(configCmd)
 
-	serviceCmd.AddCommand(installCmd)
-	serviceCmd.AddCommand(uninstallCmd)
-	serviceCmd.AddCommand(healthCheckCmd)
+	// Setup update commands (from update.go)
+	initUpdateCommands()
+
+	// Setup test mode commands (from test_mode.go)
+	initTestModeCommands()
+
+	// Setup service commands (from service.go)
+	initServiceCommands()
+
+	// Setup config commands (from config.go)
+	initConfigCommands()
 
 	// Add host flags to connect command
 	connectCmd.Flags().String("tunnel-host", "", "Tunnel host to connect to (default: tunnel.giraffecloud.xyz)")
@@ -561,9 +438,6 @@ func init() {
 	loginCmd.Flags().Int("api-port", 443, "API port for login/certificates (default: 443)")
 	loginCmd.Flags().String("token", "", "API token for authentication")
 	loginCmd.MarkFlagRequired("token")
-
-	// Add flags to health-check command
-	healthCheckCmd.Flags().Bool("show-logs", false, "Show recent service logs")
 
 	logger.Debug("CLI commands and flags initialized")
 }

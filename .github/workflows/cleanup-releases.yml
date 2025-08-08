@@ -1,0 +1,45 @@
+name: Cleanup Old Pre-releases
+
+on:
+  schedule:
+    - cron: "0 0 * * *" # Run daily at midnight UTC
+  workflow_dispatch: # Allow manual trigger
+
+permissions:
+  contents: write # Needed to delete releases
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete old pre-releases
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Get all releases
+          releases=$(gh release list --limit 1000)
+          current_time=$(date +%s)
+          month_ago=$(date -d "30 days ago" +%s)
+
+          echo "Checking releases for cleanup..."
+
+          while IFS= read -r line; do
+            # Extract release info (Title, Type, Tag, Date)
+            if [[ $line =~ ^([^\t]*)\t([^\t]*)\t([^\t]*)\t(.*)$ ]]; then
+              title="${BASH_REMATCH[1]}"
+              type="${BASH_REMATCH[2]}"
+              tag="${BASH_REMATCH[3]}"
+              date="${BASH_REMATCH[4]}"
+
+              # Convert release date to timestamp
+              release_time=$(date -d "$date" +%s)
+
+              # Check if it's a pre-release (Draft or Pre-release)
+              if [[ "$type" == "Pre-release" ]] && [[ $release_time -lt $month_ago ]]; then
+                echo "Deleting old pre-release: $title ($tag) from $date"
+                gh release delete "$tag" --yes || echo "Failed to delete release $tag"
+              fi
+            fi
+          done <<< "$releases"
+
+          echo "Cleanup completed"

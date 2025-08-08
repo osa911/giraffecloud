@@ -1,5 +1,8 @@
 builds:
-  - env:
+  - id: "giraffecloud"
+    binary: "giraffecloud"
+    main: "./cmd/giraffecloud"
+    env:
       - CGO_ENABLED=0
     goos:
       - linux
@@ -9,7 +12,10 @@ builds:
       - amd64
       - arm64
     ldflags:
-      - -s -w -X giraffecloud/internal/version.Version={{.Version}} -X giraffecloud/internal/version.BuildTime={{.Date}}
+      - -s -w
+      - -X giraffecloud/internal/version.Version={{.Version}}
+      - -X giraffecloud/internal/version.BuildTime={{.Date}}
+      - -X giraffecloud/internal/version.GitCommit={{.FullCommit}}
 
 archives:
   - format: tar.gz
@@ -21,6 +27,9 @@ archives:
     format_overrides:
       - goos: windows
         format: zip
+    files:
+      - LICENSE
+      - README.md
 
 checksum:
   name_template: "checksums.txt"
@@ -29,3 +38,6 @@ release:
   github:
     owner: osa911
     name: giraffecloud
+  name_template: "Release {{.Version}}"
+  draft: false
+  prerelease: auto

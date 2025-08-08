@@ -43,12 +43,12 @@ type GRPCTunnelServer struct {
 	tunnelStreamsMux sync.RWMutex
 
 	// Performance metrics (atomic for thread safety)
-	totalRequests     int64
-	concurrentReqs    int64
-	totalResponses    int64
-	totalErrors       int64
-	totalBytesIn      int64
-	totalBytesOut     int64
+	totalRequests  int64
+	concurrentReqs int64
+	totalResponses int64
+	totalErrors    int64
+	totalBytesIn   int64
+	totalBytesOut  int64
 
 	// Configuration
 	config *GRPCTunnelConfig
@@ -60,11 +60,11 @@ type GRPCTunnelServer struct {
 
 // TunnelStream represents an active tunnel connection
 type TunnelStream struct {
-	Domain       string
-	TargetPort   int32
-	Stream       proto.TunnelService_EstablishTunnelServer
-	Context      context.Context
-	UserID       uint32
+	Domain     string
+	TargetPort int32
+	Stream     proto.TunnelService_EstablishTunnelServer
+	Context    context.Context
+	UserID     uint32
 
 	// Request correlation (requestID -> response channel)
 	pendingRequests map[string]chan *proto.TunnelMessage
@@ -91,15 +91,15 @@ type GRPCTunnelConfig struct {
 	KeepAliveInterval    time.Duration
 
 	// Request settings
-	RequestTimeout       time.Duration
-	MaxRequestSize       int64
-	MaxResponseSize      int64
+	RequestTimeout  time.Duration
+	MaxRequestSize  int64
+	MaxResponseSize int64
 
 	// Security settings
 	RequireAuthentication bool
-	AllowedOrigins       []string
-	RateLimitRPM         int
-	RateLimitBurst       int
+	AllowedOrigins        []string
+	RateLimitRPM          int
+	RateLimitBurst        int
 }
 
 // DefaultGRPCTunnelConfig returns production-ready default configuration
@@ -423,7 +423,7 @@ func (s *GRPCTunnelServer) cleanupTunnelStreamState(tunnelStream *TunnelStream) 
 	tunnelStream.requestsMux.Lock()
 	pendingCount := len(tunnelStream.pendingRequests)
 
-		// Close all response channels and clear pending requests
+	// Close all response channels and clear pending requests
 	for requestID, responseChan := range tunnelStream.pendingRequests {
 		s.logger.Debug("[CLEANUP] 🚮 Cleaning up pending request: %s", requestID)
 
