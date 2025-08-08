@@ -218,6 +218,13 @@ jobs:
           CHANNEL: ${{ needs.determine-channel.outputs.channel }}
           RELEASE_TAG: ${{ needs.determine-channel.outputs.release_tag }}
         run: |
+          # Resolve branch name (use head_ref for PRs)
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            BRANCH_NAME="${{ github.head_ref }}"
+          else
+            BRANCH_NAME="${GITHUB_REF#refs/heads/}"
+          fi
+
           PRERELEASE=""
           if [[ "$CHANNEL" != "stable" ]]; then
             PRERELEASE="--prerelease"
@@ -226,7 +233,7 @@ jobs:
           RELEASE_NOTES="**Channel:** $CHANNEL
           **Version:** $VERSION
           **Commit:** $(git rev-parse HEAD)
-          **Branch:** ${GITHUB_REF#refs/heads/}
+          **Branch:** $BRANCH_NAME
 
           ## Changes
           $(git log --oneline --since='24 hours ago' | head -10)"
