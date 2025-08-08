@@ -97,9 +97,9 @@ jobs:
           else
             # For test, use branch name and commit
             if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-              BRANCH_CLEAN=$(echo "${{ github.head_ref }}" | sed 's/[^a-zA-Z0-9]/-/g')
+              BRANCH_CLEAN=$(echo "${{ github.head_ref }}" | sed 's/[^a-zA-Z0-9-]/-/g')
             else
-              BRANCH_CLEAN=$(echo "${GITHUB_REF#refs/heads/}" | sed 's/[^a-zA-Z0-9]/-/g')
+              BRANCH_CLEAN=$(echo "${GITHUB_REF#refs/heads/}" | sed 's/[^a-zA-Z0-9-]/-/g')
             fi
             VERSION="v0.0.0-test.${BRANCH_CLEAN}.${TIMESTAMP}.${COMMIT_SHORT}"
             RELEASE_TAG="test-${COMMIT_SHORT}"
@@ -278,6 +278,13 @@ jobs:
           # Get short commit hash
           COMMIT_SHORT=$(git rev-parse --short HEAD)
 
+          # Resolve branch name (use head_ref for PRs)
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            BRANCH_NAME="${{ github.head_ref }}"
+          else
+            BRANCH_NAME="${GITHUB_REF#refs/heads/}"
+          fi
+
           # Load version config
           VERSION_CONFIG=$(cat configs/version.json)
           MIN_VERSION=$(echo "$VERSION_CONFIG" | jq -r ".minimum_versions.$CHANNEL")
@@ -316,7 +323,7 @@ jobs:
 
               # Prepare release notes and payload safely with jq to escape newlines
               RELEASE_NOTES=$(printf "GiraffeCloud CLI Client %s\n\nChannel: %s\nBranch: %s\nCommit: %s\nBuild: #%s (%s)\n\nChanges:\n%s" \
-                "$VERSION" "$CHANNEL" "${GITHUB_REF#refs/heads/}" "$(git rev-parse HEAD)" "${{ github.run_number }}" "${{ github.run_id }}" "$(git log --oneline -n 5)")
+                "$VERSION" "$CHANNEL" "$BRANCH_NAME" "$(git rev-parse HEAD)" "${{ github.run_number }}" "${{ github.run_id }}" "$(git log --oneline -n 5)")
 
               AUTO_ENABLED=$([ "$CHANNEL" = "stable" ] && echo true || echo false)
 
@@ -329,7 +336,7 @@ jobs:
                 --arg download_url "$DOWNLOAD_URL" \
                 --arg release_notes "$RELEASE_NOTES" \
                 --arg git_commit "$(git rev-parse HEAD)" \
-                --arg branch "${GITHUB_REF#refs/heads/}" \
+                --arg branch "$BRANCH_NAME" \
                 --arg build_number "${{ github.run_number }}" \
                 --arg build_url "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
                 --arg release_tag "$RELEASE_TAG" \
