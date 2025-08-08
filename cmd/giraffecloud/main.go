@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"giraffecloud/internal/api/handlers"
 	"giraffecloud/internal/logging"
+	"giraffecloud/internal/service"
 	"giraffecloud/internal/tunnel"
 	"giraffecloud/internal/version"
 	"net"
@@ -140,8 +141,23 @@ Example:
 		s.Suffix = " Connecting to GiraffeCloud..."
 		s.Start()
 
-		// Check version compatibility
+		// Check version compatibility (respect test/beta channel if enabled)
 		checkVersionCompatibility(serverAddr)
+
+		// Register on-connect hook to trigger an immediate auto-update check even on reconnections
+		t.SetOnConnectHook(func() {
+			apiServerURL := fmt.Sprintf("https://%s:%d", cfg.API.Host, cfg.API.Port)
+			updater, err := service.NewUpdaterService(cfg.AutoUpdate.DownloadURL)
+			if err != nil {
+				logger.Debug("UpdaterService init failed in onConnect hook: %v", err)
+				return
+			}
+			info, err := updater.CheckForUpdates(apiServerURL)
+			if err != nil || info == nil {
+				return
+			}
+			logger.Info("Auto-update: update available (%s -> %s); run 'giraffecloud update' or enable auto-update to install automatically", info.CurrentVersion, info.Version)
+		})
 
 		err = t.Connect(ctx, serverAddr, cfg.Token, cfg.Domain, cfg.LocalPort, tlsConfig)
 		s.Stop()
@@ -153,13 +169,25 @@ Example:
 
 		logger.Info("Tunnel is running. Press Ctrl+C to stop.")
 
+		// Start auto-update background service
+		apiServerURL := fmt.Sprintf("https://%s:%d", cfg.API.Host, cfg.API.Port)
+		autoUpdateSvc, err := service.NewAutoUpdateService(&cfg.AutoUpdate, t, nil)
+		if err != nil {
+			logger.Warn("Auto-update service initialization failed: %v", err)
+		} else {
+			if startErr := autoUpdateSvc.Start(ctx, apiServerURL); startErr != nil {
+				logger.Warn("Failed to start auto-update service: %v", startErr)
+			} else {
+				// Force an immediate check once connected
+				autoUpdateSvc.CheckNow(apiServerURL)
+			}
+		}
+
 		<-ctx.Done()
 		logger.Info("Shutting down tunnel...")
 		t.Disconnect()
 	},
 }
-
-
 
 var versionCmd = &cobra.Command{
 	Use:   "version",
@@ -361,7 +389,11 @@ func checkVersionCompatibility(serverAddr string) {
 	serverURL := fmt.Sprintf("https://%s", parts[0])
 
 	logger.Info("🔍 Checking client version compatibility...")
-	versionInfo, err := version.CheckServerVersion(serverURL)
+
+	// Respect channel from config (test-mode or auto-update channel override)
+	selectedChannel := tunnel.ResolveReleaseChannel()
+
+	versionInfo, err := version.CheckServerVersionWithChannel(serverURL, selectedChannel)
 	if err != nil {
 		logger.Warn("Could not check server version: %v", err)
 		return
@@ -419,8 +451,6 @@ func init() {
 	loginCmd.Flags().Int("api-port", 443, "API port for login/certificates (default: 443)")
 	loginCmd.Flags().String("token", "", "API token for authentication")
 	loginCmd.MarkFlagRequired("token")
-
-
 
 	logger.Debug("CLI commands and flags initialized")
 }

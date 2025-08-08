@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"giraffecloud/internal/logging"
+	"giraffecloud/internal/tunnel"
 	"giraffecloud/internal/version"
 	"io"
 	"net/http"
@@ -19,11 +20,11 @@ import (
 
 // UpdaterService handles client auto-updates
 type UpdaterService struct {
-	logger           *logging.Logger
-	downloadBaseURL  string
-	currentExePath   string
-	backupDir        string
-	tempDir          string
+	logger          *logging.Logger
+	downloadBaseURL string
+	currentExePath  string
+	backupDir       string
+	tempDir         string
 }
 
 // UpdateInfo contains information about an available update
@@ -75,7 +76,10 @@ func NewUpdaterService(downloadBaseURL string) (*UpdaterService, error) {
 
 // CheckForUpdates checks if an update is available
 func (u *UpdaterService) CheckForUpdates(serverURL string) (*UpdateInfo, error) {
-	versionInfo, err := version.CheckServerVersion(serverURL)
+	// Respect release channel from local config
+	channel := tunnel.ResolveReleaseChannel()
+
+	versionInfo, err := version.CheckServerVersionWithChannel(serverURL, channel)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check server version: %w", err)
 	}
@@ -108,14 +112,18 @@ func (u *UpdaterService) CheckForUpdates(serverURL string) (*UpdateInfo, error) 
 	// For beta/test: /releases/download/test-dcbb755/giraffecloud_darwin_arm64_v0.0.0-test.dcbb755.tar.gz
 	var downloadURL string
 	if versionInfo.Channel == "stable" {
-		downloadURL = fmt.Sprintf("%s/%s",
-			strings.TrimRight(versionInfo.DownloadURL, "/"),
-			filename)
+		// Expect DB to provide /releases/latest/download as base. Append filename.
+		downloadURL = fmt.Sprintf("%s/%s", strings.TrimRight(versionInfo.DownloadURL, "/"), filename)
 	} else {
-		downloadURL = fmt.Sprintf("%s/download/%s/%s",
-			strings.TrimSuffix(versionInfo.DownloadURL, "/releases"),
-			versionInfo.ReleaseTag,
-			filename)
+		base := strings.TrimRight(versionInfo.DownloadURL, "/")
+		if strings.Contains(base, "/releases/download/") {
+			// DB already points to specific tag path. Append filename only.
+			downloadURL = fmt.Sprintf("%s/%s", base, filename)
+		} else {
+			// Construct from generic /releases base
+			base = strings.TrimSuffix(base, "/releases")
+			downloadURL = fmt.Sprintf("%s/download/%s/%s", base, versionInfo.ReleaseTag, filename)
+		}
 	}
 
 	updateInfo := &UpdateInfo{

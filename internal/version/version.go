@@ -22,29 +22,29 @@ var (
 
 // BuildInfo contains comprehensive build information
 type BuildInfo struct {
-	Version     string `json:"version"`
-	BuildTime   string `json:"build_time"`
-	GitCommit   string `json:"git_commit"`
-	GoVersion   string `json:"go_version"`
-	Platform    string `json:"platform"`
-	Compiler    string `json:"compiler"`
+	Version   string `json:"version"`
+	BuildTime string `json:"build_time"`
+	GitCommit string `json:"git_commit"`
+	GoVersion string `json:"go_version"`
+	Platform  string `json:"platform"`
+	Compiler  string `json:"compiler"`
 }
 
 // ClientVersionInfo contains version information for the client
 type ClientVersionInfo struct {
 	// Version information
-	LatestVersion     string `json:"latest_version"`      // Latest available version
-	MinimumVersion    string `json:"minimum_version"`     // Minimum required version
-	CurrentVersion    string `json:"current_version"`     // Current client version (from request)
-	UpdateAvailable   bool   `json:"update_available"`    // Whether an update is available
-	UpdateRequired    bool   `json:"update_required"`     // Whether an update is required
+	LatestVersion   string `json:"latest_version"`   // Latest available version
+	MinimumVersion  string `json:"minimum_version"`  // Minimum required version
+	CurrentVersion  string `json:"current_version"`  // Current client version (from request)
+	UpdateAvailable bool   `json:"update_available"` // Whether an update is available
+	UpdateRequired  bool   `json:"update_required"`  // Whether an update is required
 
 	// Release information
-	Channel           string `json:"channel"`             // "stable", "beta", or "test"
-	ReleaseTag       string `json:"release_tag"`         // e.g., "test-dcbb755"
-	ShortVersion     string `json:"short_version"`       // e.g., "v0.0.0-test.dcbb755"
-	DownloadURL      string `json:"download_url"`        // Base URL for downloads
-	ReleaseNotes     string `json:"release_notes"`       // Release notes for this version
+	Channel      string `json:"channel"`       // "stable", "beta", or "test"
+	ReleaseTag   string `json:"release_tag"`   // e.g., "test-dcbb755"
+	ShortVersion string `json:"short_version"` // e.g., "v0.0.0-test.dcbb755"
+	DownloadURL  string `json:"download_url"`  // Base URL for downloads
+	ReleaseNotes string `json:"release_notes"` // Release notes for this version
 }
 
 // GetBuildInfo returns complete build information
@@ -95,8 +95,13 @@ func Info() string {
 		commitInfo)
 }
 
-// CheckServerVersion checks for client updates from the version service
+// CheckServerVersion checks for client updates from the version service (stable channel by default)
 func CheckServerVersion(serverURL string) (*ClientVersionInfo, error) {
+	return CheckServerVersionWithChannel(serverURL, "")
+}
+
+// CheckServerVersionWithChannel checks for client updates and allows specifying a release channel
+func CheckServerVersionWithChannel(serverURL string, channel string) (*ClientVersionInfo, error) {
 	// Remove any trailing slashes and add the version endpoint
 	serverURL = strings.TrimRight(serverURL, "/")
 	versionURL := serverURL + "/api/v1/tunnels/version"
@@ -104,10 +109,15 @@ func CheckServerVersion(serverURL string) (*ClientVersionInfo, error) {
 	// Add client version and platform info as query parameters
 	params := map[string]string{
 		"client_version": Version,
-		"platform":      runtime.GOOS,
-		"arch":         runtime.GOARCH,
+		"platform":       runtime.GOOS,
+		"arch":           runtime.GOARCH,
 	}
-	versionURL += fmt.Sprintf("?client_version=%s&platform=%s&arch=%s", Version, runtime.GOOS, runtime.GOARCH)
+	// Build query string including optional channel
+	if channel != "" {
+		versionURL += fmt.Sprintf("?client_version=%s&platform=%s&arch=%s&channel=%s", Version, runtime.GOOS, runtime.GOARCH, channel)
+	} else {
+		versionURL += fmt.Sprintf("?client_version=%s&platform=%s&arch=%s", Version, runtime.GOOS, runtime.GOARCH)
+	}
 
 	// Log request details
 	logger := logging.GetGlobalLogger()
@@ -116,6 +126,9 @@ func CheckServerVersion(serverURL string) (*ClientVersionInfo, error) {
 	logger.Debug("   Client Version: %s", params["client_version"])
 	logger.Debug("   Platform: %s", params["platform"])
 	logger.Debug("   Architecture: %s", params["arch"])
+	if channel != "" {
+		logger.Debug("   Channel: %s", channel)
+	}
 
 	// Create HTTP client with timeout
 	client := &http.Client{
@@ -179,22 +192,32 @@ func CompareVersions(v1, v2 string) int {
 		return 1
 	}
 
-	// Extract commit hashes from test versions
-	// Format: test-1c0f5f7-30-g6c89e8d or v0.0.0-test.9207eca
+	// Extract commit hashes from test/beta versions
+	// Formats:
+	//  - test builds: "test-<hash>-<n>-g<hash2>" or "v0.0.0-test.<...>.<commit>"
+	//  - beta builds: "vX.Y.Z-beta.<...>" (ordering may be ambiguous across different schemes)
 	hash1 := extractCommitHash(v1)
 	hash2 := extractCommitHash(v2)
 
-	// If both are test versions with commit hashes, compare them
-	if hash1 != "" && hash2 != "" {
-		if hash1 == hash2 {
+	// If both are pre-release (test/beta) builds, compare by commit hash when possible.
+	// If hashes are equal -> equal; if different -> server is considered newer.
+	isPre1 := strings.Contains(v1, "-test") || strings.HasPrefix(v1, "test-") || strings.Contains(v1, "-beta")
+	isPre2 := strings.Contains(v2, "-test") || strings.HasPrefix(v2, "test-") || strings.Contains(v2, "-beta")
+	if isPre1 && isPre2 {
+		if hash1 != "" && hash2 != "" {
+			if hash1 == hash2 {
+				return 0
+			}
+			return -1
+		}
+		// Fallback: if formats differ and we cannot extract both hashes, treat different strings as update
+		if v1 == v2 {
 			return 0
 		}
-		// Different commits = different versions
-		// For test versions, consider them equal since we can't determine which commit is newer
-		return 0
+		return -1
 	}
 
-	// If only one is a test version, consider it older
+	// If only one is a test version, consider test as older than a proper/stable version
 	if hash1 != "" {
 		return -1 // v1 is test version
 	}
@@ -238,16 +261,22 @@ func CompareVersions(v1, v2 string) int {
 
 // extractCommitHash extracts commit hash from test version string
 func extractCommitHash(version string) string {
-	// Format 1: test-1c0f5f7-30-g6c89e8d
+	// Format 1a: test-<branch-sha>-<n>-g<commit>
 	if strings.HasPrefix(version, "test-") {
+		// Try to find trailing g<hash>
+		idx := strings.LastIndex(version, "-g")
+		if idx >= 0 && idx+2 < len(version) {
+			return version[idx+2:]
+		}
+		// Fallback: second segment after test-
 		parts := strings.Split(version, "-")
 		if len(parts) > 1 {
 			return parts[1]
 		}
 	}
 
-	// Format 2: v0.0.0-test.9207eca
-	if strings.Contains(version, "-test.") {
+	// Format 2: v0.0.0-test.<commit> or vX.Y.Z-beta.<commit>
+	if strings.Contains(version, "-test.") || strings.Contains(version, "-beta.") {
 		parts := strings.Split(version, ".")
 		if len(parts) > 0 {
 			return parts[len(parts)-1]
@@ -284,5 +313,9 @@ func IsUpdateAvailable(clientVersion, serverVersion string) bool {
 
 // IsUpdateRequired checks if an update is required
 func IsUpdateRequired(clientVersion, minimumVersion string) bool {
+	// Treat empty or v0.0.0 minimum as no requirement
+	if minimumVersion == "" || minimumVersion == "v0.0.0" || minimumVersion == "0.0.0" {
+		return false
+	}
 	return CompareVersions(clientVersion, minimumVersion) < 0
 }

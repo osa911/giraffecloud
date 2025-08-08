@@ -155,7 +155,10 @@ var autoUpdateStatusCmd = &cobra.Command{
 		// Check current update status
 		logger.Info("\n=== Update Status ===")
 		serverURL := fmt.Sprintf("https://%s:%d", cfg.API.Host, cfg.API.Port)
-		versionInfo, err := version.CheckServerVersion(serverURL)
+		// Respect channel from config when checking status
+		selectedChannel := tunnel.ResolveReleaseChannel()
+
+		versionInfo, err := version.CheckServerVersionWithChannel(serverURL, selectedChannel)
 		if err != nil {
 			logger.Error("Failed to check server version: %v", err)
 		} else {
