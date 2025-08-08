@@ -144,20 +144,7 @@ Example:
 		// Check version compatibility (respect test/beta channel if enabled)
 		checkVersionCompatibility(serverAddr)
 
-		// Register on-connect hook to trigger an immediate auto-update check even on reconnections
-		t.SetOnConnectHook(func() {
-			apiServerURL := fmt.Sprintf("https://%s:%d", cfg.API.Host, cfg.API.Port)
-			updater, err := service.NewUpdaterService(cfg.AutoUpdate.DownloadURL)
-			if err != nil {
-				logger.Debug("UpdaterService init failed in onConnect hook: %v", err)
-				return
-			}
-			info, err := updater.CheckForUpdates(apiServerURL)
-			if err != nil || info == nil {
-				return
-			}
-			logger.Info("Auto-update: update available (%s -> %s); run 'giraffecloud update' or enable auto-update to install automatically", info.CurrentVersion, info.Version)
-		})
+		// Do not register extra on-connect hooks for update checks. Auto-update service will handle checks when enabled.
 
 		err = t.Connect(ctx, serverAddr, cfg.Token, cfg.Domain, cfg.LocalPort, tlsConfig)
 		s.Stop()
@@ -177,8 +164,8 @@ Example:
 		} else {
 			if startErr := autoUpdateSvc.Start(ctx, apiServerURL); startErr != nil {
 				logger.Warn("Failed to start auto-update service: %v", startErr)
-			} else {
-				// Force an immediate check once connected
+			} else if cfg.AutoUpdate.Enabled {
+				// Only force an immediate check when auto-update is enabled
 				autoUpdateSvc.CheckNow(apiServerURL)
 			}
 		}

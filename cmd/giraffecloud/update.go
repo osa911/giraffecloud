@@ -189,16 +189,19 @@ var autoUpdateEnableCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		// Create new config with auto-update enabled
-		newCfg := &tunnel.Config{
-			AutoUpdate: tunnel.AutoUpdateConfig{
-				Enabled: true,
-			},
-		}
+		// Preserve existing auto-update and only toggle fields
+		baseAuto := existingCfg.AutoUpdate
+		baseAuto.Enabled = true
+		newCfg := &tunnel.Config{AutoUpdate: baseAuto}
 
 		// Merge changes
 		mergedCfg := tunnel.MergeConfig(existingCfg, newCfg)
 
+		// Require prior login (token present) before saving
+		if mergedCfg.Token == "" {
+			logger.Error("Please login first: run 'giraffecloud login --token <API_TOKEN>'")
+			os.Exit(1)
+		}
 		// Save config
 		if err := tunnel.SaveConfig(mergedCfg); err != nil {
 			logger.Error("Failed to save config: %v", err)
@@ -224,16 +227,19 @@ var autoUpdateDisableCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		// Create new config with auto-update disabled
-		newCfg := &tunnel.Config{
-			AutoUpdate: tunnel.AutoUpdateConfig{
-				Enabled: false,
-			},
-		}
+		// Preserve existing auto-update and only toggle fields
+		baseAuto := existingCfg.AutoUpdate
+		baseAuto.Enabled = false
+		newCfg := &tunnel.Config{AutoUpdate: baseAuto}
 
 		// Merge changes
 		mergedCfg := tunnel.MergeConfig(existingCfg, newCfg)
 
+		// Require prior login (token present) before saving
+		if mergedCfg.Token == "" {
+			logger.Error("Please login first: run 'giraffecloud login --token <API_TOKEN>'")
+			os.Exit(1)
+		}
 		// Save config
 		if err := tunnel.SaveConfig(mergedCfg); err != nil {
 			logger.Error("Failed to save config: %v", err)
@@ -262,10 +268,9 @@ Examples:
 			os.Exit(1)
 		}
 
-		// Create new config with auto-update settings
-		newCfg := &tunnel.Config{
-			AutoUpdate: tunnel.AutoUpdateConfig{},
-		}
+		// Start with existing auto-update to avoid overwriting unrelated fields
+		baseAuto := existingCfg.AutoUpdate
+		newCfg := &tunnel.Config{AutoUpdate: baseAuto}
 
 		// Update settings from flags
 		if interval, _ := cmd.Flags().GetString("interval"); interval != "" {
@@ -330,6 +335,11 @@ Examples:
 		// Merge changes
 		mergedCfg := tunnel.MergeConfig(existingCfg, newCfg)
 
+		// Require prior login (token present) before saving
+		if mergedCfg.Token == "" {
+			logger.Error("Please login first: run 'giraffecloud login --token <API_TOKEN>'")
+			os.Exit(1)
+		}
 		// Save config
 		if err := tunnel.SaveConfig(mergedCfg); err != nil {
 			logger.Error("Failed to save config: %v", err)

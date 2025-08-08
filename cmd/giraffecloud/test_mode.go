@@ -44,21 +44,31 @@ Examples:
 			}
 		}
 
+		// Base auto-update on existing (or defaults) to avoid overwriting unrelated fields
+		baseAuto := tunnel.DefaultConfig.AutoUpdate
+		if existingCfg != nil {
+			baseAuto = existingCfg.AutoUpdate
+		}
+
 		// Create new config with just the test mode changes
 		newCfg := &tunnel.Config{
 			TestMode: tunnel.TestModeConfig{
 				Enabled: true,
 				Channel: channel,
 			},
-			AutoUpdate: tunnel.AutoUpdateConfig{
-				Channel: channel,
-			},
+			AutoUpdate: baseAuto,
 		}
+		newCfg.AutoUpdate.Channel = channel
 
 		// Merge changes
 		mergedCfg := tunnel.MergeConfig(existingCfg, newCfg)
 
-		// Save config
+		// Require prior login (token present) before saving
+		if mergedCfg.Token == "" {
+			logger.Error("Please login first: run 'giraffecloud login --token <API_TOKEN>'")
+			os.Exit(1)
+		}
+		// Save config (requires valid config); run after login or with existing valid config
 		if err := tunnel.SaveConfig(mergedCfg); err != nil {
 			logger.Error("Failed to save config: %v", err)
 			os.Exit(1)
@@ -82,20 +92,30 @@ var testModeDisableCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
+		// Base auto-update on existing (or defaults)
+		baseAuto := tunnel.DefaultConfig.AutoUpdate
+		if existingCfg != nil {
+			baseAuto = existingCfg.AutoUpdate
+		}
+
 		// Create new config with test mode disabled
 		newCfg := &tunnel.Config{
 			TestMode: tunnel.TestModeConfig{
 				Enabled: false,
 				Channel: "stable",
 			},
-			AutoUpdate: tunnel.AutoUpdateConfig{
-				Channel: "stable",
-			},
+			AutoUpdate: baseAuto,
 		}
+		newCfg.AutoUpdate.Channel = "stable"
 
 		// Merge changes
 		mergedCfg := tunnel.MergeConfig(existingCfg, newCfg)
 
+		// Require prior login (token present) before saving
+		if mergedCfg.Token == "" {
+			logger.Error("Please login first: run 'giraffecloud login --token <API_TOKEN>'")
+			os.Exit(1)
+		}
 		// Save config
 		if err := tunnel.SaveConfig(mergedCfg); err != nil {
 			logger.Error("Failed to save config: %v", err)
