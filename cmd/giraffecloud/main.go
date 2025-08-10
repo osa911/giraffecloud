@@ -270,6 +270,7 @@ Example:
 		logger.Info("Tunnel server: %s:%d", cfg.Server.Host, cfg.Server.Port)
 		logger.Info("Certificates stored in: %s", certsDir)
 		logger.Info("Run 'giraffecloud connect' to establish a tunnel connection")
+		logger.Info("Run 'giraffecloud service install' to install the tunnel as a service and not have to run it manually")
 	},
 }
 
