@@ -115,9 +115,8 @@ func (s *AutoUpdateService) run(ctx context.Context, serverURL string) {
 		s.mutex.Unlock()
 	}()
 
-	// Do an initial check after a short delay
-	initialTimer := time.NewTimer(5 * time.Minute)
-	defer initialTimer.Stop()
+	// Do an initial check after a short delay (one-shot)
+	initial := time.After(5 * time.Minute)
 
 	for {
 		select {
@@ -127,10 +126,10 @@ func (s *AutoUpdateService) run(ctx context.Context, serverURL string) {
 		case <-s.stopChan:
 			s.logger.Info("Auto-update service stopped")
 			return
-		case <-initialTimer.C:
+		case <-initial:
 			s.checkAndUpdate(serverURL, false)
-			// Reset timer so it doesn't fire again
-			initialTimer.Reset(0)
+			// Disable further initial events
+			initial = nil
 		case <-s.ticker.C:
 			s.checkAndUpdate(serverURL, false)
 		}

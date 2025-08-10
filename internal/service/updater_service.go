@@ -244,6 +244,8 @@ func (u *UpdaterService) InstallUpdate(downloadPath string) error {
 		// Attempt privilege escalation for permission errors on Unix-like systems when interactive
 		if (runtime.GOOS == "linux" || runtime.GOOS == "darwin") && u.shouldAttemptSudo(err) {
 			u.logger.Warn("Permission issue detected while replacing executable. Attempting sudo install...")
+			u.logger.Info("Sudo required to update: %s. You may be prompted for your password now.", u.currentExePath)
+			u.logger.Info("Manual command: sudo install -m 0755 %q %q", newExePath, u.currentExePath)
 			if sudoErr := u.installWithSudo(newExePath); sudoErr == nil {
 				u.logger.Info("Replaced executable via sudo successfully")
 			} else {
