@@ -208,7 +208,7 @@ WantedBy=default.target`, sm.executablePath, userHome)
 		return nil
 	}
 
-	// System-level unit requires sudo
+	// System-level unit: write config to the invoking user's home, not /root
 	// Determine the intended user and home directory for config
 	svcUser := os.Getenv("SUDO_USER")
 	if svcUser == "" {

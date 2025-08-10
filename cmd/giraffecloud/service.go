@@ -22,6 +22,13 @@ var installCmd = &cobra.Command{
 	Short: "Install GiraffeCloud as a system service",
 	Run: func(cmd *cobra.Command, args []string) {
 		userUnit, _ := cmd.Flags().GetBool("user")
+		// Default to user-level service when not explicitly specified and not running as root
+		if !cmd.Flags().Changed("user") {
+			if os.Geteuid() != 0 {
+				userUnit = true
+				logger.Info("No --user flag provided; defaulting to user-level service install")
+			}
+		}
 		sm, err := tunnel.NewServiceManagerWithUser(userUnit)
 		if err != nil {
 			logger.Error("Failed to create service manager: %v", err)
