@@ -304,19 +304,20 @@ func initServiceCommands() {
 		Short: "Show service logs",
 		Run: func(cmd *cobra.Command, args []string) {
 			follow, _ := cmd.Flags().GetBool("follow")
+			lines, _ := cmd.Flags().GetInt("lines")
 			sm, err := tunnel.NewServiceManager()
 			if err != nil {
 				logger.Error("Failed to create service manager: %v", err)
 				os.Exit(1)
 			}
 			if follow {
-				if err := sm.FollowLogs(); err != nil {
+				if err := sm.FollowLogsWithLines(lines); err != nil {
 					logger.Error("Failed to follow logs: %v", err)
 					os.Exit(1)
 				}
 				return
 			}
-			logs, err := sm.GetLogs()
+			logs, err := sm.GetLogsWithLines(lines)
 			if err != nil {
 				logger.Error("Failed to get service logs: %v", err)
 				os.Exit(1)
@@ -333,5 +334,6 @@ func initServiceCommands() {
 	// Add flags to health-check command
 	// System-level only; user-level flags removed
 	logsCmd.Flags().Bool("follow", false, "Follow live logs (Linux/macOS)")
+	logsCmd.Flags().Int("lines", 200, "Number of recent log lines to show/start from")
 	healthCheckCmd.Flags().Bool("show-logs", false, "Show recent service logs")
 }
