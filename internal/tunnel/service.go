@@ -30,16 +30,6 @@ func NewServiceManager() (*ServiceManager, error) {
 	}, nil
 }
 
-// NewServiceManagerWithUser returns a service manager that targets user-level units on Linux when userUnit is true
-func NewServiceManagerWithUser(userUnit bool) (*ServiceManager, error) {
-	sm, err := NewServiceManager()
-	if err != nil {
-		return nil, err
-	}
-	sm.useUserUnit = userUnit
-	return sm, nil
-}
-
 func (sm *ServiceManager) Install() error {
 	// Install service based on OS
 	var err error

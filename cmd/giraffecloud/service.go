@@ -21,15 +21,7 @@ var installCmd = &cobra.Command{
 	Use:   "install",
 	Short: "Install GiraffeCloud as a system service",
 	Run: func(cmd *cobra.Command, args []string) {
-		userUnit, _ := cmd.Flags().GetBool("user")
-		// Default to user-level service when not explicitly specified and not running as root
-		if !cmd.Flags().Changed("user") {
-			if os.Geteuid() != 0 {
-				userUnit = true
-				logger.Info("No --user flag provided; defaulting to user-level service install")
-			}
-		}
-		sm, err := tunnel.NewServiceManagerWithUser(userUnit)
+		sm, err := tunnel.NewServiceManager()
 		if err != nil {
 			logger.Error("Failed to create service manager: %v", err)
 			os.Exit(1)
@@ -48,8 +40,7 @@ var uninstallCmd = &cobra.Command{
 	Use:   "uninstall",
 	Short: "Uninstall GiraffeCloud system service",
 	Run: func(cmd *cobra.Command, args []string) {
-		userUnit, _ := cmd.Flags().GetBool("user")
-		sm, err := tunnel.NewServiceManagerWithUser(userUnit)
+		sm, err := tunnel.NewServiceManager()
 		if err != nil {
 			logger.Error("Failed to create service manager: %v", err)
 			os.Exit(1)
@@ -224,8 +215,7 @@ func initServiceCommands() {
 		Use:   "start",
 		Short: "Start GiraffeCloud service",
 		Run: func(cmd *cobra.Command, args []string) {
-			userUnit, _ := cmd.Flags().GetBool("user")
-			sm, err := tunnel.NewServiceManagerWithUser(userUnit)
+			sm, err := tunnel.NewServiceManager()
 			if err != nil {
 				logger.Error("Failed to create service manager: %v", err)
 				os.Exit(1)
@@ -245,8 +235,7 @@ func initServiceCommands() {
 		Use:   "stop",
 		Short: "Stop GiraffeCloud service",
 		Run: func(cmd *cobra.Command, args []string) {
-			userUnit, _ := cmd.Flags().GetBool("user")
-			sm, err := tunnel.NewServiceManagerWithUser(userUnit)
+			sm, err := tunnel.NewServiceManager()
 			if err != nil {
 				logger.Error("Failed to create service manager: %v", err)
 				os.Exit(1)
@@ -266,8 +255,7 @@ func initServiceCommands() {
 		Use:   "restart",
 		Short: "Restart GiraffeCloud service",
 		Run: func(cmd *cobra.Command, args []string) {
-			userUnit, _ := cmd.Flags().GetBool("user")
-			sm, err := tunnel.NewServiceManagerWithUser(userUnit)
+			sm, err := tunnel.NewServiceManager()
 			if err != nil {
 				logger.Error("Failed to create service manager: %v", err)
 				os.Exit(1)
@@ -286,8 +274,7 @@ func initServiceCommands() {
 		Use:   "status",
 		Short: "Show service status",
 		Run: func(cmd *cobra.Command, args []string) {
-			userUnit, _ := cmd.Flags().GetBool("user")
-			sm, err := tunnel.NewServiceManagerWithUser(userUnit)
+			sm, err := tunnel.NewServiceManager()
 			if err != nil {
 				logger.Error("Failed to create service manager: %v", err)
 				os.Exit(1)
@@ -316,9 +303,8 @@ func initServiceCommands() {
 		Use:   "logs",
 		Short: "Show service logs",
 		Run: func(cmd *cobra.Command, args []string) {
-			userUnit, _ := cmd.Flags().GetBool("user")
 			follow, _ := cmd.Flags().GetBool("follow")
-			sm, err := tunnel.NewServiceManagerWithUser(userUnit)
+			sm, err := tunnel.NewServiceManager()
 			if err != nil {
 				logger.Error("Failed to create service manager: %v", err)
 				os.Exit(1)
@@ -345,13 +331,7 @@ func initServiceCommands() {
 	serviceCmd.AddCommand(logsCmd)
 
 	// Add flags to health-check command
-	installCmd.Flags().Bool("user", false, "Install as user-level systemd unit (Linux)")
-	uninstallCmd.Flags().Bool("user", false, "Target user-level systemd unit (Linux)")
-	startCmd.Flags().Bool("user", false, "Control user-level systemd unit (Linux)")
-	stopCmd.Flags().Bool("user", false, "Control user-level systemd unit (Linux)")
-	restartCmd.Flags().Bool("user", false, "Control user-level systemd unit (Linux)")
-	statusCmd.Flags().Bool("user", false, "Query user-level systemd unit (Linux)")
-	logsCmd.Flags().Bool("user", false, "Read logs from user-level systemd unit (Linux)")
+	// System-level only; user-level flags removed
 	logsCmd.Flags().Bool("follow", false, "Follow live logs (Linux/macOS)")
 	healthCheckCmd.Flags().Bool("show-logs", false, "Show recent service logs")
 }
