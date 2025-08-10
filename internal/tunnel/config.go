@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/user"
 	"path/filepath"
+	"runtime"
 	"time"
 )
 
@@ -146,6 +148,27 @@ func GetConfigPath() (string, error) {
 		return "", err
 	}
 	return filepath.Join(dir, "config.json"), nil
+}
+
+// EnsureConsistentConfigHome sets GIRAFFECLOUD_HOME to the original sudo user's home when running as root with sudo
+// This keeps CLI behavior consistent with the non-root user's config path even when prefixed with sudo.
+func EnsureConsistentConfigHome() {
+	if os.Getenv("GIRAFFECLOUD_HOME") != "" {
+		return
+	}
+	// Only relevant for Unix-like systems
+	if runtime.GOOS == "windows" {
+		return
+	}
+	// If running as root via sudo, prefer the invoking user's home
+	if os.Geteuid() == 0 {
+		sudoUser := os.Getenv("SUDO_USER")
+		if sudoUser != "" {
+			if u, err := user.Lookup(sudoUser); err == nil && u != nil && u.HomeDir != "" {
+				_ = os.Setenv("GIRAFFECLOUD_HOME", filepath.Join(u.HomeDir, ".giraffecloud"))
+			}
+		}
+	}
 }
 
 // applyAutoUpdateDefaults ensures sensible defaults when fields are zero-valued in existing configs

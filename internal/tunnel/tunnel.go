@@ -259,6 +259,8 @@ func (t *Tunnel) connectWithRetry(serverAddr string, tlsConfig *tls.Config) erro
 func (t *Tunnel) attemptDualConnections(serverAddr string, tlsConfig *tls.Config) error {
 	// PRODUCTION-GRADE: Create secure TLS config with proper certificate validation
 	if tlsConfig == nil {
+		// Normalize config home when running elevated
+		EnsureConsistentConfigHome()
 		// PRODUCTION-GRADE: Load configuration and REQUIRE proper certificates
 		cfg, err := LoadConfig()
 		if err != nil {

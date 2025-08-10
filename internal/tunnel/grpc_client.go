@@ -195,6 +195,8 @@ func (c *GRPCTunnelClient) IsConnected() bool {
 
 // connect establishes the gRPC connection and stream
 func (c *GRPCTunnelClient) connect() error {
+	// Ensure consistent config home when running under elevated context
+	EnsureConsistentConfigHome()
 	// PRODUCTION-GRADE: Load configuration and REQUIRE proper certificates
 	cfg, err := LoadConfig()
 	if err != nil {
