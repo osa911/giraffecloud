@@ -561,7 +561,22 @@ func (sm *ServiceManager) isRunningLinux() (bool, error) {
 }
 
 func (sm *ServiceManager) getLogsLinux() (string, error) {
-	args := []string{"-u", "giraffecloud", "-n", "20", "--no-pager"}
+	// Prefer file logs if present
+	logDir := os.Getenv("GIRAFFECLOUD_LOG_DIR")
+	if logDir == "" {
+		logDir = "/var/log/giraffecloud"
+	}
+	logFile := filepath.Join(logDir, "tunnel.log")
+	if _, err := os.Stat(logFile); err == nil {
+		// tail last 200 lines
+		cmd := exec.Command("tail", "-n", "200", logFile)
+		output, terr := cmd.Output()
+		if terr == nil {
+			return string(output), nil
+		}
+	}
+	// Fallback to journal
+	args := []string{"-u", "giraffecloud", "-n", "200", "--no-pager", "-o", "cat"}
 	if sm.useUserUnit {
 		args = append([]string{"--user"}, args...)
 	}
@@ -577,7 +592,20 @@ func (sm *ServiceManager) getLogsLinux() (string, error) {
 func (sm *ServiceManager) FollowLogs() error {
 	switch runtime.GOOS {
 	case "linux":
-		args := []string{"-u", "giraffecloud", "-f", "--no-pager"}
+		// Prefer following file logs if present
+		logDir := os.Getenv("GIRAFFECLOUD_LOG_DIR")
+		if logDir == "" {
+			logDir = "/var/log/giraffecloud"
+		}
+		logFile := filepath.Join(logDir, "tunnel.log")
+		if _, err := os.Stat(logFile); err == nil {
+			cmd := exec.Command("tail", "-n", "+1", "-F", logFile)
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			return cmd.Run()
+		}
+		// Fallback to journal
+		args := []string{"-u", "giraffecloud", "-f", "--no-pager", "-o", "cat"}
 		if sm.useUserUnit {
 			args = append([]string{"--user"}, args...)
 		}
