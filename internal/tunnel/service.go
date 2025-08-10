@@ -7,12 +7,14 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 )
 
 type ServiceManager struct {
 	executablePath string
 	logger         *logging.Logger
+	useUserUnit    bool
 }
 
 func NewServiceManager() (*ServiceManager, error) {
@@ -25,6 +27,16 @@ func NewServiceManager() (*ServiceManager, error) {
 		executablePath: executablePath,
 		logger:         logging.GetGlobalLogger(),
 	}, nil
+}
+
+// NewServiceManagerWithUser returns a service manager that targets user-level units on Linux when userUnit is true
+func NewServiceManagerWithUser(userUnit bool) (*ServiceManager, error) {
+	sm, err := NewServiceManager()
+	if err != nil {
+		return nil, err
+	}
+	sm.useUserUnit = userUnit
+	return sm, nil
 }
 
 func (sm *ServiceManager) Install() error {
@@ -146,7 +158,48 @@ func (sm *ServiceManager) uninstallDarwin() error {
 }
 
 func (sm *ServiceManager) installLinux() error {
-	// Create systemd service file
+	if sm.useUserUnit {
+		// User-level systemd unit (~/.config/systemd/user)
+		serviceContent := fmt.Sprintf(`[Unit]
+Description=GiraffeCloud Tunnel Service (User)
+After=default.target network-online.target
+
+[Service]
+Type=simple
+ExecStart=%s connect
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target`, sm.executablePath)
+
+		// Ensure user unit directory exists
+		userDir := filepath.Join(os.Getenv("HOME"), ".config/systemd/user")
+		if err := os.MkdirAll(userDir, 0755); err != nil {
+			return fmt.Errorf("failed to create user systemd directory: %w", err)
+		}
+
+		servicePath := filepath.Join(userDir, "giraffecloud.service")
+		if err := os.WriteFile(servicePath, []byte(serviceContent), 0644); err != nil {
+			return fmt.Errorf("failed to write user service file: %w", err)
+		}
+
+		// Reload user daemon and enable/start
+		if err := exec.Command("systemctl", "--user", "daemon-reload").Run(); err != nil {
+			return fmt.Errorf("failed to reload user systemd daemon: %w", err)
+		}
+		if err := exec.Command("systemctl", "--user", "enable", "giraffecloud").Run(); err != nil {
+			return fmt.Errorf("failed to enable user service: %w", err)
+		}
+		if err := exec.Command("systemctl", "--user", "start", "giraffecloud").Run(); err != nil {
+			return fmt.Errorf("failed to start user service: %w", err)
+		}
+		sm.logger.Info("User service installed successfully")
+		sm.logger.Info("Note: To start at boot without login, enable lingering: sudo loginctl enable-linger %s", os.Getenv("USER"))
+		return nil
+	}
+
+	// System-level unit requires sudo
 	serviceContent := fmt.Sprintf(`[Unit]
 Description=GiraffeCloud Tunnel Service
 After=network.target
@@ -163,63 +216,54 @@ StandardError=append:/var/log/giraffecloud/tunnel.log
 [Install]
 WantedBy=multi-user.target`, os.Getenv("USER"), sm.executablePath)
 
-	// Create log directory
 	if err := os.MkdirAll("/var/log/giraffecloud", 0755); err != nil {
 		return fmt.Errorf("failed to create log directory: %w", err)
 	}
-
-	// Write service file
 	servicePath := "/etc/systemd/system/giraffecloud.service"
 	if err := os.WriteFile(servicePath, []byte(serviceContent), 0644); err != nil {
 		return fmt.Errorf("failed to write service file: %w", err)
 	}
-
-	// Reload systemd daemon
-	cmd := exec.Command("sudo", "systemctl", "daemon-reload")
-	if err := cmd.Run(); err != nil {
+	if err := exec.Command("sudo", "systemctl", "daemon-reload").Run(); err != nil {
 		return fmt.Errorf("failed to reload systemd daemon: %w", err)
 	}
-
-	// Enable and start the service
-	cmd = exec.Command("sudo", "systemctl", "enable", "giraffecloud")
-	if err := cmd.Run(); err != nil {
+	if err := exec.Command("sudo", "systemctl", "enable", "giraffecloud").Run(); err != nil {
 		return fmt.Errorf("failed to enable service: %w", err)
 	}
-
-	cmd = exec.Command("sudo", "systemctl", "start", "giraffecloud")
-	if err := cmd.Run(); err != nil {
+	if err := exec.Command("sudo", "systemctl", "start", "giraffecloud").Run(); err != nil {
 		return fmt.Errorf("failed to start service: %w", err)
 	}
-
-	sm.logger.Info("Service installed successfully")
+	sm.logger.Info("System service installed successfully")
 	return nil
 }
 
 func (sm *ServiceManager) uninstallLinux() error {
-	// Stop and disable the service
-	cmd := exec.Command("sudo", "systemctl", "stop", "giraffecloud")
-	if err := cmd.Run(); err != nil {
+	if sm.useUserUnit {
+		_ = exec.Command("systemctl", "--user", "stop", "giraffecloud").Run()
+		_ = exec.Command("systemctl", "--user", "disable", "giraffecloud").Run()
+		servicePath := filepath.Join(os.Getenv("HOME"), ".config/systemd/user/giraffecloud.service")
+		if err := os.Remove(servicePath); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("failed to remove user service file: %w", err)
+		}
+		_ = exec.Command("systemctl", "--user", "daemon-reload").Run()
+		sm.logger.Info("User service uninstalled successfully")
+		return nil
+	}
+
+	// System-level
+	if err := exec.Command("sudo", "systemctl", "stop", "giraffecloud").Run(); err != nil {
 		return fmt.Errorf("failed to stop service: %w", err)
 	}
-
-	cmd = exec.Command("sudo", "systemctl", "disable", "giraffecloud")
-	if err := cmd.Run(); err != nil {
+	if err := exec.Command("sudo", "systemctl", "disable", "giraffecloud").Run(); err != nil {
 		return fmt.Errorf("failed to disable service: %w", err)
 	}
-
-	// Remove service file
 	servicePath := "/etc/systemd/system/giraffecloud.service"
 	if err := os.Remove(servicePath); err != nil {
 		return fmt.Errorf("failed to remove service file: %w", err)
 	}
-
-	// Reload systemd daemon
-	cmd = exec.Command("sudo", "systemctl", "daemon-reload")
-	if err := cmd.Run(); err != nil {
+	if err := exec.Command("sudo", "systemctl", "daemon-reload").Run(); err != nil {
 		return fmt.Errorf("failed to reload systemd daemon: %w", err)
 	}
-
-	sm.logger.Info("Service uninstalled successfully")
+	sm.logger.Info("System service uninstalled successfully")
 	return nil
 }
 
@@ -405,19 +449,32 @@ func (sm *ServiceManager) getLogsDarwin() (string, error) {
 
 // Linux-specific implementations
 func (sm *ServiceManager) isInstalledLinux() (bool, error) {
+	if sm.useUserUnit {
+		servicePath := filepath.Join(os.Getenv("HOME"), ".config/systemd/user/giraffecloud.service")
+		_, err := os.Stat(servicePath)
+		return !os.IsNotExist(err), nil
+	}
 	servicePath := "/etc/systemd/system/giraffecloud.service"
 	_, err := os.Stat(servicePath)
 	return !os.IsNotExist(err), nil
 }
 
 func (sm *ServiceManager) isRunningLinux() (bool, error) {
-	cmd := exec.Command("systemctl", "is-active", "--quiet", "giraffecloud")
+	args := []string{"is-active", "--quiet", "giraffecloud"}
+	if sm.useUserUnit {
+		args = append([]string{"--user"}, args...)
+	}
+	cmd := exec.Command("systemctl", args...)
 	err := cmd.Run()
 	return err == nil, nil
 }
 
 func (sm *ServiceManager) getLogsLinux() (string, error) {
-	cmd := exec.Command("journalctl", "-u", "giraffecloud", "-n", "20", "--no-pager")
+	args := []string{"-u", "giraffecloud", "-n", "20", "--no-pager"}
+	if sm.useUserUnit {
+		args = append([]string{"--user"}, args...)
+	}
+	cmd := exec.Command("journalctl", args...)
 	output, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("failed to read logs: %w", err)
@@ -439,7 +496,7 @@ func (sm *ServiceManager) isRunningWindows() (bool, error) {
 		return false, nil
 	}
 	// Check if service is running by looking for "RUNNING" in output
-	return string(output) != "" && (string(output) != ""), nil
+	return strings.Contains(string(output), "RUNNING"), nil
 }
 
 func (sm *ServiceManager) getLogsWindows() (string, error) {
@@ -479,6 +536,14 @@ func (sm *ServiceManager) startDarwin() error {
 
 // Linux service control methods
 func (sm *ServiceManager) restartLinux() error {
+	if sm.useUserUnit {
+		cmd := exec.Command("systemctl", "--user", "restart", "giraffecloud")
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("failed to restart user service: %w", err)
+		}
+		sm.logger.Info("User service restarted successfully")
+		return nil
+	}
 	cmd := exec.Command("sudo", "systemctl", "restart", "giraffecloud")
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to restart Linux service: %w", err)
@@ -488,6 +553,14 @@ func (sm *ServiceManager) restartLinux() error {
 }
 
 func (sm *ServiceManager) stopLinux() error {
+	if sm.useUserUnit {
+		cmd := exec.Command("systemctl", "--user", "stop", "giraffecloud")
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("failed to stop user service: %w", err)
+		}
+		sm.logger.Info("User service stopped successfully")
+		return nil
+	}
 	cmd := exec.Command("sudo", "systemctl", "stop", "giraffecloud")
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to stop Linux service: %w", err)
@@ -497,6 +570,14 @@ func (sm *ServiceManager) stopLinux() error {
 }
 
 func (sm *ServiceManager) startLinux() error {
+	if sm.useUserUnit {
+		cmd := exec.Command("systemctl", "--user", "start", "giraffecloud")
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("failed to start user service: %w", err)
+		}
+		sm.logger.Info("User service started successfully")
+		return nil
+	}
 	cmd := exec.Command("sudo", "systemctl", "start", "giraffecloud")
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to start Linux service: %w", err)
