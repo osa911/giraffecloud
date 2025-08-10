@@ -136,6 +136,15 @@ Example:
 
 		t := tunnel.NewTunnel()
 
+		// Prepare auto-update service and on-connect hook before connecting
+		apiServerURL := fmt.Sprintf("https://%s:%d", cfg.API.Host, cfg.API.Port)
+		autoUpdateSvc, _ := service.NewAutoUpdateService(&cfg.AutoUpdate, t, service.NewDefaultServiceManager())
+		t.SetOnConnectHook(func() {
+			if cfg.AutoUpdate.Enabled && autoUpdateSvc != nil {
+				autoUpdateSvc.CheckNow(apiServerURL)
+			}
+		})
+
 		// Spinner while connecting
 		s := spinner.New(spinner.CharSets[14], 120*time.Millisecond)
 		s.Suffix = " Connecting to GiraffeCloud..."
@@ -157,15 +166,10 @@ Example:
 		logger.Info("Tunnel is running. Press Ctrl+C to stop.")
 
 		// Start auto-update background service
-		apiServerURL := fmt.Sprintf("https://%s:%d", cfg.API.Host, cfg.API.Port)
-		autoUpdateSvc, err := service.NewAutoUpdateService(&cfg.AutoUpdate, t, nil)
-		if err != nil {
-			logger.Warn("Auto-update service initialization failed: %v", err)
-		} else {
+		if autoUpdateSvc != nil {
 			if startErr := autoUpdateSvc.Start(ctx, apiServerURL); startErr != nil {
 				logger.Warn("Failed to start auto-update service: %v", startErr)
 			} else if cfg.AutoUpdate.Enabled {
-				// Only force an immediate check when auto-update is enabled
 				autoUpdateSvc.CheckNow(apiServerURL)
 			}
 		}
