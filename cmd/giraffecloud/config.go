@@ -50,6 +50,10 @@ var configShowCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
+		// Show actual path being read
+		path, _ := tunnel.GetConfigPath()
+		fmt.Printf("Config file: %s\n", path)
+
 		// Convert config to JSON with indentation
 		data, err := json.MarshalIndent(cfg, "", "  ")
 		if err != nil {

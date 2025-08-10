@@ -356,6 +356,9 @@ func (c *GRPCTunnelClient) saveHandshakeResponseToConfig(status *proto.TunnelSta
 	}
 
 	c.logger.Info("🔐 PRODUCTION-GRADE: Saving handshake response to config")
+	if path, err := GetConfigPath(); err == nil {
+		c.logger.Info("Config path: %s", path)
+	}
 	c.logger.Info("domain: %s", status.Domain)
 	c.logger.Info("config domain: %s", cfg.Domain)
 	c.logger.Info("target port: %d", status.TargetPort)

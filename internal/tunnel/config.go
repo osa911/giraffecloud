@@ -130,6 +130,24 @@ var DefaultConfig = Config{
 	},
 }
 
+// GetConfigDir returns the directory where GiraffeCloud stores config files
+func GetConfigDir() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get home directory: %w", err)
+	}
+	return filepath.Join(homeDir, ".giraffecloud"), nil
+}
+
+// GetConfigPath returns the full path to the config.json
+func GetConfigPath() (string, error) {
+	dir, err := GetConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "config.json"), nil
+}
+
 // DefaultStreamingConfig returns default streaming configuration
 func DefaultStreamingConfig() *StreamingConfig {
 	return &StreamingConfig{
@@ -166,12 +184,10 @@ func DefaultStreamingConfig() *StreamingConfig {
 
 // LoadConfig loads the configuration from the default location
 func LoadConfig() (*Config, error) {
-	homeDir, err := os.UserHomeDir()
+	configPath, err := GetConfigPath()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get home directory: %w", err)
+		return nil, err
 	}
-
-	configPath := filepath.Join(homeDir, ".giraffecloud", "config.json")
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -245,12 +261,10 @@ func SaveConfig(cfg *Config) error {
 		return fmt.Errorf("invalid tunnel configuration: %w", err)
 	}
 
-	homeDir, err := os.UserHomeDir()
+	configDir, err := GetConfigDir()
 	if err != nil {
-		return fmt.Errorf("failed to get home directory: %w", err)
+		return err
 	}
-
-	configDir := filepath.Join(homeDir, ".giraffecloud")
 	if err := os.MkdirAll(configDir, 0700); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
