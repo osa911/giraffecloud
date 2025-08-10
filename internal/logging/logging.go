@@ -170,14 +170,22 @@ func newLogger(config *LogConfig) (*Logger, error) {
 		Compress:   true,
 	}
 
-	// Create a color-stripped writer for the file
-	strippedFileWriter := newColorStripper(fileWriter)
+	// Allow opt-in colored logs in file via env var
+	// By default, strip ANSI colors from the file output to keep it clean
+	useColorInFile := false
+	if v := strings.ToLower(strings.TrimSpace(os.Getenv("GIRAFFECLOUD_COLOR_LOG_FILE"))); v == "1" || v == "true" || v == "yes" {
+		useColorInFile = true
+	}
+	var fileDest io.Writer = fileWriter
+	if !useColorInFile {
+		fileDest = newColorStripper(fileWriter)
+	}
 
 	// Always use stdout for terminal output
 	stdoutWriter := os.Stdout
 
 	// Create a multi-writer that writes to both file and stdout
-	multiWriter := io.MultiWriter(strippedFileWriter, stdoutWriter)
+	multiWriter := io.MultiWriter(fileDest, stdoutWriter)
 
 	// Create logger with timestamp and microseconds
 	logger := log.New(multiWriter, "", log.LstdFlags|log.Lmicroseconds)
