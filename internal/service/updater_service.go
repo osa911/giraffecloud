@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -240,11 +241,25 @@ func (u *UpdaterService) InstallUpdate(downloadPath string) error {
 	}
 
 	if err := u.replaceExecutable(newExePath); err != nil {
-		// Try to restore backup
-		if restoreErr := u.restoreBackup(backupPath); restoreErr != nil {
-			u.logger.Error("Failed to restore backup after failed update: %v", restoreErr)
+		// Attempt privilege escalation for permission errors on Unix-like systems when interactive
+		if (runtime.GOOS == "linux" || runtime.GOOS == "darwin") && u.shouldAttemptSudo(err) {
+			u.logger.Warn("Permission issue detected while replacing executable. Attempting sudo install...")
+			if sudoErr := u.installWithSudo(newExePath); sudoErr == nil {
+				u.logger.Info("Replaced executable via sudo successfully")
+			} else {
+				// Try to restore backup
+				if restoreErr := u.restoreBackup(backupPath); restoreErr != nil {
+					u.logger.Error("Failed to restore backup after failed update: %v", restoreErr)
+				}
+				return fmt.Errorf("failed to replace executable (sudo fallback failed): %w", sudoErr)
+			}
+		} else {
+			// Try to restore backup
+			if restoreErr := u.restoreBackup(backupPath); restoreErr != nil {
+				u.logger.Error("Failed to restore backup after failed update: %v", restoreErr)
+			}
+			return fmt.Errorf("failed to replace executable: %w", err)
 		}
-		return fmt.Errorf("failed to replace executable: %w", err)
 	}
 
 	u.logger.Info("Update installed successfully!")
@@ -520,6 +535,37 @@ func (u *UpdaterService) replaceExecutable(newExePath string) error {
 	}
 
 	return nil
+}
+
+// shouldAttemptSudo returns true if the error appears to be a permission issue and we are in an interactive shell
+func (u *UpdaterService) shouldAttemptSudo(err error) bool {
+	if err == nil {
+		return false
+	}
+	// Permission heuristics
+	errStr := strings.ToLower(err.Error())
+	if !(strings.Contains(errStr, "permission") || strings.Contains(errStr, "operation not permitted") || strings.Contains(errStr, "read-only file system")) {
+		return false
+	}
+	// Interactive check: stdin is a TTY so sudo can prompt
+	if fi, statErr := os.Stdin.Stat(); statErr == nil {
+		if (fi.Mode() & os.ModeCharDevice) == 0 {
+			return false
+		}
+	}
+	// sudo must be available
+	if _, lookErr := exec.LookPath("sudo"); lookErr != nil {
+		return false
+	}
+	return true
+}
+
+// installWithSudo replaces the executable using sudo install
+func (u *UpdaterService) installWithSudo(newExePath string) error {
+	cmd := exec.Command("sudo", "install", "-m", "0755", newExePath, u.currentExePath)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }
 
 // copyFile copies a file from src to dst
