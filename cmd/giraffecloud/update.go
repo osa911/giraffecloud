@@ -412,6 +412,6 @@ func initUpdateCommands() {
 	autoUpdateConfigCmd.Flags().String("interval", "", "Check for updates every duration (e.g., 1h, 12h, 24h)")
 	autoUpdateConfigCmd.Flags().Bool("required-only", false, "Only install required updates")
 	autoUpdateConfigCmd.Flags().Bool("preserve-connection", false, "Preserve existing tunnel connection during update")
-	autoUpdateConfigCmd.Flags().Bool("restart-service", false, "Restart the GiraffeCloud service after update")
+	autoUpdateConfigCmd.Flags().Bool("restart-service", true, "Restart the GiraffeCloud service after update")
 	autoUpdateConfigCmd.Flags().String("window", "", "Update window in HH:MM-HH:MM format (e.g., 2,6,UTC)")
 }
