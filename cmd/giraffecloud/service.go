@@ -210,6 +210,119 @@ func initServiceCommands() {
 	serviceCmd.AddCommand(uninstallCmd)
 	serviceCmd.AddCommand(healthCheckCmd)
 
+	// Start service
+	startCmd := &cobra.Command{
+		Use:   "start",
+		Short: "Start GiraffeCloud service",
+		Run: func(cmd *cobra.Command, args []string) {
+			sm, err := tunnel.NewServiceManager()
+			if err != nil {
+				logger.Error("Failed to create service manager: %v", err)
+				os.Exit(1)
+			}
+			if err := sm.Start(); err != nil {
+				logger.Error("Failed to start service: %v", err)
+				logger.Info("Tip: You may need elevated privileges (try with sudo)")
+				os.Exit(1)
+			}
+			logger.Info("Service started")
+		},
+	}
+	serviceCmd.AddCommand(startCmd)
+
+	// Stop service
+	stopCmd := &cobra.Command{
+		Use:   "stop",
+		Short: "Stop GiraffeCloud service",
+		Run: func(cmd *cobra.Command, args []string) {
+			sm, err := tunnel.NewServiceManager()
+			if err != nil {
+				logger.Error("Failed to create service manager: %v", err)
+				os.Exit(1)
+			}
+			if err := sm.Stop(); err != nil {
+				logger.Error("Failed to stop service: %v", err)
+				logger.Info("Tip: You may need elevated privileges (try with sudo)")
+				os.Exit(1)
+			}
+			logger.Info("Service stopped")
+		},
+	}
+	serviceCmd.AddCommand(stopCmd)
+
+	// Restart service
+	restartCmd := &cobra.Command{
+		Use:   "restart",
+		Short: "Restart GiraffeCloud service",
+		Run: func(cmd *cobra.Command, args []string) {
+			sm, err := tunnel.NewServiceManager()
+			if err != nil {
+				logger.Error("Failed to create service manager: %v", err)
+				os.Exit(1)
+			}
+			if err := sm.Restart(); err != nil {
+				logger.Error("Failed to restart service: %v", err)
+				logger.Info("Tip: You may need elevated privileges (try with sudo)")
+				os.Exit(1)
+			}
+			logger.Info("Service restarted")
+		},
+	}
+	serviceCmd.AddCommand(restartCmd)
+
+	// Status service
+	statusCmd := &cobra.Command{
+		Use:   "status",
+		Short: "Show service status",
+		Run: func(cmd *cobra.Command, args []string) {
+			sm, err := tunnel.NewServiceManager()
+			if err != nil {
+				logger.Error("Failed to create service manager: %v", err)
+				os.Exit(1)
+			}
+			installed, ierr := sm.IsInstalled()
+			running, rerr := sm.IsRunning()
+			if ierr != nil {
+				logger.Error("Failed to check installation: %v", ierr)
+			}
+			if rerr != nil {
+				logger.Error("Failed to check running state: %v", rerr)
+			}
+			logger.Info("Installed: %v", installed)
+			logger.Info("Running: %v", running)
+			if !installed {
+				logger.Info("Tip: Run 'giraffecloud service install'")
+			} else if !running {
+				logger.Info("Tip: Run 'giraffecloud service start'")
+			}
+		},
+	}
+	serviceCmd.AddCommand(statusCmd)
+
+	// Logs
+	logsCmd := &cobra.Command{
+		Use:   "logs",
+		Short: "Show recent service logs",
+		Run: func(cmd *cobra.Command, args []string) {
+			sm, err := tunnel.NewServiceManager()
+			if err != nil {
+				logger.Error("Failed to create service manager: %v", err)
+				os.Exit(1)
+			}
+			logs, err := sm.GetLogs()
+			if err != nil {
+				logger.Error("Failed to get service logs: %v", err)
+				os.Exit(1)
+			}
+			if logs == "" {
+				logger.Info("No recent logs available")
+				return
+			}
+			logger.Info("%s", logs)
+		},
+	}
+	serviceCmd.AddCommand(logsCmd)
+
 	// Add flags to health-check command
 	healthCheckCmd.Flags().Bool("show-logs", false, "Show recent service logs")
 }

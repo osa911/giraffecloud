@@ -81,13 +81,23 @@ Examples:
 			}
 		}
 
-		// If running as a service, stop it gracefully before update
+		// If running as a service, stop it gracefully before update (with debug)
 		svcMgr := service.NewDefaultServiceManager()
+		if isInstalled, ierr := tunnel.NewServiceManager(); ierr == nil {
+			_ = isInstalled
+		} // placeholder to ensure service module linked
 		if isRunning, err := svcMgr.IsRunning(); err == nil && isRunning {
 			logger.Info("Detected running service, stopping before update...")
 			if err := svcMgr.Stop(); err != nil {
 				logger.Warn("Failed to stop service: %v", err)
+				logger.Info("Tip: Try 'sudo giraffecloud service stop' and rerun update")
+			} else {
+				logger.Info("Service stopped successfully")
 			}
+		} else if err != nil {
+			logger.Debug("Service running state check failed: %v", err)
+		} else {
+			logger.Debug("No active service detected; proceeding with in-place update")
 		}
 
 		// If not running as a service, warn if other giraffecloud processes are active (may block replacement)
@@ -134,6 +144,7 @@ Examples:
 			// Only attempt start if we actually manage a unit
 			if err := svcMgr.Start(); err != nil {
 				logger.Warn("Failed to start service after update: %v", err)
+				logger.Info("Tip: You may need elevated privileges: 'sudo giraffecloud service start'")
 			}
 		}
 
