@@ -270,7 +270,6 @@ func initServiceCommands() {
 				logger.Info("Tip: You may need elevated privileges (try with sudo)")
 				os.Exit(1)
 			}
-			logger.Info("Service restarted")
 		},
 	}
 	serviceCmd.AddCommand(restartCmd)
