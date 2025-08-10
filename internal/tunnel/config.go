@@ -3,6 +3,7 @@ package tunnel
 import (
 	"encoding/json"
 	"fmt"
+	"giraffecloud/internal/logging"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -135,6 +136,8 @@ var DefaultConfig = Config{
 // GetConfigDir returns the directory where GiraffeCloud stores config files
 func GetConfigDir() (string, error) {
 	homeDir, err := os.UserHomeDir()
+	logger := logging.GetGlobalLogger()
+	logger.Info("homeDir: %s", homeDir)
 	if err != nil {
 		return "", fmt.Errorf("failed to get home directory: %w", err)
 	}

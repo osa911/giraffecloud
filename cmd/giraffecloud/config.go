@@ -21,13 +21,11 @@ var configPathCmd = &cobra.Command{
 	Short: "Show configuration file path",
 	Long:  `Display the path to the GiraffeCloud configuration file.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		homeDir, err := os.UserHomeDir()
+		baseDir, err := tunnel.GetConfigDir()
 		if err != nil {
-			logger.Error("Failed to get home directory: %v", err)
+			logger.Error("Failed to determine config directory: %v", err)
 			os.Exit(1)
 		}
-
-		baseDir := filepath.Join(homeDir, ".giraffecloud")
 		configPath := filepath.Join(baseDir, "config.json")
 		certsDir := filepath.Join(baseDir, "certs")
 		logPath := filepath.Join(baseDir, "client.log")
