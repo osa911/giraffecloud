@@ -278,9 +278,14 @@ func (s *GRPCTunnelServer) EstablishTunnel(stream proto.TunnelService_EstablishT
 	}
 
 	// Create tunnel stream
+	// If client didn't send target port, use server-side configured target port
+	chosenPort := handshake.TargetPort
+	if chosenPort == 0 {
+		chosenPort = int32(tunnel.TargetPort)
+	}
 	tunnelStream := &TunnelStream{
 		Domain:          tunnel.Domain,
-		TargetPort:      handshake.TargetPort,
+		TargetPort:      chosenPort,
 		Stream:          stream,
 		Context:         ctx,
 		UserID:          tunnel.UserID,
@@ -325,7 +330,7 @@ func (s *GRPCTunnelServer) EstablishTunnel(stream proto.TunnelService_EstablishT
 					Status: &proto.TunnelStatus{
 						State:             proto.TunnelState_TUNNEL_STATE_CONNECTED,
 						Domain:            tunnel.Domain,
-						TargetPort:        handshake.TargetPort,
+						TargetPort:        chosenPort,
 						ConnectedAt:       time.Now().Unix(),
 						ActiveConnections: 1,
 						LastActivity:      time.Now().Unix(),

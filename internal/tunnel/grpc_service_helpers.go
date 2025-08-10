@@ -99,14 +99,33 @@ func (s *GRPCTunnelServer) authenticateTunnel(ctx context.Context, handshake *pr
 		return nil, fmt.Errorf("failed to get tunnels: %w", err)
 	}
 
-	// Find matching domain
-	for _, tunnel := range tunnels {
-		if tunnel.Domain == handshake.Domain {
-			return tunnel, nil
+	// If client provided a domain, try to match it
+	if handshake.Domain != "" {
+		for _, t := range tunnels {
+			if t.Domain == handshake.Domain {
+				return t, nil
+			}
 		}
+		return nil, fmt.Errorf("no tunnel found for domain: %s", handshake.Domain)
 	}
 
-	return nil, fmt.Errorf("no tunnel found for domain: %s", handshake.Domain)
+	// Proper fix: allow empty domain – resolve by token
+	// Prefer an active tunnel; fallback to the first available
+	var candidate *ent.Tunnel
+	for _, t := range tunnels {
+		if t.IsActive {
+			candidate = t
+			break
+		}
+		if candidate == nil {
+			candidate = t
+		}
+	}
+	if candidate == nil {
+		return nil, fmt.Errorf("no tunnels available for user")
+	}
+	s.logger.Info("[gRPC AUTH] Resolved tunnel by token: domain=%s, target_port=%d", candidate.Domain, candidate.TargetPort)
+	return candidate, nil
 }
 
 // handleClientMessages handles incoming messages from the client tunnel
