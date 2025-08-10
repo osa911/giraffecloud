@@ -323,7 +323,21 @@ func (sm *ServiceManager) installWindows() error {
 		sm.logger.Info("Warning: Failed to set service failure actions")
 	}
 
-	// Start the service
+	// Set service environment so it uses the same config as the interactive CLI
+	// Use the current user's home directory
+	userHome, herr := os.UserHomeDir()
+	if herr == nil && userHome != "" {
+		// REG_MULTI_SZ for Environment; single entry is fine
+		regPath := `HKLM\\SYSTEM\\CurrentControlSet\\Services\\` + serviceName
+		envValue := fmt.Sprintf("GIRAFFECLOUD_HOME=%s\\.giraffecloud", userHome)
+		cmd = exec.Command("reg", "add", regPath, "/v", "Environment", "/t", "REG_MULTI_SZ", "/d", envValue, "/f")
+		if err := cmd.Run(); err != nil {
+			// Don't fail install if registry write fails
+			sm.logger.Info("Warning: Failed to set Windows service environment: %v", err)
+		}
+	}
+
+	// Start the service (after setting environment)
 	cmd = exec.Command("sc", "start", serviceName)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to start Windows service: %w", err)
