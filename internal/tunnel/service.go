@@ -5,6 +5,7 @@ import (
 	"giraffecloud/internal/logging"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -103,6 +104,11 @@ func (sm *ServiceManager) installDarwin() error {
         <string>%s</string>
         <string>connect</string>
     </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>GIRAFFECLOUD_HOME</key>
+        <string>%s/.giraffecloud</string>
+    </dict>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
@@ -112,7 +118,7 @@ func (sm *ServiceManager) installDarwin() error {
     <key>StandardOutPath</key>
     <string>%s/.giraffecloud/tunnel.log</string>
 </dict>
-</plist>`, sm.executablePath, homeDir, homeDir)
+</plist>`, sm.executablePath, homeDir, homeDir, homeDir)
 
 	plistPath := filepath.Join(homeDir, "Library/LaunchAgents/com.giraffecloud.tunnel.plist")
 
@@ -160,6 +166,8 @@ func (sm *ServiceManager) uninstallDarwin() error {
 func (sm *ServiceManager) installLinux() error {
 	if sm.useUserUnit {
 		// User-level systemd unit (~/.config/systemd/user)
+		// Expand explicit home for reliability
+		userHome := os.Getenv("HOME")
 		serviceContent := fmt.Sprintf(`[Unit]
 Description=GiraffeCloud Tunnel Service (User)
 After=default.target network-online.target
@@ -167,11 +175,12 @@ After=default.target network-online.target
 [Service]
 Type=simple
 ExecStart=%s connect
+Environment=GIRAFFECLOUD_HOME=%s/.giraffecloud
 Restart=always
 RestartSec=10
 
 [Install]
-WantedBy=default.target`, sm.executablePath)
+WantedBy=default.target`, sm.executablePath, userHome)
 
 		// Ensure user unit directory exists
 		userDir := filepath.Join(os.Getenv("HOME"), ".config/systemd/user")
@@ -200,6 +209,19 @@ WantedBy=default.target`, sm.executablePath)
 	}
 
 	// System-level unit requires sudo
+	// Determine the intended user and home directory for config
+	svcUser := os.Getenv("SUDO_USER")
+	if svcUser == "" {
+		svcUser = os.Getenv("USER")
+	}
+	userHome := "/root"
+	if u, err := user.Lookup(svcUser); err == nil && u != nil && u.HomeDir != "" {
+		userHome = u.HomeDir
+	} else if svcUser != "root" {
+		// Fallback best-effort
+		userHome = filepath.Join("/home", svcUser)
+	}
+
 	serviceContent := fmt.Sprintf(`[Unit]
 Description=GiraffeCloud Tunnel Service
 After=network.target
@@ -208,13 +230,14 @@ After=network.target
 Type=simple
 User=%s
 ExecStart=%s connect
+Environment=GIRAFFECLOUD_HOME=%s/.giraffecloud
 Restart=always
 RestartSec=10
 StandardOutput=append:/var/log/giraffecloud/tunnel.log
 StandardError=append:/var/log/giraffecloud/tunnel.log
 
 [Install]
-WantedBy=multi-user.target`, os.Getenv("USER"), sm.executablePath)
+WantedBy=multi-user.target`, svcUser, sm.executablePath, userHome)
 
 	if err := os.MkdirAll("/var/log/giraffecloud", 0755); err != nil {
 		return fmt.Errorf("failed to create log directory: %w", err)
