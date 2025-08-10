@@ -413,7 +413,7 @@ func init() {
 	tunnel.EnsureConsistentConfigHome()
 	// Initialize logger after home normalization so file paths are correct
 	initLogger()
-	logger.Info("🦒 Initializing GiraffeCloud CLI 🦒")
+	logger.Info("🦒🦒 Initializing GiraffeCloud CLI 🦒🦒")
 
 	// Setup core commands
 	rootCmd.AddCommand(connectCmd)
