@@ -355,6 +355,10 @@ func (c *GRPCTunnelClient) saveHandshakeResponseToConfig(status *proto.TunnelSta
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
+	c.logger.Info("🔐 PRODUCTION-GRADE: Saving handshake response to config")
+	c.logger.Info("domain: %s", status.Domain)
+	c.logger.Info("target port: %d", status.TargetPort)
+
 	// Update only if server provided the values (like old handshake)
 	updated := false
 	if status.Domain != "" && status.Domain != cfg.Domain {
