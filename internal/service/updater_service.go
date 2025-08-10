@@ -53,14 +53,15 @@ func NewUpdaterService(downloadBaseURL string) (*UpdaterService, error) {
 		exePath = resolved
 	}
 
-	// Create backup and temp directories
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get home directory: %w", err)
-	}
+    // Create backup and temp directories under the same base as config
+    // Prefer explicit GIRAFFECLOUD_HOME/config dir for consistency
+    baseDir, err := tunnel.GetConfigDir()
+    if err != nil {
+        return nil, fmt.Errorf("failed to determine config directory: %w", err)
+    }
 
-	backupDir := filepath.Join(homeDir, ".giraffecloud", "backups")
-	tempDir := filepath.Join(homeDir, ".giraffecloud", "temp")
+    backupDir := filepath.Join(baseDir, "backups")
+    tempDir := filepath.Join(baseDir, "temp")
 
 	if err := os.MkdirAll(backupDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create backup directory: %w", err)
