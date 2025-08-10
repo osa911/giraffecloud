@@ -128,22 +128,22 @@ func (s *AutoUpdateService) run(ctx context.Context, serverURL string) {
 			s.logger.Info("Auto-update service stopped")
 			return
 		case <-initialTimer.C:
-			s.checkAndUpdate(serverURL)
+			s.checkAndUpdate(serverURL, false)
 			// Reset timer so it doesn't fire again
 			initialTimer.Reset(0)
 		case <-s.ticker.C:
-			s.checkAndUpdate(serverURL)
+			s.checkAndUpdate(serverURL, false)
 		}
 	}
 }
 
 // checkAndUpdate performs the actual update check and installation
-func (s *AutoUpdateService) checkAndUpdate(serverURL string) {
+func (s *AutoUpdateService) checkAndUpdate(serverURL string, force bool) {
 	s.logger.Debug("Checking for updates...")
 
 	// Check if we're in the update window
-	if !s.isInUpdateWindow() {
-		s.logger.Debug("Not in update window, skipping check")
+	if !force && !s.isInUpdateWindow() {
+		s.logger.Info("Not in update window, skipping automatic update check")
 		return
 	}
 
@@ -155,7 +155,7 @@ func (s *AutoUpdateService) checkAndUpdate(serverURL string) {
 	}
 
 	if updateInfo == nil {
-		s.logger.Debug("No updates available")
+		s.logger.Info("No updates available")
 		return
 	}
 
@@ -301,7 +301,7 @@ func (s *AutoUpdateService) isInUpdateWindow() bool {
 // CheckNow forces an immediate update check
 func (s *AutoUpdateService) CheckNow(serverURL string) {
 	s.logger.Info("Performing immediate update check...")
-	s.checkAndUpdate(serverURL)
+	s.checkAndUpdate(serverURL, true)
 }
 
 // GetStatus returns the current status of the auto-update service
