@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -100,14 +101,26 @@ Examples:
 			logger.Debug("No active service detected; proceeding with in-place update")
 		}
 
-		// If not running as a service, warn if other giraffecloud processes are active (may block replacement)
+		// If not running as a service, warn only if other giraffecloud processes (excluding self) are active
 		if runtime.GOOS != "windows" {
-			// Best-effort using pgrep
 			if _, err := exec.LookPath("pgrep"); err == nil {
 				out, _ := exec.Command("pgrep", "-x", "giraffecloud").Output()
-				// If more than one PID (excluding current), warn
-				if len(out) > 0 {
-					logger.Warn("Another giraffecloud process may be running; update could be blocked")
+				pidsStr := strings.TrimSpace(string(out))
+				if pidsStr != "" {
+					lines := strings.Split(pidsStr, "\n")
+					currentPID := os.Getpid()
+					parentPID := os.Getppid()
+					otherCount := 0
+					for _, line := range lines {
+						if pid, err := strconv.Atoi(strings.TrimSpace(line)); err == nil {
+							if pid != currentPID && pid != parentPID {
+								otherCount++
+							}
+						}
+					}
+					if otherCount > 0 {
+						logger.Warn("Another giraffecloud process may be running; update could be blocked")
+					}
 				}
 			}
 		}
