@@ -148,6 +148,34 @@ func GetConfigPath() (string, error) {
 	return filepath.Join(dir, "config.json"), nil
 }
 
+// applyAutoUpdateDefaults ensures sensible defaults when fields are zero-valued in existing configs
+func applyAutoUpdateDefaults(cfg *Config) {
+	// If DownloadURL is empty, apply default
+	if cfg.AutoUpdate.DownloadURL == "" {
+		cfg.AutoUpdate.DownloadURL = DefaultConfig.AutoUpdate.DownloadURL
+	}
+	// If CheckInterval is zero, apply default
+	if cfg.AutoUpdate.CheckInterval == 0 {
+		cfg.AutoUpdate.CheckInterval = DefaultConfig.AutoUpdate.CheckInterval
+	}
+	// RestartService default should be true when not explicitly set
+	if !cfg.AutoUpdate.RestartService {
+		// If user explicitly disabled it, we can't distinguish from zero-value.
+		// Heuristic: if other fields look zero-ish, treat as backfill.
+		if cfg.AutoUpdate.BackupCount == 0 && !cfg.AutoUpdate.PreserveConnection && cfg.AutoUpdate.DownloadURL == DefaultConfig.AutoUpdate.DownloadURL {
+			cfg.AutoUpdate.RestartService = true
+		}
+	}
+	// BackupCount default
+	if cfg.AutoUpdate.BackupCount == 0 {
+		cfg.AutoUpdate.BackupCount = DefaultConfig.AutoUpdate.BackupCount
+	}
+	// Channel default
+	if cfg.AutoUpdate.Channel == "" {
+		cfg.AutoUpdate.Channel = DefaultConfig.AutoUpdate.Channel
+	}
+}
+
 // DefaultStreamingConfig returns default streaming configuration
 func DefaultStreamingConfig() *StreamingConfig {
 	return &StreamingConfig{
@@ -200,6 +228,9 @@ func LoadConfig() (*Config, error) {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse tunnel config file: %w", err)
 	}
+
+	// Backfill defaults for configs created by older versions (missing auto_update fields)
+	applyAutoUpdateDefaults(&cfg)
 
 	return &cfg, nil
 }
