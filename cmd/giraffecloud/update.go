@@ -101,7 +101,7 @@ Examples:
 			logger.Debug("No active service detected; proceeding with in-place update")
 		}
 
-		// If not running as a service, warn only if other giraffecloud processes (excluding self) are active
+		// If not running as a service, stop other foreground processes to avoid ETXTBSY during replacement
 		if runtime.GOOS != "windows" {
 			if _, err := exec.LookPath("pgrep"); err == nil {
 				out, _ := exec.Command("pgrep", "-x", "giraffecloud").Output()
@@ -111,15 +111,39 @@ Examples:
 					currentPID := os.Getpid()
 					parentPID := os.Getppid()
 					otherCount := 0
+					var otherPIDs []int
 					for _, line := range lines {
 						if pid, err := strconv.Atoi(strings.TrimSpace(line)); err == nil {
 							if pid != currentPID && pid != parentPID {
 								otherCount++
+								otherPIDs = append(otherPIDs, pid)
 							}
 						}
 					}
 					if otherCount > 0 {
-						logger.Warn("Another giraffecloud process may be running; update could be blocked")
+						logger.Warn("Stopping %d other giraffecloud process(es) before update...", otherCount)
+						// Best-effort terminate via `kill` to avoid syscall build issues on non-Unix targets
+						for _, pid := range otherPIDs {
+							_ = exec.Command("kill", "-TERM", strconv.Itoa(pid)).Run()
+						}
+						time.Sleep(2 * time.Second)
+						out2, _ := exec.Command("pgrep", "-x", "giraffecloud").Output()
+						left := 0
+						if s := strings.TrimSpace(string(out2)); s != "" {
+							for _, line := range strings.Split(s, "\n") {
+								if pid, err := strconv.Atoi(strings.TrimSpace(line)); err == nil {
+									if pid != currentPID && pid != parentPID {
+										_ = exec.Command("kill", "-KILL", strconv.Itoa(pid)).Run()
+										left++
+									}
+								}
+							}
+						}
+						if left > 0 {
+							logger.Warn("Forced termination attempted for remaining process(es).")
+						} else {
+							logger.Info("All other giraffecloud processes stopped")
+						}
 					}
 				}
 			}
