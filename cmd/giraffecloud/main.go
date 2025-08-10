@@ -409,10 +409,10 @@ func checkVersionCompatibility(serverAddr string) {
 }
 
 func init() {
-	// Initialize logger first
-	initLogger()
-	// Normalize config home when running under sudo so we read the invoking user's config
+	// Normalize config home BEFORE any file paths/loggers expand ~ or read HOME
 	tunnel.EnsureConsistentConfigHome()
+	// Initialize logger after home normalization so file paths are correct
+	initLogger()
 	logger.Info("🦒 Initializing GiraffeCloud CLI 🦒")
 
 	// Setup core commands

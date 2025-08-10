@@ -169,6 +169,8 @@ func EnsureConsistentConfigHome() {
 		if sudoUser != "" {
 			if u, err := user.Lookup(sudoUser); err == nil && u != nil && u.HomeDir != "" {
 				_ = os.Setenv("GIRAFFECLOUD_HOME", filepath.Join(u.HomeDir, ".giraffecloud"))
+				// Also force HOME so any other code relying on HOME is consistent
+				_ = os.Setenv("HOME", u.HomeDir)
 			}
 		}
 	}
