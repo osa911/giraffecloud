@@ -314,13 +314,21 @@ func initServiceCommands() {
 	// Logs
 	logsCmd := &cobra.Command{
 		Use:   "logs",
-		Short: "Show recent service logs",
+		Short: "Show service logs",
 		Run: func(cmd *cobra.Command, args []string) {
 			userUnit, _ := cmd.Flags().GetBool("user")
+			follow, _ := cmd.Flags().GetBool("follow")
 			sm, err := tunnel.NewServiceManagerWithUser(userUnit)
 			if err != nil {
 				logger.Error("Failed to create service manager: %v", err)
 				os.Exit(1)
+			}
+			if follow {
+				if err := sm.FollowLogs(); err != nil {
+					logger.Error("Failed to follow logs: %v", err)
+					os.Exit(1)
+				}
+				return
 			}
 			logs, err := sm.GetLogs()
 			if err != nil {
@@ -344,5 +352,6 @@ func initServiceCommands() {
 	restartCmd.Flags().Bool("user", false, "Control user-level systemd unit (Linux)")
 	statusCmd.Flags().Bool("user", false, "Query user-level systemd unit (Linux)")
 	logsCmd.Flags().Bool("user", false, "Read logs from user-level systemd unit (Linux)")
+	logsCmd.Flags().Bool("follow", false, "Follow live logs (Linux/macOS)")
 	healthCheckCmd.Flags().Bool("show-logs", false, "Show recent service logs")
 }

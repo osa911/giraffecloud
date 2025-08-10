@@ -530,6 +530,36 @@ func (sm *ServiceManager) getLogsLinux() (string, error) {
 	return string(output), nil
 }
 
+// FollowLogs streams live logs from the service to stdout (best effort per OS)
+func (sm *ServiceManager) FollowLogs() error {
+	switch runtime.GOOS {
+	case "linux":
+		args := []string{"-u", "giraffecloud", "-f", "--no-pager"}
+		if sm.useUserUnit {
+			args = append([]string{"--user"}, args...)
+		}
+		cmd := exec.Command("journalctl", args...)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		return cmd.Run()
+	case "darwin":
+		// Follow the user log file
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return err
+		}
+		logPath := filepath.Join(homeDir, ".giraffecloud/tunnel.log")
+		cmd := exec.Command("tail", "-n", "+1", "-F", logPath)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		return cmd.Run()
+	case "windows":
+		return fmt.Errorf("live log follow not supported on Windows; use 'giraffecloud service logs' to dump recent events")
+	default:
+		return fmt.Errorf("unsupported operating system: %s", runtime.GOOS)
+	}
+}
+
 // Windows-specific implementations
 func (sm *ServiceManager) isInstalledWindows() (bool, error) {
 	cmd := exec.Command("sc", "query", "GiraffeCloudTunnel")
