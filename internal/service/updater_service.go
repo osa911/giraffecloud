@@ -131,10 +131,25 @@ func (u *UpdaterService) CheckForUpdates(serverURL string) (*UpdateInfo, error) 
 		}
 	}
 
+	// Determine checksum URL (prefer release-level checksums.txt)
+	var checksumURL string
+	if versionInfo.Channel == "stable" {
+		// For latest stable, checksums.txt should also be available under latest/download
+		checksumURL = fmt.Sprintf("%s/%s", strings.TrimRight(versionInfo.DownloadURL, "/"), "checksums.txt")
+	} else {
+		base := strings.TrimRight(versionInfo.DownloadURL, "/")
+		if strings.Contains(base, "/releases/download/") {
+			checksumURL = fmt.Sprintf("%s/%s", base, "checksums.txt")
+		} else {
+			base = strings.TrimSuffix(versionInfo.DownloadURL, "/releases")
+			checksumURL = fmt.Sprintf("%s/download/%s/%s", base, versionInfo.ReleaseTag, "checksums.txt")
+		}
+	}
+
 	updateInfo := &UpdateInfo{
 		Version:        versionInfo.LatestVersion,
 		DownloadURL:    downloadURL,
-		ChecksumURL:    downloadURL + ".sha256",
+		ChecksumURL:    checksumURL,
 		IsRequired:     versionInfo.UpdateRequired,
 		CurrentVersion: version.Version,
 	}
@@ -159,14 +174,27 @@ func (u *UpdaterService) DownloadUpdate(updateInfo *UpdateInfo) (string, error) 
 
 	// Download and verify checksum if available
 	if updateInfo.ChecksumURL != "" {
-		checksumPath := downloadPath + ".sha256"
-		if err := u.downloadFile(updateInfo.ChecksumURL, checksumPath); err != nil {
-			u.logger.Warn("Failed to download checksum file: %v", err)
-		} else {
-			if err := u.verifyChecksum(downloadPath, checksumPath); err != nil {
-				return "", fmt.Errorf("checksum verification failed: %w", err)
+		var checksumPath string
+		if strings.HasSuffix(updateInfo.ChecksumURL, "checksums.txt") {
+			checksumPath = filepath.Join(u.tempDir, "checksums.txt")
+			if err := u.downloadFile(updateInfo.ChecksumURL, checksumPath); err != nil {
+				u.logger.Warn("Failed to download checksums.txt: %v", err)
+			} else {
+				if err := u.verifyChecksumFromList(downloadPath, checksumPath); err != nil {
+					return "", fmt.Errorf("checksum verification failed: %w", err)
+				}
+				u.logger.Info("Checksum verification passed")
 			}
-			u.logger.Info("Checksum verification passed")
+		} else {
+			checksumPath = downloadPath + ".sha256"
+			if err := u.downloadFile(updateInfo.ChecksumURL, checksumPath); err != nil {
+				u.logger.Warn("Failed to download checksum file: %v", err)
+			} else {
+				if err := u.verifyChecksum(downloadPath, checksumPath); err != nil {
+					return "", fmt.Errorf("checksum verification failed: %w", err)
+				}
+				u.logger.Info("Checksum verification passed")
+			}
 		}
 	}
 
@@ -327,6 +355,47 @@ func (u *UpdaterService) verifyChecksum(filePath, checksumPath string) error {
 		return fmt.Errorf("checksum mismatch: expected %s, got %s", expectedChecksum, actualChecksum)
 	}
 
+	return nil
+}
+
+// verifyChecksumFromList verifies checksum using a checksums.txt file (sha256sum format)
+func (u *UpdaterService) verifyChecksumFromList(filePath, checksumsListPath string) error {
+	listData, err := os.ReadFile(checksumsListPath)
+	if err != nil {
+		return err
+	}
+	wantedFile := filepath.Base(filePath)
+	lines := strings.Split(string(listData), "\n")
+	var expected string
+	for _, line := range lines {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 {
+			name := fields[len(fields)-1]
+			// lines may contain either plain filename or prefixed with * for binary mode in some tools
+			name = strings.TrimPrefix(name, "*")
+			if name == wantedFile {
+				expected = fields[0]
+				break
+			}
+		}
+	}
+	if expected == "" {
+		return fmt.Errorf("no checksum entry found for %s", wantedFile)
+	}
+	// Compute actual
+	f, err := os.Open(filePath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	hasher := sha256.New()
+	if _, err := io.Copy(hasher, f); err != nil {
+		return err
+	}
+	actual := hex.EncodeToString(hasher.Sum(nil))
+	if actual != expected {
+		return fmt.Errorf("checksum mismatch: expected %s, got %s", expected, actual)
+	}
 	return nil
 }
 
