@@ -241,11 +241,29 @@ StandardError=append:/var/log/giraffecloud/tunnel.log
 WantedBy=multi-user.target`, svcUser, sm.executablePath, userHome)
 
 	if err := os.MkdirAll("/var/log/giraffecloud", 0755); err != nil {
-		return fmt.Errorf("failed to create log directory: %w", err)
+		// Try with sudo
+		_ = exec.Command("sudo", "mkdir", "-p", "/var/log/giraffecloud").Run()
 	}
 	servicePath := "/etc/systemd/system/giraffecloud.service"
 	if err := os.WriteFile(servicePath, []byte(serviceContent), 0644); err != nil {
-		return fmt.Errorf("failed to write service file: %w", err)
+		// Permission denied – write via sudo using a temp file + install
+		tmpFile, terr := os.CreateTemp("", "giraffecloud.service.*.tmp")
+		if terr != nil {
+			return fmt.Errorf("failed to create temp service file: %w", terr)
+		}
+		tmpPath := tmpFile.Name()
+		if _, werr := tmpFile.WriteString(serviceContent); werr != nil {
+			tmpFile.Close()
+			_ = os.Remove(tmpPath)
+			return fmt.Errorf("failed to write temp service file: %w", werr)
+		}
+		tmpFile.Close()
+		// sudo install -m 0644 tmp /etc/systemd/system/giraffecloud.service
+		if ierr := exec.Command("sudo", "install", "-m", "0644", tmpPath, servicePath).Run(); ierr != nil {
+			_ = os.Remove(tmpPath)
+			return fmt.Errorf("failed to write service file with sudo: %w", ierr)
+		}
+		_ = os.Remove(tmpPath)
 	}
 	if err := exec.Command("sudo", "systemctl", "daemon-reload").Run(); err != nil {
 		return fmt.Errorf("failed to reload systemd daemon: %w", err)
