@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"fmt"
 	"os/exec"
 )
@@ -32,15 +33,57 @@ func (m *SystemdServiceManager) IsRunning() (bool, error) {
 }
 
 func (m *SystemdServiceManager) Restart() error {
-	return exec.Command("systemctl", "restart", m.unitName).Run()
+	cmd := exec.Command("systemctl", "restart", m.unitName)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			if exitErr.ExitCode() == 5 { // systemd: unit not found
+				return fmt.Errorf("service not found. Run 'sudo giraffecloud service install' first")
+			}
+		}
+		if msg := stderr.String(); msg != "" {
+			return fmt.Errorf("failed to restart service: %s", msg)
+		}
+		return fmt.Errorf("failed to restart service: %w", err)
+	}
+	return nil
 }
 
 func (m *SystemdServiceManager) Stop() error {
-	return exec.Command("systemctl", "stop", m.unitName).Run()
+	cmd := exec.Command("systemctl", "stop", m.unitName)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			if exitErr.ExitCode() == 5 {
+				return fmt.Errorf("service not found. Run 'sudo giraffecloud service install' first")
+			}
+		}
+		if msg := stderr.String(); msg != "" {
+			return fmt.Errorf("failed to stop service: %s", msg)
+		}
+		return fmt.Errorf("failed to stop service: %w", err)
+	}
+	return nil
 }
 
 func (m *SystemdServiceManager) Start() error {
-	return exec.Command("systemctl", "start", m.unitName).Run()
+	cmd := exec.Command("systemctl", "start", m.unitName)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			if exitErr.ExitCode() == 5 {
+				return fmt.Errorf("service not found. Run 'sudo giraffecloud service install' first")
+			}
+		}
+		if msg := stderr.String(); msg != "" {
+			return fmt.Errorf("failed to start service: %s", msg)
+		}
+		return fmt.Errorf("failed to start service: %w", err)
+	}
+	return nil
 }
 
 func (m *SystemdServiceManager) String() string {
