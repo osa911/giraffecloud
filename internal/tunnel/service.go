@@ -210,6 +210,9 @@ WantedBy=default.target`, sm.executablePath, userHome)
 	}
 
 	// System-level unit: write config to the invoking user's home, not /root
+	if !isSystemdAvailable() {
+		return fmt.Errorf("systemd is not available on this host (no systemctl or /run/systemd/system). Service install cannot proceed")
+	}
 	// Determine the intended user and home directory for config
 	svcUser := os.Getenv("SUDO_USER")
 	if svcUser == "" {
@@ -223,6 +226,15 @@ WantedBy=default.target`, sm.executablePath, userHome)
 		userHome = filepath.Join("/home", svcUser)
 	}
 
+	unitDir := os.Getenv("GIRAFFECLOUD_UNIT_DIR")
+	if unitDir == "" {
+		unitDir = "/etc/systemd/system"
+	}
+	logDir := os.Getenv("GIRAFFECLOUD_LOG_DIR")
+	if logDir == "" {
+		logDir = "/var/log/giraffecloud"
+	}
+
 	serviceContent := fmt.Sprintf(`[Unit]
 Description=GiraffeCloud Tunnel Service
 After=network.target
@@ -234,17 +246,24 @@ ExecStart=%s connect
 Environment=GIRAFFECLOUD_HOME=%s/.giraffecloud
 Restart=always
 RestartSec=10
-StandardOutput=append:/var/log/giraffecloud/tunnel.log
-StandardError=append:/var/log/giraffecloud/tunnel.log
+StandardOutput=append:%s/tunnel.log
+StandardError=append:%s/tunnel.log
 
 [Install]
-WantedBy=multi-user.target`, svcUser, sm.executablePath, userHome)
+WantedBy=multi-user.target`, svcUser, sm.executablePath, userHome, logDir, logDir)
 
-	if err := os.MkdirAll("/var/log/giraffecloud", 0755); err != nil {
-		// Try with sudo
-		_ = exec.Command("sudo", "mkdir", "-p", "/var/log/giraffecloud").Run()
+	// Ensure log dir exists
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		if isInteractive() {
+			if ierr := exec.Command("sudo", "mkdir", "-p", logDir).Run(); ierr != nil {
+				return fmt.Errorf("failed to create log directory '%s' (try: sudo mkdir -p %s): %w", logDir, logDir, ierr)
+			}
+		} else {
+			return fmt.Errorf("insufficient permissions to create '%s'. Run: sudo mkdir -p %s", logDir, logDir)
+		}
 	}
-	servicePath := "/etc/systemd/system/giraffecloud.service"
+
+	servicePath := filepath.Join(unitDir, "giraffecloud.service")
 	if err := os.WriteFile(servicePath, []byte(serviceContent), 0644); err != nil {
 		// Permission denied – write via sudo using a temp file + install
 		tmpFile, terr := os.CreateTemp("", "giraffecloud.service.*.tmp")
@@ -258,21 +277,30 @@ WantedBy=multi-user.target`, svcUser, sm.executablePath, userHome)
 			return fmt.Errorf("failed to write temp service file: %w", werr)
 		}
 		tmpFile.Close()
-		// sudo install -m 0644 tmp /etc/systemd/system/giraffecloud.service
-		if ierr := exec.Command("sudo", "install", "-m", "0644", tmpPath, servicePath).Run(); ierr != nil {
+		if isInteractive() {
+			if ierr := exec.Command("sudo", "install", "-m", "0644", tmpPath, servicePath).Run(); ierr != nil {
+				_ = os.Remove(tmpPath)
+				return fmt.Errorf("failed to write service file with sudo: %w", ierr)
+			}
 			_ = os.Remove(tmpPath)
-			return fmt.Errorf("failed to write service file with sudo: %w", ierr)
+		} else {
+			_ = os.Remove(tmpPath)
+			return fmt.Errorf("insufficient permissions to write '%s'. Run: sudo install -m 0644 <file> %s", servicePath, servicePath)
 		}
-		_ = os.Remove(tmpPath)
 	}
-	if err := exec.Command("sudo", "systemctl", "daemon-reload").Run(); err != nil {
-		return fmt.Errorf("failed to reload systemd daemon: %w", err)
-	}
-	if err := exec.Command("sudo", "systemctl", "enable", "giraffecloud").Run(); err != nil {
-		return fmt.Errorf("failed to enable service: %w", err)
-	}
-	if err := exec.Command("sudo", "systemctl", "start", "giraffecloud").Run(); err != nil {
-		return fmt.Errorf("failed to start service: %w", err)
+	// Reload/enable/start
+	if isInteractive() {
+		if err := exec.Command("sudo", "systemctl", "daemon-reload").Run(); err != nil {
+			return fmt.Errorf("failed to reload systemd daemon: %w", err)
+		}
+		if err := exec.Command("sudo", "systemctl", "enable", "giraffecloud").Run(); err != nil {
+			return fmt.Errorf("failed to enable service: %w", err)
+		}
+		if err := exec.Command("sudo", "systemctl", "start", "giraffecloud").Run(); err != nil {
+			return fmt.Errorf("failed to start service: %w", err)
+		}
+	} else {
+		return fmt.Errorf("service file installed at %s. Now run: sudo systemctl daemon-reload && sudo systemctl enable giraffecloud && sudo systemctl start giraffecloud", servicePath)
 	}
 	sm.logger.Info("System service installed successfully")
 	return nil
@@ -292,18 +320,25 @@ func (sm *ServiceManager) uninstallLinux() error {
 	}
 
 	// System-level
-	if err := exec.Command("sudo", "systemctl", "stop", "giraffecloud").Run(); err != nil {
-		return fmt.Errorf("failed to stop service: %w", err)
-	}
-	if err := exec.Command("sudo", "systemctl", "disable", "giraffecloud").Run(); err != nil {
-		return fmt.Errorf("failed to disable service: %w", err)
-	}
-	servicePath := "/etc/systemd/system/giraffecloud.service"
-	if err := os.Remove(servicePath); err != nil {
-		return fmt.Errorf("failed to remove service file: %w", err)
-	}
-	if err := exec.Command("sudo", "systemctl", "daemon-reload").Run(); err != nil {
-		return fmt.Errorf("failed to reload systemd daemon: %w", err)
+	if isInteractive() {
+		if err := exec.Command("sudo", "systemctl", "stop", "giraffecloud").Run(); err != nil {
+			return fmt.Errorf("failed to stop service: %w", err)
+		}
+		if err := exec.Command("sudo", "systemctl", "disable", "giraffecloud").Run(); err != nil {
+			return fmt.Errorf("failed to disable service: %w", err)
+		}
+		servicePath := filepath.Join(os.Getenv("GIRAFFECLOUD_UNIT_DIR"), "giraffecloud.service")
+		if servicePath == ".service" || servicePath == "" {
+			servicePath = "/etc/systemd/system/giraffecloud.service"
+		}
+		if err := exec.Command("sudo", "rm", "-f", servicePath).Run(); err != nil {
+			return fmt.Errorf("failed to remove service file: %w", err)
+		}
+		if err := exec.Command("sudo", "systemctl", "daemon-reload").Run(); err != nil {
+			return fmt.Errorf("failed to reload systemd daemon: %w", err)
+		}
+	} else {
+		return fmt.Errorf("run: sudo systemctl stop giraffecloud && sudo systemctl disable giraffecloud && sudo rm -f /etc/systemd/system/giraffecloud.service && sudo systemctl daemon-reload")
 	}
 	sm.logger.Info("System service uninstalled successfully")
 	return nil
@@ -566,6 +601,25 @@ func (sm *ServiceManager) FollowLogs() error {
 	default:
 		return fmt.Errorf("unsupported operating system: %s", runtime.GOOS)
 	}
+}
+
+// Helpers
+func isSystemdAvailable() bool {
+	if _, err := exec.LookPath("systemctl"); err != nil {
+		return false
+	}
+	if _, err := os.Stat("/run/systemd/system"); err == nil {
+		return true
+	}
+	return false
+}
+
+func isInteractive() bool {
+	fi, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+	return (fi.Mode() & os.ModeCharDevice) != 0
 }
 
 // Windows-specific implementations
