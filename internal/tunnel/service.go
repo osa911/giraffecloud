@@ -59,9 +59,20 @@ func (sm *ServiceManager) Install() error {
 	}
 
 	// Add to PATH after successful service installation
-	if err := sm.AddToPath(); err != nil {
-		sm.logger.Warn("Failed to add to PATH: %v", err)
-		// Don't fail installation if PATH update fails
+	// For user-level installs or when not running as root, skip system PATH updates to avoid sudo requirement
+	if runtime.GOOS == "linux" || runtime.GOOS == "darwin" {
+		if sm.useUserUnit || os.Geteuid() != 0 {
+			sm.logger.Info("CLI already available at: %s", sm.executablePath)
+			sm.logger.Info("Skipping system PATH update without sudo. To add globally: sudo ln -sf %s /usr/local/bin/giraffecloud", sm.executablePath)
+		} else {
+			if err := sm.AddToPath(); err != nil {
+				sm.logger.Warn("Failed to add to PATH: %v", err)
+			}
+		}
+	} else {
+		if err := sm.AddToPath(); err != nil {
+			sm.logger.Warn("Failed to add to PATH: %v", err)
+		}
 	}
 
 	return nil
