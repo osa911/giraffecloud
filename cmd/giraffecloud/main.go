@@ -23,6 +23,7 @@ import (
 )
 
 var logger *logging.Logger
+var rootVersionFlag bool
 
 func initLogger() {
 	// Resolve log file under config dir to avoid reliance on $HOME expansion
@@ -448,6 +449,17 @@ func init() {
 	connectCmd.Flags().String("tunnel-host", "", "Tunnel host to connect to (default: tunnel.giraffecloud.xyz)")
 	connectCmd.Flags().Int("tunnel-port", 4443, "Tunnel port to connect to (default: 4443)")
 	connectCmd.Flags().Int("local-port", 0, "Local port to forward requests to (optional, defaults to port configured on server)")
+
+	// Global version flags on root: giraffecloud -v / --version
+	rootCmd.PersistentFlags().BoolVarP(&rootVersionFlag, "version", "v", false, "Print version information and exit")
+	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		// Only intercept when root is the executing command (no subcommand specified)
+		if cmd == rootCmd && rootVersionFlag {
+			logger.Info("GiraffeCloud version: %s", version.Info())
+			os.Exit(0)
+		}
+		return nil
+	}
 
 	// Add host flags to login command
 	loginCmd.Flags().String("api-host", "", "API host for login/certificates (default: api.giraffecloud.xyz)")
