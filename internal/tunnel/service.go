@@ -241,7 +241,6 @@ After=network.target
 
 [Service]
 Type=simple
-User=%s
 ExecStart=%s connect
 Environment=GIRAFFECLOUD_HOME=%s/.giraffecloud
 Restart=always
@@ -250,7 +249,7 @@ StandardOutput=append:%s/tunnel.log
 StandardError=append:%s/tunnel.log
 
 [Install]
-WantedBy=multi-user.target`, svcUser, sm.executablePath, userHome, logDir, logDir)
+WantedBy=multi-user.target`, sm.executablePath, userHome, logDir, logDir)
 
 	// Ensure log dir exists
 	if err := os.MkdirAll(logDir, 0755); err != nil {

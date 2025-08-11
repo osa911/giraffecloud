@@ -135,6 +135,10 @@ var DefaultConfig = Config{
 
 // GetConfigDir returns the directory where GiraffeCloud stores config files
 func GetConfigDir() (string, error) {
+	// Highest priority: explicit override
+	if cfgHome := os.Getenv("GIRAFFECLOUD_HOME"); cfgHome != "" {
+		return cfgHome, nil
+	}
 	homeDir, err := os.UserHomeDir()
 	logger := logging.GetGlobalLogger()
 	logger.Info("homeDir: %s", homeDir)
