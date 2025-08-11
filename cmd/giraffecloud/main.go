@@ -25,9 +25,18 @@ import (
 var logger *logging.Logger
 
 func initLogger() {
+	// Resolve log file under config dir to avoid reliance on $HOME expansion
+	cfgDir, err := tunnel.GetConfigDir()
+	if err != nil {
+		// Fallback to /tmp if config dir cannot be determined
+		cfgDir = "/tmp"
+	}
+	_ = os.MkdirAll(cfgDir, 0700)
+	logPath := filepath.Join(cfgDir, "client.log")
+
 	// Initialize logger configuration
 	logConfig := &logging.LogConfig{
-		File:       "~/.giraffecloud/client.log",
+		File:       logPath,
 		MaxSize:    100,
 		MaxBackups: 3,
 		MaxAge:     7,
