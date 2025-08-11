@@ -3,7 +3,6 @@ package tunnel
 import (
 	"encoding/json"
 	"fmt"
-	"giraffecloud/internal/logging"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -140,8 +139,6 @@ func GetConfigDir() (string, error) {
 		return cfgHome, nil
 	}
 	homeDir, err := os.UserHomeDir()
-	logger := logging.GetGlobalLogger()
-	logger.Info("homeDir: %s", homeDir)
 	if err != nil {
 		return "", fmt.Errorf("failed to get home directory: %w", err)
 	}
