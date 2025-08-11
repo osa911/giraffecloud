@@ -79,13 +79,19 @@ func (v *VersionService) GetVersionInfo(ctx context.Context, clientVersion, chan
 	}
 
 	// Build response
+	// Compute required flag using both minimum_version and force_update
+	required := version.IsUpdateRequired(clientVersion, clientVersionConfig.MinimumVersion)
+	if clientVersionConfig.ForceUpdate {
+		required = true
+	}
+
 	response := &ClientVersionInfo{
 		// Version information
 		MinimumVersion:  clientVersionConfig.MinimumVersion,
 		LatestVersion:   clientVersionConfig.LatestVersion,
 		CurrentVersion:  clientVersion,
 		UpdateAvailable: version.IsUpdateAvailable(clientVersion, clientVersionConfig.LatestVersion),
-		UpdateRequired:  version.IsUpdateRequired(clientVersion, clientVersionConfig.MinimumVersion),
+		UpdateRequired:  required,
 
 		// Release information
 		Channel:      clientVersionConfig.Channel,
