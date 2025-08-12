@@ -25,6 +25,10 @@ message TunnelMessage {
         TunnelControl control = 4;
         ErrorMessage error = 5;
         TunnelStatus status = 6;
+        // Request-side streaming for large uploads
+        HTTPRequestStart http_request_start = 7;
+        HTTPRequestChunk http_request_chunk = 8;
+        HTTPRequestEnd http_request_end = 9;
     }
 
     string request_id = 10;
@@ -91,6 +95,26 @@ message LargeFileChunk {
     map<string, string> headers = 7; // HTTP headers (sent with first chunk)
     int32 status_code = 8;   // HTTP status (sent with first chunk)
     string error_message = 9; // Error if chunk failed
+}
+
+// Request-side streaming (server -> client) for large uploads
+message HTTPRequestStart {
+    string request_id = 1;
+    string method = 2;
+    string path = 3;
+    string query = 4;
+    map<string, string> headers = 5;
+    string client_ip = 6;
+    bool is_large_file = 7;
+}
+
+message HTTPRequestChunk {
+    string request_id = 1;
+    bytes data = 2;
+}
+
+message HTTPRequestEnd {
+    string request_id = 1;
 }
 
 // TunnelControl handles tunnel lifecycle management

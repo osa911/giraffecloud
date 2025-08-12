@@ -144,6 +144,12 @@ func (s *GRPCTunnelServer) handleClientMessages(tunnelStream *TunnelStream) {
 		switch msgType := msg.MessageType.(type) {
 		case *proto.TunnelMessage_HttpResponse:
 			s.handleHTTPResponse(tunnelStream, msg)
+		case *proto.TunnelMessage_HttpRequestStart:
+			s.handleUploadStart(tunnelStream, msg)
+		case *proto.TunnelMessage_HttpRequestChunk:
+			s.handleUploadChunk(tunnelStream, msg)
+		case *proto.TunnelMessage_HttpRequestEnd:
+			s.handleUploadEnd(tunnelStream, msg)
 		case *proto.TunnelMessage_Control:
 			s.handleControlMessage(tunnelStream, msg)
 		case *proto.TunnelMessage_Error:
@@ -151,6 +157,52 @@ func (s *GRPCTunnelServer) handleClientMessages(tunnelStream *TunnelStream) {
 		default:
 			s.logger.Warn("Unknown message type from tunnel %s: %T", tunnelStream.Domain, msgType)
 		}
+	}
+}
+
+// handleUploadStart initializes per-request channels and pipe for streaming upload
+func (s *GRPCTunnelServer) handleUploadStart(tunnelStream *TunnelStream, msg *proto.TunnelMessage) {
+	start := msg.GetHttpRequestStart()
+	if start == nil {
+		return
+	}
+	// Create per-request response channel if not present
+	tunnelStream.requestsMux.Lock()
+	if _, exists := tunnelStream.pendingRequests[start.RequestId]; !exists {
+		tunnelStream.pendingRequests[start.RequestId] = make(chan *proto.TunnelMessage, 64)
+	}
+	tunnelStream.requestsMux.Unlock()
+}
+
+// handleUploadChunk forwards chunk messages to the waiting request goroutine
+func (s *GRPCTunnelServer) handleUploadChunk(tunnelStream *TunnelStream, msg *proto.TunnelMessage) {
+	tunnelStream.requestsMux.RLock()
+	ch, ok := tunnelStream.pendingRequests[msg.RequestId]
+	tunnelStream.requestsMux.RUnlock()
+	if !ok {
+		s.logger.Warn("Received upload chunk for unknown request ID: %s", msg.RequestId)
+		return
+	}
+	select {
+	case ch <- msg:
+	default:
+		s.logger.Warn("Backpressure: upload chunk channel full for request: %s", msg.RequestId)
+	}
+}
+
+// handleUploadEnd forwards end marker
+func (s *GRPCTunnelServer) handleUploadEnd(tunnelStream *TunnelStream, msg *proto.TunnelMessage) {
+	tunnelStream.requestsMux.RLock()
+	ch, ok := tunnelStream.pendingRequests[msg.RequestId]
+	tunnelStream.requestsMux.RUnlock()
+	if !ok {
+		s.logger.Warn("Received upload end for unknown request ID: %s", msg.RequestId)
+		return
+	}
+	select {
+	case ch <- msg:
+	default:
+		s.logger.Warn("Backpressure: upload end channel full for request: %s", msg.RequestId)
 	}
 }
 

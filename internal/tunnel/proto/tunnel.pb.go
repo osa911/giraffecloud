@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.6
 // 	protoc        v5.29.3
-// source: proto/tunnel.proto
+// source: tunnel.proto
 
 package proto
 
@@ -70,11 +70,11 @@ func (x TunnelState) String() string {
 }
 
 func (TunnelState) Descriptor() protoreflect.EnumDescriptor {
-	return file_proto_tunnel_proto_enumTypes[0].Descriptor()
+	return file_tunnel_proto_enumTypes[0].Descriptor()
 }
 
 func (TunnelState) Type() protoreflect.EnumType {
-	return &file_proto_tunnel_proto_enumTypes[0]
+	return &file_tunnel_proto_enumTypes[0]
 }
 
 func (x TunnelState) Number() protoreflect.EnumNumber {
@@ -83,7 +83,7 @@ func (x TunnelState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use TunnelState.Descriptor instead.
 func (TunnelState) EnumDescriptor() ([]byte, []int) {
-	return file_proto_tunnel_proto_rawDescGZIP(), []int{0}
+	return file_tunnel_proto_rawDescGZIP(), []int{0}
 }
 
 // Health status enum
@@ -123,11 +123,11 @@ func (x HealthStatus) String() string {
 }
 
 func (HealthStatus) Descriptor() protoreflect.EnumDescriptor {
-	return file_proto_tunnel_proto_enumTypes[1].Descriptor()
+	return file_tunnel_proto_enumTypes[1].Descriptor()
 }
 
 func (HealthStatus) Type() protoreflect.EnumType {
-	return &file_proto_tunnel_proto_enumTypes[1]
+	return &file_tunnel_proto_enumTypes[1]
 }
 
 func (x HealthStatus) Number() protoreflect.EnumNumber {
@@ -136,7 +136,7 @@ func (x HealthStatus) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use HealthStatus.Descriptor instead.
 func (HealthStatus) EnumDescriptor() ([]byte, []int) {
-	return file_proto_tunnel_proto_rawDescGZIP(), []int{1}
+	return file_tunnel_proto_rawDescGZIP(), []int{1}
 }
 
 // Request type classification
@@ -179,11 +179,11 @@ func (x RequestType) String() string {
 }
 
 func (RequestType) Descriptor() protoreflect.EnumDescriptor {
-	return file_proto_tunnel_proto_enumTypes[2].Descriptor()
+	return file_tunnel_proto_enumTypes[2].Descriptor()
 }
 
 func (RequestType) Type() protoreflect.EnumType {
-	return &file_proto_tunnel_proto_enumTypes[2]
+	return &file_tunnel_proto_enumTypes[2]
 }
 
 func (x RequestType) Number() protoreflect.EnumNumber {
@@ -192,7 +192,7 @@ func (x RequestType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use RequestType.Descriptor instead.
 func (RequestType) EnumDescriptor() ([]byte, []int) {
-	return file_proto_tunnel_proto_rawDescGZIP(), []int{2}
+	return file_tunnel_proto_rawDescGZIP(), []int{2}
 }
 
 // Request priority for QoS
@@ -235,11 +235,11 @@ func (x Priority) String() string {
 }
 
 func (Priority) Descriptor() protoreflect.EnumDescriptor {
-	return file_proto_tunnel_proto_enumTypes[3].Descriptor()
+	return file_tunnel_proto_enumTypes[3].Descriptor()
 }
 
 func (Priority) Type() protoreflect.EnumType {
-	return &file_proto_tunnel_proto_enumTypes[3]
+	return &file_tunnel_proto_enumTypes[3]
 }
 
 func (x Priority) Number() protoreflect.EnumNumber {
@@ -248,7 +248,7 @@ func (x Priority) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Priority.Descriptor instead.
 func (Priority) EnumDescriptor() ([]byte, []int) {
-	return file_proto_tunnel_proto_rawDescGZIP(), []int{3}
+	return file_tunnel_proto_rawDescGZIP(), []int{3}
 }
 
 // Cache status for optimization
@@ -291,11 +291,11 @@ func (x CacheStatus) String() string {
 }
 
 func (CacheStatus) Descriptor() protoreflect.EnumDescriptor {
-	return file_proto_tunnel_proto_enumTypes[4].Descriptor()
+	return file_tunnel_proto_enumTypes[4].Descriptor()
 }
 
 func (CacheStatus) Type() protoreflect.EnumType {
-	return &file_proto_tunnel_proto_enumTypes[4]
+	return &file_tunnel_proto_enumTypes[4]
 }
 
 func (x CacheStatus) Number() protoreflect.EnumNumber {
@@ -304,7 +304,7 @@ func (x CacheStatus) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use CacheStatus.Descriptor instead.
 func (CacheStatus) EnumDescriptor() ([]byte, []int) {
-	return file_proto_tunnel_proto_rawDescGZIP(), []int{4}
+	return file_tunnel_proto_rawDescGZIP(), []int{4}
 }
 
 type ErrorMessage_ErrorType int32
@@ -355,11 +355,11 @@ func (x ErrorMessage_ErrorType) String() string {
 }
 
 func (ErrorMessage_ErrorType) Descriptor() protoreflect.EnumDescriptor {
-	return file_proto_tunnel_proto_enumTypes[5].Descriptor()
+	return file_tunnel_proto_enumTypes[5].Descriptor()
 }
 
 func (ErrorMessage_ErrorType) Type() protoreflect.EnumType {
-	return &file_proto_tunnel_proto_enumTypes[5]
+	return &file_tunnel_proto_enumTypes[5]
 }
 
 func (x ErrorMessage_ErrorType) Number() protoreflect.EnumNumber {
@@ -368,7 +368,7 @@ func (x ErrorMessage_ErrorType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ErrorMessage_ErrorType.Descriptor instead.
 func (ErrorMessage_ErrorType) EnumDescriptor() ([]byte, []int) {
-	return file_proto_tunnel_proto_rawDescGZIP(), []int{9, 0}
+	return file_tunnel_proto_rawDescGZIP(), []int{12, 0}
 }
 
 // TunnelMessage represents bidirectional communication over the tunnel
@@ -382,6 +382,9 @@ type TunnelMessage struct {
 	//	*TunnelMessage_Control
 	//	*TunnelMessage_Error
 	//	*TunnelMessage_Status
+	//	*TunnelMessage_HttpRequestStart
+	//	*TunnelMessage_HttpRequestChunk
+	//	*TunnelMessage_HttpRequestEnd
 	MessageType   isTunnelMessage_MessageType `protobuf_oneof:"message_type"`
 	RequestId     string                      `protobuf:"bytes,10,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
 	Timestamp     int64                       `protobuf:"varint,11,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
@@ -391,7 +394,7 @@ type TunnelMessage struct {
 
 func (x *TunnelMessage) Reset() {
 	*x = TunnelMessage{}
-	mi := &file_proto_tunnel_proto_msgTypes[0]
+	mi := &file_tunnel_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -403,7 +406,7 @@ func (x *TunnelMessage) String() string {
 func (*TunnelMessage) ProtoMessage() {}
 
 func (x *TunnelMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_tunnel_proto_msgTypes[0]
+	mi := &file_tunnel_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -416,7 +419,7 @@ func (x *TunnelMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TunnelMessage.ProtoReflect.Descriptor instead.
 func (*TunnelMessage) Descriptor() ([]byte, []int) {
-	return file_proto_tunnel_proto_rawDescGZIP(), []int{0}
+	return file_tunnel_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *TunnelMessage) GetMessageType() isTunnelMessage_MessageType {
@@ -480,6 +483,33 @@ func (x *TunnelMessage) GetStatus() *TunnelStatus {
 	return nil
 }
 
+func (x *TunnelMessage) GetHttpRequestStart() *HTTPRequestStart {
+	if x != nil {
+		if x, ok := x.MessageType.(*TunnelMessage_HttpRequestStart); ok {
+			return x.HttpRequestStart
+		}
+	}
+	return nil
+}
+
+func (x *TunnelMessage) GetHttpRequestChunk() *HTTPRequestChunk {
+	if x != nil {
+		if x, ok := x.MessageType.(*TunnelMessage_HttpRequestChunk); ok {
+			return x.HttpRequestChunk
+		}
+	}
+	return nil
+}
+
+func (x *TunnelMessage) GetHttpRequestEnd() *HTTPRequestEnd {
+	if x != nil {
+		if x, ok := x.MessageType.(*TunnelMessage_HttpRequestEnd); ok {
+			return x.HttpRequestEnd
+		}
+	}
+	return nil
+}
+
 func (x *TunnelMessage) GetRequestId() string {
 	if x != nil {
 		return x.RequestId
@@ -522,6 +552,19 @@ type TunnelMessage_Status struct {
 	Status *TunnelStatus `protobuf:"bytes,6,opt,name=status,proto3,oneof"`
 }
 
+type TunnelMessage_HttpRequestStart struct {
+	// Request-side streaming for large uploads
+	HttpRequestStart *HTTPRequestStart `protobuf:"bytes,7,opt,name=http_request_start,json=httpRequestStart,proto3,oneof"`
+}
+
+type TunnelMessage_HttpRequestChunk struct {
+	HttpRequestChunk *HTTPRequestChunk `protobuf:"bytes,8,opt,name=http_request_chunk,json=httpRequestChunk,proto3,oneof"`
+}
+
+type TunnelMessage_HttpRequestEnd struct {
+	HttpRequestEnd *HTTPRequestEnd `protobuf:"bytes,9,opt,name=http_request_end,json=httpRequestEnd,proto3,oneof"`
+}
+
 func (*TunnelMessage_Handshake) isTunnelMessage_MessageType() {}
 
 func (*TunnelMessage_HttpRequest) isTunnelMessage_MessageType() {}
@@ -533,6 +576,12 @@ func (*TunnelMessage_Control) isTunnelMessage_MessageType() {}
 func (*TunnelMessage_Error) isTunnelMessage_MessageType() {}
 
 func (*TunnelMessage_Status) isTunnelMessage_MessageType() {}
+
+func (*TunnelMessage_HttpRequestStart) isTunnelMessage_MessageType() {}
+
+func (*TunnelMessage_HttpRequestChunk) isTunnelMessage_MessageType() {}
+
+func (*TunnelMessage_HttpRequestEnd) isTunnelMessage_MessageType() {}
 
 // TunnelHandshake initiates the tunnel connection
 type TunnelHandshake struct {
@@ -548,7 +597,7 @@ type TunnelHandshake struct {
 
 func (x *TunnelHandshake) Reset() {
 	*x = TunnelHandshake{}
-	mi := &file_proto_tunnel_proto_msgTypes[1]
+	mi := &file_tunnel_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -560,7 +609,7 @@ func (x *TunnelHandshake) String() string {
 func (*TunnelHandshake) ProtoMessage() {}
 
 func (x *TunnelHandshake) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_tunnel_proto_msgTypes[1]
+	mi := &file_tunnel_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -573,7 +622,7 @@ func (x *TunnelHandshake) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TunnelHandshake.ProtoReflect.Descriptor instead.
 func (*TunnelHandshake) Descriptor() ([]byte, []int) {
-	return file_proto_tunnel_proto_rawDescGZIP(), []int{1}
+	return file_tunnel_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *TunnelHandshake) GetToken() string {
@@ -624,7 +673,7 @@ type TunnelCapabilities struct {
 
 func (x *TunnelCapabilities) Reset() {
 	*x = TunnelCapabilities{}
-	mi := &file_proto_tunnel_proto_msgTypes[2]
+	mi := &file_tunnel_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -636,7 +685,7 @@ func (x *TunnelCapabilities) String() string {
 func (*TunnelCapabilities) ProtoMessage() {}
 
 func (x *TunnelCapabilities) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_tunnel_proto_msgTypes[2]
+	mi := &file_tunnel_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -649,7 +698,7 @@ func (x *TunnelCapabilities) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TunnelCapabilities.ProtoReflect.Descriptor instead.
 func (*TunnelCapabilities) Descriptor() ([]byte, []int) {
-	return file_proto_tunnel_proto_rawDescGZIP(), []int{2}
+	return file_tunnel_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *TunnelCapabilities) GetSupportsChunkedStreaming() bool {
@@ -699,7 +748,7 @@ type HTTPRequest struct {
 
 func (x *HTTPRequest) Reset() {
 	*x = HTTPRequest{}
-	mi := &file_proto_tunnel_proto_msgTypes[3]
+	mi := &file_tunnel_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -711,7 +760,7 @@ func (x *HTTPRequest) String() string {
 func (*HTTPRequest) ProtoMessage() {}
 
 func (x *HTTPRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_tunnel_proto_msgTypes[3]
+	mi := &file_tunnel_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -724,7 +773,7 @@ func (x *HTTPRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HTTPRequest.ProtoReflect.Descriptor instead.
 func (*HTTPRequest) Descriptor() ([]byte, []int) {
-	return file_proto_tunnel_proto_rawDescGZIP(), []int{3}
+	return file_tunnel_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *HTTPRequest) GetMethod() string {
@@ -813,7 +862,7 @@ type HTTPResponse struct {
 
 func (x *HTTPResponse) Reset() {
 	*x = HTTPResponse{}
-	mi := &file_proto_tunnel_proto_msgTypes[4]
+	mi := &file_tunnel_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -825,7 +874,7 @@ func (x *HTTPResponse) String() string {
 func (*HTTPResponse) ProtoMessage() {}
 
 func (x *HTTPResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_tunnel_proto_msgTypes[4]
+	mi := &file_tunnel_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -838,7 +887,7 @@ func (x *HTTPResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HTTPResponse.ProtoReflect.Descriptor instead.
 func (*HTTPResponse) Descriptor() ([]byte, []int) {
-	return file_proto_tunnel_proto_rawDescGZIP(), []int{4}
+	return file_tunnel_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *HTTPResponse) GetStatusCode() int32 {
@@ -903,7 +952,7 @@ type LargeFileRequest struct {
 
 func (x *LargeFileRequest) Reset() {
 	*x = LargeFileRequest{}
-	mi := &file_proto_tunnel_proto_msgTypes[5]
+	mi := &file_tunnel_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -915,7 +964,7 @@ func (x *LargeFileRequest) String() string {
 func (*LargeFileRequest) ProtoMessage() {}
 
 func (x *LargeFileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_tunnel_proto_msgTypes[5]
+	mi := &file_tunnel_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -928,7 +977,7 @@ func (x *LargeFileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LargeFileRequest.ProtoReflect.Descriptor instead.
 func (*LargeFileRequest) Descriptor() ([]byte, []int) {
-	return file_proto_tunnel_proto_rawDescGZIP(), []int{5}
+	return file_tunnel_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *LargeFileRequest) GetRequestId() string {
@@ -976,7 +1025,7 @@ type LargeFileChunk struct {
 
 func (x *LargeFileChunk) Reset() {
 	*x = LargeFileChunk{}
-	mi := &file_proto_tunnel_proto_msgTypes[6]
+	mi := &file_tunnel_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -988,7 +1037,7 @@ func (x *LargeFileChunk) String() string {
 func (*LargeFileChunk) ProtoMessage() {}
 
 func (x *LargeFileChunk) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_tunnel_proto_msgTypes[6]
+	mi := &file_tunnel_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1001,7 +1050,7 @@ func (x *LargeFileChunk) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LargeFileChunk.ProtoReflect.Descriptor instead.
 func (*LargeFileChunk) Descriptor() ([]byte, []int) {
-	return file_proto_tunnel_proto_rawDescGZIP(), []int{6}
+	return file_tunnel_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *LargeFileChunk) GetRequestId() string {
@@ -1067,6 +1116,195 @@ func (x *LargeFileChunk) GetErrorMessage() string {
 	return ""
 }
 
+// Request-side streaming (server -> client) for large uploads
+type HTTPRequestStart struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Method        string                 `protobuf:"bytes,2,opt,name=method,proto3" json:"method,omitempty"`
+	Path          string                 `protobuf:"bytes,3,opt,name=path,proto3" json:"path,omitempty"`
+	Query         string                 `protobuf:"bytes,4,opt,name=query,proto3" json:"query,omitempty"`
+	Headers       map[string]string      `protobuf:"bytes,5,rep,name=headers,proto3" json:"headers,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	ClientIp      string                 `protobuf:"bytes,6,opt,name=client_ip,json=clientIp,proto3" json:"client_ip,omitempty"`
+	IsLargeFile   bool                   `protobuf:"varint,7,opt,name=is_large_file,json=isLargeFile,proto3" json:"is_large_file,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HTTPRequestStart) Reset() {
+	*x = HTTPRequestStart{}
+	mi := &file_tunnel_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HTTPRequestStart) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HTTPRequestStart) ProtoMessage() {}
+
+func (x *HTTPRequestStart) ProtoReflect() protoreflect.Message {
+	mi := &file_tunnel_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HTTPRequestStart.ProtoReflect.Descriptor instead.
+func (*HTTPRequestStart) Descriptor() ([]byte, []int) {
+	return file_tunnel_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *HTTPRequestStart) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *HTTPRequestStart) GetMethod() string {
+	if x != nil {
+		return x.Method
+	}
+	return ""
+}
+
+func (x *HTTPRequestStart) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *HTTPRequestStart) GetQuery() string {
+	if x != nil {
+		return x.Query
+	}
+	return ""
+}
+
+func (x *HTTPRequestStart) GetHeaders() map[string]string {
+	if x != nil {
+		return x.Headers
+	}
+	return nil
+}
+
+func (x *HTTPRequestStart) GetClientIp() string {
+	if x != nil {
+		return x.ClientIp
+	}
+	return ""
+}
+
+func (x *HTTPRequestStart) GetIsLargeFile() bool {
+	if x != nil {
+		return x.IsLargeFile
+	}
+	return false
+}
+
+type HTTPRequestChunk struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Data          []byte                 `protobuf:"bytes,2,opt,name=data,proto3" json:"data,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HTTPRequestChunk) Reset() {
+	*x = HTTPRequestChunk{}
+	mi := &file_tunnel_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HTTPRequestChunk) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HTTPRequestChunk) ProtoMessage() {}
+
+func (x *HTTPRequestChunk) ProtoReflect() protoreflect.Message {
+	mi := &file_tunnel_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HTTPRequestChunk.ProtoReflect.Descriptor instead.
+func (*HTTPRequestChunk) Descriptor() ([]byte, []int) {
+	return file_tunnel_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *HTTPRequestChunk) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *HTTPRequestChunk) GetData() []byte {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
+type HTTPRequestEnd struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HTTPRequestEnd) Reset() {
+	*x = HTTPRequestEnd{}
+	mi := &file_tunnel_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HTTPRequestEnd) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HTTPRequestEnd) ProtoMessage() {}
+
+func (x *HTTPRequestEnd) ProtoReflect() protoreflect.Message {
+	mi := &file_tunnel_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HTTPRequestEnd.ProtoReflect.Descriptor instead.
+func (*HTTPRequestEnd) Descriptor() ([]byte, []int) {
+	return file_tunnel_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *HTTPRequestEnd) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
 // TunnelControl handles tunnel lifecycle management
 type TunnelControl struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -1085,7 +1323,7 @@ type TunnelControl struct {
 
 func (x *TunnelControl) Reset() {
 	*x = TunnelControl{}
-	mi := &file_proto_tunnel_proto_msgTypes[7]
+	mi := &file_tunnel_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1097,7 +1335,7 @@ func (x *TunnelControl) String() string {
 func (*TunnelControl) ProtoMessage() {}
 
 func (x *TunnelControl) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_tunnel_proto_msgTypes[7]
+	mi := &file_tunnel_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1110,7 +1348,7 @@ func (x *TunnelControl) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TunnelControl.ProtoReflect.Descriptor instead.
 func (*TunnelControl) Descriptor() ([]byte, []int) {
-	return file_proto_tunnel_proto_rawDescGZIP(), []int{7}
+	return file_tunnel_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *TunnelControl) GetControlType() isTunnelControl_ControlType {
@@ -1210,7 +1448,7 @@ type TunnelConfig struct {
 
 func (x *TunnelConfig) Reset() {
 	*x = TunnelConfig{}
-	mi := &file_proto_tunnel_proto_msgTypes[8]
+	mi := &file_tunnel_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1222,7 +1460,7 @@ func (x *TunnelConfig) String() string {
 func (*TunnelConfig) ProtoMessage() {}
 
 func (x *TunnelConfig) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_tunnel_proto_msgTypes[8]
+	mi := &file_tunnel_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1235,7 +1473,7 @@ func (x *TunnelConfig) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TunnelConfig.ProtoReflect.Descriptor instead.
 func (*TunnelConfig) Descriptor() ([]byte, []int) {
-	return file_proto_tunnel_proto_rawDescGZIP(), []int{8}
+	return file_tunnel_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *TunnelConfig) GetMaxConcurrent() int32 {
@@ -1273,7 +1511,7 @@ type ErrorMessage struct {
 
 func (x *ErrorMessage) Reset() {
 	*x = ErrorMessage{}
-	mi := &file_proto_tunnel_proto_msgTypes[9]
+	mi := &file_tunnel_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1285,7 +1523,7 @@ func (x *ErrorMessage) String() string {
 func (*ErrorMessage) ProtoMessage() {}
 
 func (x *ErrorMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_tunnel_proto_msgTypes[9]
+	mi := &file_tunnel_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1298,7 +1536,7 @@ func (x *ErrorMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ErrorMessage.ProtoReflect.Descriptor instead.
 func (*ErrorMessage) Descriptor() ([]byte, []int) {
-	return file_proto_tunnel_proto_rawDescGZIP(), []int{9}
+	return file_tunnel_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ErrorMessage) GetType() ErrorMessage_ErrorType {
@@ -1352,7 +1590,7 @@ type TunnelStatus struct {
 
 func (x *TunnelStatus) Reset() {
 	*x = TunnelStatus{}
-	mi := &file_proto_tunnel_proto_msgTypes[10]
+	mi := &file_tunnel_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1364,7 +1602,7 @@ func (x *TunnelStatus) String() string {
 func (*TunnelStatus) ProtoMessage() {}
 
 func (x *TunnelStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_tunnel_proto_msgTypes[10]
+	mi := &file_tunnel_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1377,7 +1615,7 @@ func (x *TunnelStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TunnelStatus.ProtoReflect.Descriptor instead.
 func (*TunnelStatus) Descriptor() ([]byte, []int) {
-	return file_proto_tunnel_proto_rawDescGZIP(), []int{10}
+	return file_tunnel_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *TunnelStatus) GetState() TunnelState {
@@ -1446,7 +1684,7 @@ type TunnelMetrics struct {
 
 func (x *TunnelMetrics) Reset() {
 	*x = TunnelMetrics{}
-	mi := &file_proto_tunnel_proto_msgTypes[11]
+	mi := &file_tunnel_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1458,7 +1696,7 @@ func (x *TunnelMetrics) String() string {
 func (*TunnelMetrics) ProtoMessage() {}
 
 func (x *TunnelMetrics) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_tunnel_proto_msgTypes[11]
+	mi := &file_tunnel_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1471,7 +1709,7 @@ func (x *TunnelMetrics) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TunnelMetrics.ProtoReflect.Descriptor instead.
 func (*TunnelMetrics) Descriptor() ([]byte, []int) {
-	return file_proto_tunnel_proto_rawDescGZIP(), []int{11}
+	return file_tunnel_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *TunnelMetrics) GetTotalRequests() int64 {
@@ -1540,7 +1778,7 @@ type HealthCheckRequest struct {
 
 func (x *HealthCheckRequest) Reset() {
 	*x = HealthCheckRequest{}
-	mi := &file_proto_tunnel_proto_msgTypes[12]
+	mi := &file_tunnel_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1552,7 +1790,7 @@ func (x *HealthCheckRequest) String() string {
 func (*HealthCheckRequest) ProtoMessage() {}
 
 func (x *HealthCheckRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_tunnel_proto_msgTypes[12]
+	mi := &file_tunnel_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1565,7 +1803,7 @@ func (x *HealthCheckRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HealthCheckRequest.ProtoReflect.Descriptor instead.
 func (*HealthCheckRequest) Descriptor() ([]byte, []int) {
-	return file_proto_tunnel_proto_rawDescGZIP(), []int{12}
+	return file_tunnel_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *HealthCheckRequest) GetService() string {
@@ -1587,7 +1825,7 @@ type HealthCheckResponse struct {
 
 func (x *HealthCheckResponse) Reset() {
 	*x = HealthCheckResponse{}
-	mi := &file_proto_tunnel_proto_msgTypes[13]
+	mi := &file_tunnel_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1599,7 +1837,7 @@ func (x *HealthCheckResponse) String() string {
 func (*HealthCheckResponse) ProtoMessage() {}
 
 func (x *HealthCheckResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_tunnel_proto_msgTypes[13]
+	mi := &file_tunnel_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1612,7 +1850,7 @@ func (x *HealthCheckResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HealthCheckResponse.ProtoReflect.Descriptor instead.
 func (*HealthCheckResponse) Descriptor() ([]byte, []int) {
-	return file_proto_tunnel_proto_rawDescGZIP(), []int{13}
+	return file_tunnel_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *HealthCheckResponse) GetStatus() HealthStatus {
@@ -1656,7 +1894,7 @@ type RequestMetadata struct {
 
 func (x *RequestMetadata) Reset() {
 	*x = RequestMetadata{}
-	mi := &file_proto_tunnel_proto_msgTypes[14]
+	mi := &file_tunnel_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1668,7 +1906,7 @@ func (x *RequestMetadata) String() string {
 func (*RequestMetadata) ProtoMessage() {}
 
 func (x *RequestMetadata) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_tunnel_proto_msgTypes[14]
+	mi := &file_tunnel_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1681,7 +1919,7 @@ func (x *RequestMetadata) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RequestMetadata.ProtoReflect.Descriptor instead.
 func (*RequestMetadata) Descriptor() ([]byte, []int) {
-	return file_proto_tunnel_proto_rawDescGZIP(), []int{14}
+	return file_tunnel_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *RequestMetadata) GetType() RequestType {
@@ -1725,7 +1963,7 @@ type ResponseMetadata struct {
 
 func (x *ResponseMetadata) Reset() {
 	*x = ResponseMetadata{}
-	mi := &file_proto_tunnel_proto_msgTypes[15]
+	mi := &file_tunnel_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1737,7 +1975,7 @@ func (x *ResponseMetadata) String() string {
 func (*ResponseMetadata) ProtoMessage() {}
 
 func (x *ResponseMetadata) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_tunnel_proto_msgTypes[15]
+	mi := &file_tunnel_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1750,7 +1988,7 @@ func (x *ResponseMetadata) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResponseMetadata.ProtoReflect.Descriptor instead.
 func (*ResponseMetadata) Descriptor() ([]byte, []int) {
-	return file_proto_tunnel_proto_rawDescGZIP(), []int{15}
+	return file_tunnel_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ResponseMetadata) GetProcessingTimeMs() int64 {
@@ -1781,18 +2019,21 @@ func (x *ResponseMetadata) GetServerId() string {
 	return ""
 }
 
-var File_proto_tunnel_proto protoreflect.FileDescriptor
+var File_tunnel_proto protoreflect.FileDescriptor
 
-const file_proto_tunnel_proto_rawDesc = "" +
+const file_tunnel_proto_rawDesc = "" +
 	"\n" +
-	"\x12proto/tunnel.proto\x12\x06tunnel\"\x9d\x03\n" +
+	"\ftunnel.proto\x12\x06tunnel\"\xf5\x04\n" +
 	"\rTunnelMessage\x127\n" +
 	"\thandshake\x18\x01 \x01(\v2\x17.tunnel.TunnelHandshakeH\x00R\thandshake\x128\n" +
 	"\fhttp_request\x18\x02 \x01(\v2\x13.tunnel.HTTPRequestH\x00R\vhttpRequest\x12;\n" +
 	"\rhttp_response\x18\x03 \x01(\v2\x14.tunnel.HTTPResponseH\x00R\fhttpResponse\x121\n" +
 	"\acontrol\x18\x04 \x01(\v2\x15.tunnel.TunnelControlH\x00R\acontrol\x12,\n" +
 	"\x05error\x18\x05 \x01(\v2\x14.tunnel.ErrorMessageH\x00R\x05error\x12.\n" +
-	"\x06status\x18\x06 \x01(\v2\x14.tunnel.TunnelStatusH\x00R\x06status\x12\x1d\n" +
+	"\x06status\x18\x06 \x01(\v2\x14.tunnel.TunnelStatusH\x00R\x06status\x12H\n" +
+	"\x12http_request_start\x18\a \x01(\v2\x18.tunnel.HTTPRequestStartH\x00R\x10httpRequestStart\x12H\n" +
+	"\x12http_request_chunk\x18\b \x01(\v2\x18.tunnel.HTTPRequestChunkH\x00R\x10httpRequestChunk\x12B\n" +
+	"\x10http_request_end\x18\t \x01(\v2\x16.tunnel.HTTPRequestEndH\x00R\x0ehttpRequestEnd\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\n" +
 	" \x01(\tR\trequestId\x12\x1c\n" +
@@ -1862,7 +2103,26 @@ const file_proto_tunnel_proto_rawDesc = "" +
 	"\rerror_message\x18\t \x01(\tR\ferrorMessage\x1a:\n" +
 	"\fHeadersEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xa3\x02\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xb1\x02\n" +
+	"\x10HTTPRequestStart\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12\x16\n" +
+	"\x06method\x18\x02 \x01(\tR\x06method\x12\x12\n" +
+	"\x04path\x18\x03 \x01(\tR\x04path\x12\x14\n" +
+	"\x05query\x18\x04 \x01(\tR\x05query\x12?\n" +
+	"\aheaders\x18\x05 \x03(\v2%.tunnel.HTTPRequestStart.HeadersEntryR\aheaders\x12\x1b\n" +
+	"\tclient_ip\x18\x06 \x01(\tR\bclientIp\x12\"\n" +
+	"\ris_large_file\x18\a \x01(\bR\visLargeFile\x1a:\n" +
+	"\fHeadersEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"E\n" +
+	"\x10HTTPRequestChunk\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12\x12\n" +
+	"\x04data\x18\x02 \x01(\fR\x04data\"/\n" +
+	"\x0eHTTPRequestEnd\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\"\xa3\x02\n" +
 	"\rTunnelControl\x127\n" +
 	"\thandshake\x18\x01 \x01(\v2\x17.tunnel.TunnelHandshakeH\x00R\thandshake\x12.\n" +
 	"\x06status\x18\x02 \x01(\v2\x14.tunnel.TunnelStatusH\x00R\x06status\x12.\n" +
@@ -1968,20 +2228,20 @@ const file_proto_tunnel_proto_rawDesc = "" +
 	"\vHealthCheck\x12\x1a.tunnel.HealthCheckRequest\x1a\x1b.tunnel.HealthCheckResponseB$Z\"giraffecloud/internal/tunnel/protob\x06proto3"
 
 var (
-	file_proto_tunnel_proto_rawDescOnce sync.Once
-	file_proto_tunnel_proto_rawDescData []byte
+	file_tunnel_proto_rawDescOnce sync.Once
+	file_tunnel_proto_rawDescData []byte
 )
 
-func file_proto_tunnel_proto_rawDescGZIP() []byte {
-	file_proto_tunnel_proto_rawDescOnce.Do(func() {
-		file_proto_tunnel_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_proto_tunnel_proto_rawDesc), len(file_proto_tunnel_proto_rawDesc)))
+func file_tunnel_proto_rawDescGZIP() []byte {
+	file_tunnel_proto_rawDescOnce.Do(func() {
+		file_tunnel_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_tunnel_proto_rawDesc), len(file_tunnel_proto_rawDesc)))
 	})
-	return file_proto_tunnel_proto_rawDescData
+	return file_tunnel_proto_rawDescData
 }
 
-var file_proto_tunnel_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
-var file_proto_tunnel_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
-var file_proto_tunnel_proto_goTypes = []any{
+var file_tunnel_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
+var file_tunnel_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
+var file_tunnel_proto_goTypes = []any{
 	(TunnelState)(0),            // 0: tunnel.TunnelState
 	(HealthStatus)(0),           // 1: tunnel.HealthStatus
 	(RequestType)(0),            // 2: tunnel.RequestType
@@ -1995,73 +2255,84 @@ var file_proto_tunnel_proto_goTypes = []any{
 	(*HTTPResponse)(nil),        // 10: tunnel.HTTPResponse
 	(*LargeFileRequest)(nil),    // 11: tunnel.LargeFileRequest
 	(*LargeFileChunk)(nil),      // 12: tunnel.LargeFileChunk
-	(*TunnelControl)(nil),       // 13: tunnel.TunnelControl
-	(*TunnelConfig)(nil),        // 14: tunnel.TunnelConfig
-	(*ErrorMessage)(nil),        // 15: tunnel.ErrorMessage
-	(*TunnelStatus)(nil),        // 16: tunnel.TunnelStatus
-	(*TunnelMetrics)(nil),       // 17: tunnel.TunnelMetrics
-	(*HealthCheckRequest)(nil),  // 18: tunnel.HealthCheckRequest
-	(*HealthCheckResponse)(nil), // 19: tunnel.HealthCheckResponse
-	(*RequestMetadata)(nil),     // 20: tunnel.RequestMetadata
-	(*ResponseMetadata)(nil),    // 21: tunnel.ResponseMetadata
-	nil,                         // 22: tunnel.HTTPRequest.HeadersEntry
-	nil,                         // 23: tunnel.HTTPResponse.HeadersEntry
-	nil,                         // 24: tunnel.LargeFileChunk.HeadersEntry
-	nil,                         // 25: tunnel.HealthCheckResponse.DetailsEntry
+	(*HTTPRequestStart)(nil),    // 13: tunnel.HTTPRequestStart
+	(*HTTPRequestChunk)(nil),    // 14: tunnel.HTTPRequestChunk
+	(*HTTPRequestEnd)(nil),      // 15: tunnel.HTTPRequestEnd
+	(*TunnelControl)(nil),       // 16: tunnel.TunnelControl
+	(*TunnelConfig)(nil),        // 17: tunnel.TunnelConfig
+	(*ErrorMessage)(nil),        // 18: tunnel.ErrorMessage
+	(*TunnelStatus)(nil),        // 19: tunnel.TunnelStatus
+	(*TunnelMetrics)(nil),       // 20: tunnel.TunnelMetrics
+	(*HealthCheckRequest)(nil),  // 21: tunnel.HealthCheckRequest
+	(*HealthCheckResponse)(nil), // 22: tunnel.HealthCheckResponse
+	(*RequestMetadata)(nil),     // 23: tunnel.RequestMetadata
+	(*ResponseMetadata)(nil),    // 24: tunnel.ResponseMetadata
+	nil,                         // 25: tunnel.HTTPRequest.HeadersEntry
+	nil,                         // 26: tunnel.HTTPResponse.HeadersEntry
+	nil,                         // 27: tunnel.LargeFileChunk.HeadersEntry
+	nil,                         // 28: tunnel.HTTPRequestStart.HeadersEntry
+	nil,                         // 29: tunnel.HealthCheckResponse.DetailsEntry
 }
-var file_proto_tunnel_proto_depIdxs = []int32{
+var file_tunnel_proto_depIdxs = []int32{
 	7,  // 0: tunnel.TunnelMessage.handshake:type_name -> tunnel.TunnelHandshake
 	9,  // 1: tunnel.TunnelMessage.http_request:type_name -> tunnel.HTTPRequest
 	10, // 2: tunnel.TunnelMessage.http_response:type_name -> tunnel.HTTPResponse
-	13, // 3: tunnel.TunnelMessage.control:type_name -> tunnel.TunnelControl
-	15, // 4: tunnel.TunnelMessage.error:type_name -> tunnel.ErrorMessage
-	16, // 5: tunnel.TunnelMessage.status:type_name -> tunnel.TunnelStatus
-	8,  // 6: tunnel.TunnelHandshake.capabilities:type_name -> tunnel.TunnelCapabilities
-	22, // 7: tunnel.HTTPRequest.headers:type_name -> tunnel.HTTPRequest.HeadersEntry
-	20, // 8: tunnel.HTTPRequest.metadata:type_name -> tunnel.RequestMetadata
-	23, // 9: tunnel.HTTPResponse.headers:type_name -> tunnel.HTTPResponse.HeadersEntry
-	21, // 10: tunnel.HTTPResponse.metadata:type_name -> tunnel.ResponseMetadata
-	9,  // 11: tunnel.LargeFileRequest.http_request:type_name -> tunnel.HTTPRequest
-	24, // 12: tunnel.LargeFileChunk.headers:type_name -> tunnel.LargeFileChunk.HeadersEntry
-	7,  // 13: tunnel.TunnelControl.handshake:type_name -> tunnel.TunnelHandshake
-	16, // 14: tunnel.TunnelControl.status:type_name -> tunnel.TunnelStatus
-	14, // 15: tunnel.TunnelControl.config:type_name -> tunnel.TunnelConfig
-	17, // 16: tunnel.TunnelControl.metrics:type_name -> tunnel.TunnelMetrics
-	5,  // 17: tunnel.ErrorMessage.type:type_name -> tunnel.ErrorMessage.ErrorType
-	0,  // 18: tunnel.TunnelStatus.state:type_name -> tunnel.TunnelState
-	1,  // 19: tunnel.HealthCheckResponse.status:type_name -> tunnel.HealthStatus
-	17, // 20: tunnel.HealthCheckResponse.metrics:type_name -> tunnel.TunnelMetrics
-	25, // 21: tunnel.HealthCheckResponse.details:type_name -> tunnel.HealthCheckResponse.DetailsEntry
-	2,  // 22: tunnel.RequestMetadata.type:type_name -> tunnel.RequestType
-	3,  // 23: tunnel.RequestMetadata.priority:type_name -> tunnel.Priority
-	4,  // 24: tunnel.ResponseMetadata.cache_status:type_name -> tunnel.CacheStatus
-	6,  // 25: tunnel.TunnelService.EstablishTunnel:input_type -> tunnel.TunnelMessage
-	11, // 26: tunnel.TunnelService.StreamLargeFile:input_type -> tunnel.LargeFileRequest
-	18, // 27: tunnel.TunnelService.HealthCheck:input_type -> tunnel.HealthCheckRequest
-	6,  // 28: tunnel.TunnelService.EstablishTunnel:output_type -> tunnel.TunnelMessage
-	12, // 29: tunnel.TunnelService.StreamLargeFile:output_type -> tunnel.LargeFileChunk
-	19, // 30: tunnel.TunnelService.HealthCheck:output_type -> tunnel.HealthCheckResponse
-	28, // [28:31] is the sub-list for method output_type
-	25, // [25:28] is the sub-list for method input_type
-	25, // [25:25] is the sub-list for extension type_name
-	25, // [25:25] is the sub-list for extension extendee
-	0,  // [0:25] is the sub-list for field type_name
+	16, // 3: tunnel.TunnelMessage.control:type_name -> tunnel.TunnelControl
+	18, // 4: tunnel.TunnelMessage.error:type_name -> tunnel.ErrorMessage
+	19, // 5: tunnel.TunnelMessage.status:type_name -> tunnel.TunnelStatus
+	13, // 6: tunnel.TunnelMessage.http_request_start:type_name -> tunnel.HTTPRequestStart
+	14, // 7: tunnel.TunnelMessage.http_request_chunk:type_name -> tunnel.HTTPRequestChunk
+	15, // 8: tunnel.TunnelMessage.http_request_end:type_name -> tunnel.HTTPRequestEnd
+	8,  // 9: tunnel.TunnelHandshake.capabilities:type_name -> tunnel.TunnelCapabilities
+	25, // 10: tunnel.HTTPRequest.headers:type_name -> tunnel.HTTPRequest.HeadersEntry
+	23, // 11: tunnel.HTTPRequest.metadata:type_name -> tunnel.RequestMetadata
+	26, // 12: tunnel.HTTPResponse.headers:type_name -> tunnel.HTTPResponse.HeadersEntry
+	24, // 13: tunnel.HTTPResponse.metadata:type_name -> tunnel.ResponseMetadata
+	9,  // 14: tunnel.LargeFileRequest.http_request:type_name -> tunnel.HTTPRequest
+	27, // 15: tunnel.LargeFileChunk.headers:type_name -> tunnel.LargeFileChunk.HeadersEntry
+	28, // 16: tunnel.HTTPRequestStart.headers:type_name -> tunnel.HTTPRequestStart.HeadersEntry
+	7,  // 17: tunnel.TunnelControl.handshake:type_name -> tunnel.TunnelHandshake
+	19, // 18: tunnel.TunnelControl.status:type_name -> tunnel.TunnelStatus
+	17, // 19: tunnel.TunnelControl.config:type_name -> tunnel.TunnelConfig
+	20, // 20: tunnel.TunnelControl.metrics:type_name -> tunnel.TunnelMetrics
+	5,  // 21: tunnel.ErrorMessage.type:type_name -> tunnel.ErrorMessage.ErrorType
+	0,  // 22: tunnel.TunnelStatus.state:type_name -> tunnel.TunnelState
+	1,  // 23: tunnel.HealthCheckResponse.status:type_name -> tunnel.HealthStatus
+	20, // 24: tunnel.HealthCheckResponse.metrics:type_name -> tunnel.TunnelMetrics
+	29, // 25: tunnel.HealthCheckResponse.details:type_name -> tunnel.HealthCheckResponse.DetailsEntry
+	2,  // 26: tunnel.RequestMetadata.type:type_name -> tunnel.RequestType
+	3,  // 27: tunnel.RequestMetadata.priority:type_name -> tunnel.Priority
+	4,  // 28: tunnel.ResponseMetadata.cache_status:type_name -> tunnel.CacheStatus
+	6,  // 29: tunnel.TunnelService.EstablishTunnel:input_type -> tunnel.TunnelMessage
+	11, // 30: tunnel.TunnelService.StreamLargeFile:input_type -> tunnel.LargeFileRequest
+	21, // 31: tunnel.TunnelService.HealthCheck:input_type -> tunnel.HealthCheckRequest
+	6,  // 32: tunnel.TunnelService.EstablishTunnel:output_type -> tunnel.TunnelMessage
+	12, // 33: tunnel.TunnelService.StreamLargeFile:output_type -> tunnel.LargeFileChunk
+	22, // 34: tunnel.TunnelService.HealthCheck:output_type -> tunnel.HealthCheckResponse
+	32, // [32:35] is the sub-list for method output_type
+	29, // [29:32] is the sub-list for method input_type
+	29, // [29:29] is the sub-list for extension type_name
+	29, // [29:29] is the sub-list for extension extendee
+	0,  // [0:29] is the sub-list for field type_name
 }
 
-func init() { file_proto_tunnel_proto_init() }
-func file_proto_tunnel_proto_init() {
-	if File_proto_tunnel_proto != nil {
+func init() { file_tunnel_proto_init() }
+func file_tunnel_proto_init() {
+	if File_tunnel_proto != nil {
 		return
 	}
-	file_proto_tunnel_proto_msgTypes[0].OneofWrappers = []any{
+	file_tunnel_proto_msgTypes[0].OneofWrappers = []any{
 		(*TunnelMessage_Handshake)(nil),
 		(*TunnelMessage_HttpRequest)(nil),
 		(*TunnelMessage_HttpResponse)(nil),
 		(*TunnelMessage_Control)(nil),
 		(*TunnelMessage_Error)(nil),
 		(*TunnelMessage_Status)(nil),
+		(*TunnelMessage_HttpRequestStart)(nil),
+		(*TunnelMessage_HttpRequestChunk)(nil),
+		(*TunnelMessage_HttpRequestEnd)(nil),
 	}
-	file_proto_tunnel_proto_msgTypes[7].OneofWrappers = []any{
+	file_tunnel_proto_msgTypes[10].OneofWrappers = []any{
 		(*TunnelControl_Handshake)(nil),
 		(*TunnelControl_Status)(nil),
 		(*TunnelControl_Config)(nil),
@@ -2071,18 +2342,18 @@ func file_proto_tunnel_proto_init() {
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_tunnel_proto_rawDesc), len(file_proto_tunnel_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tunnel_proto_rawDesc), len(file_tunnel_proto_rawDesc)),
 			NumEnums:      6,
-			NumMessages:   20,
+			NumMessages:   24,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_proto_tunnel_proto_goTypes,
-		DependencyIndexes: file_proto_tunnel_proto_depIdxs,
-		EnumInfos:         file_proto_tunnel_proto_enumTypes,
-		MessageInfos:      file_proto_tunnel_proto_msgTypes,
+		GoTypes:           file_tunnel_proto_goTypes,
+		DependencyIndexes: file_tunnel_proto_depIdxs,
+		EnumInfos:         file_tunnel_proto_enumTypes,
+		MessageInfos:      file_tunnel_proto_msgTypes,
 	}.Build()
-	File_proto_tunnel_proto = out.File
-	file_proto_tunnel_proto_goTypes = nil
-	file_proto_tunnel_proto_depIdxs = nil
+	File_tunnel_proto = out.File
+	file_tunnel_proto_goTypes = nil
+	file_tunnel_proto_depIdxs = nil
 }
