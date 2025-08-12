@@ -67,7 +67,7 @@ jobs:
             SHOULD_RELEASE="true"
           else
             CHANNEL="test"
-            SHOULD_RELEASE="false"
+            SHOULD_RELEASE="true"
           fi
 
           echo "channel=$CHANNEL" >> $GITHUB_OUTPUT
