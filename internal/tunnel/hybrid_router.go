@@ -172,8 +172,8 @@ func (r *HybridTunnelRouter) ProxyConnection(domain string, conn net.Conn, reque
 		if isActualWebSocket {
 			r.routeToTCPTunnel(domain, conn, requestData, requestBody, clientIP)
 		} else {
-			// Large file - route to gRPC chunked streaming for unlimited concurrency
-			r.routeToGRPCChunkedStreaming(domain, conn, requestData, requestBody, clientIP, httpMethod, requestPath)
+			// Large file - use legacy TCP streaming for stability and performance
+			r.routeToTCPForLargeFile(domain, conn, requestData, requestBody, clientIP, httpMethod, requestPath)
 		}
 	} else {
 		r.routeToGRPCTunnel(domain, conn, requestData, requestBody, clientIP, httpMethod, requestPath)
@@ -203,8 +203,32 @@ func (r *HybridTunnelRouter) routeToGRPCTunnel(domain string, conn net.Conn, req
 		return
 	}
 
-	// Proxy through gRPC tunnel with intelligent chunking (auto-detect large uploads)
-	// Pass requestBody for upload streaming when chunking is used
+	// Proxy through gRPC tunnel with intelligent chunking only for large bodies.
+	// For GET and HEAD, keep regular path for performance.
+	if strings.EqualFold(method, "GET") || strings.EqualFold(method, "HEAD") {
+		response, err := r.grpcTunnel.ProxyHTTPRequest(domain, httpReq, clientIP)
+		if err != nil {
+			r.logger.Error("[HYBRID→gRPC] gRPC proxy error: %v", err)
+			atomic.AddInt64(&r.routingErrors, 1)
+			r.writeHTTPError(conn, 502, fmt.Sprintf("Bad Gateway - %v", err))
+			return
+		}
+
+		// Write response back to client
+		writer := bufio.NewWriter(conn)
+		if err := response.Write(writer); err != nil {
+			r.logger.Error("[HYBRID→gRPC] Error writing response: %v", err)
+			return
+		}
+		if err := writer.Flush(); err != nil {
+			r.logger.Error("[HYBRID→gRPC] Error flushing response: %v", err)
+			return
+		}
+
+		r.logger.Debug("[HYBRID→gRPC] Request completed successfully")
+		return
+	}
+
 	response, err := r.grpcTunnel.ProxyHTTPRequestWithChunking(domain, httpReq, clientIP)
 	if err != nil {
 		r.logger.Error("[HYBRID→gRPC] gRPC proxy error: %v", err)
