@@ -203,8 +203,9 @@ func (r *HybridTunnelRouter) routeToGRPCTunnel(domain string, conn net.Conn, req
 		return
 	}
 
-	// Proxy through gRPC tunnel
-	response, err := r.grpcTunnel.ProxyHTTPRequest(domain, httpReq, clientIP)
+	// Proxy through gRPC tunnel with intelligent chunking (auto-detect large uploads)
+	// Pass requestBody for upload streaming when chunking is used
+	response, err := r.grpcTunnel.ProxyHTTPRequestWithChunking(domain, httpReq, clientIP)
 	if err != nil {
 		r.logger.Error("[HYBRID→gRPC] gRPC proxy error: %v", err)
 		atomic.AddInt64(&r.routingErrors, 1)
