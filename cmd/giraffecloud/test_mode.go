@@ -1,0 +1,156 @@
+package main
+
+import (
+	"giraffecloud/internal/tunnel"
+	"os"
+
+	"github.com/spf13/cobra"
+)
+
+// testModeCmd handles test mode configuration for pre-release testing
+var testModeCmd = &cobra.Command{
+	Use:   "test-mode",
+	Short: "Manage test mode settings",
+	Long:  `Configure and manage test mode settings for receiving pre-release updates.`,
+}
+
+var testModeEnableCmd = &cobra.Command{
+	Use:   "enable",
+	Short: "Enable test mode (test channel)",
+	Long:  `Enable test mode to receive pre-release updates from the test channel.`,
+	Run: func(cmd *cobra.Command, args []string) {
+		// Load existing config
+		existingCfg, err := tunnel.LoadConfig()
+		if err != nil && !os.IsNotExist(err) {
+			logger.Error("Error loading config: %v", err)
+			os.Exit(1)
+		}
+
+		// Force test channel when enabling test mode
+		channel := "test"
+
+		// Base auto-update on existing (or defaults) to avoid overwriting unrelated fields
+		baseAuto := tunnel.DefaultConfig.AutoUpdate
+		if existingCfg != nil {
+			baseAuto = existingCfg.AutoUpdate
+		}
+
+		// Create new config with just the test mode changes
+		newCfg := &tunnel.Config{
+			TestMode: tunnel.TestModeConfig{
+				Enabled: true,
+				Channel: channel,
+			},
+			AutoUpdate: baseAuto,
+		}
+		newCfg.AutoUpdate.Channel = channel
+
+		// Merge changes
+		mergedCfg := tunnel.MergeConfig(existingCfg, newCfg)
+
+		// Require prior login (token present) before saving
+		if mergedCfg.Token == "" {
+			logger.Error("Please login first: run 'giraffecloud login --token <API_TOKEN>'")
+			os.Exit(1)
+		}
+		// Save config (requires valid config); run after login or with existing valid config
+		if err := tunnel.SaveConfig(mergedCfg); err != nil {
+			logger.Error("Failed to save config: %v", err)
+			os.Exit(1)
+		}
+
+		logger.Info("✅ Test mode enabled (channel: %s)", channel)
+		logger.Info("💡 Use 'giraffecloud update --check-only' to check for updates")
+		logger.Info("💡 Use 'giraffecloud test-mode disable' to disable test mode")
+	},
+}
+
+var testModeDisableCmd = &cobra.Command{
+	Use:   "disable",
+	Short: "Disable test mode",
+	Long:  `Disable test mode and return to stable release channel.`,
+	Run: func(cmd *cobra.Command, args []string) {
+		// Load existing config
+		existingCfg, err := tunnel.LoadConfig()
+		if err != nil && !os.IsNotExist(err) {
+			logger.Error("Error loading config: %v", err)
+			os.Exit(1)
+		}
+
+		// Base auto-update on existing (or defaults)
+		baseAuto := tunnel.DefaultConfig.AutoUpdate
+		if existingCfg != nil {
+			baseAuto = existingCfg.AutoUpdate
+		}
+
+		// Create new config with test mode disabled
+		newCfg := &tunnel.Config{
+			TestMode: tunnel.TestModeConfig{
+				Enabled: false,
+				Channel: "stable",
+			},
+			AutoUpdate: baseAuto,
+		}
+		newCfg.AutoUpdate.Channel = "stable"
+
+		// Merge changes
+		mergedCfg := tunnel.MergeConfig(existingCfg, newCfg)
+
+		// Require prior login (token present) before saving
+		if mergedCfg.Token == "" {
+			logger.Error("Please login first: run 'giraffecloud login --token <API_TOKEN>'")
+			os.Exit(1)
+		}
+		// Save config
+		if err := tunnel.SaveConfig(mergedCfg); err != nil {
+			logger.Error("Failed to save config: %v", err)
+			os.Exit(1)
+		}
+
+		logger.Info("✅ Test mode disabled (channel: stable)")
+		logger.Info("💡 Use 'giraffecloud update --check-only' to check for updates")
+	},
+}
+
+var testModeStatusCmd = &cobra.Command{
+	Use:   "status",
+	Short: "Show test mode status",
+	Long:  `Display current test mode configuration and status.`,
+	Run: func(cmd *cobra.Command, args []string) {
+		cfg, err := tunnel.LoadConfig()
+		if err != nil {
+			logger.Error("Error loading config: %v", err)
+			os.Exit(1)
+		}
+
+		logger.Info("=== Test Mode Status ===")
+		if cfg.TestMode.Enabled {
+			logger.Info("Status: ✅ ENABLED")
+			logger.Info("Channel: %s", cfg.TestMode.Channel)
+			if cfg.TestMode.UserID != "" {
+				logger.Info("User ID: %s", cfg.TestMode.UserID)
+			}
+			if len(cfg.TestMode.Groups) > 0 {
+				logger.Info("Test Groups: %v", cfg.TestMode.Groups)
+			}
+		} else {
+			logger.Info("Status: ❌ DISABLED")
+			logger.Info("Channel: stable (default)")
+		}
+
+		logger.Info("")
+		logger.Info("Auto-Update Channel: %s", cfg.AutoUpdate.Channel)
+		logger.Info("Auto-Update Enabled: %t", cfg.AutoUpdate.Enabled)
+	},
+}
+
+// initTestModeCommands sets up all test mode commands
+func initTestModeCommands() {
+	// Add test mode command to root
+	rootCmd.AddCommand(testModeCmd)
+
+	// Add subcommands to test mode
+	testModeCmd.AddCommand(testModeEnableCmd)
+	testModeCmd.AddCommand(testModeDisableCmd)
+	testModeCmd.AddCommand(testModeStatusCmd)
+}

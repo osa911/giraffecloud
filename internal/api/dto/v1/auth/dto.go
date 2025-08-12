@@ -18,9 +18,9 @@ type LoginResponse struct {
 
 // RegisterRequest represents the registration request payload
 type RegisterRequest struct {
-	Email       string `json:"email" binding:"required,email"`
-	Name        string `json:"name" binding:"required"`
-	Token       string `json:"token" binding:"required"`
+	Email string `json:"email" binding:"required,email"`
+	Name  string `json:"name" binding:"required"`
+	Token string `json:"token" binding:"required"`
 }
 
 // RegisterResponse represents the response after a successful registration

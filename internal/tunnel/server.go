@@ -42,17 +42,17 @@ type TunnelServer struct {
 	streamConfig  *StreamingConfig // Streaming configuration
 
 	// Performance monitoring
-	requestCount    int64    // Total requests handled
-	concurrentReqs  int64    // Current concurrent requests
-	poolHits        int64    // Successful pool connections
-	poolMisses      int64    // Failed pool connections
+	requestCount   int64 // Total requests handled
+	concurrentReqs int64 // Current concurrent requests
+	poolHits       int64 // Successful pool connections
+	poolMisses     int64 // Failed pool connections
 
 	// Connection health monitoring
-	lastCleanup     time.Time // Last cleanup time
-	cleanupStats    map[string]int // Cleanup statistics
+	lastCleanup  time.Time      // Last cleanup time
+	cleanupStats map[string]int // Cleanup statistics
 
 	// Circuit breaker for cascade failure prevention
-	recentTimeouts  int64    // Recent timeout count
+	recentTimeouts  int64     // Recent timeout count
 	lastTimeoutTime time.Time // Last timeout occurrence
 }
 
@@ -78,12 +78,12 @@ func NewServer(tokenRepo repository.TokenRepository, tunnelRepo repository.Tunne
 	}
 
 	return &TunnelServer{
-		logger:       logging.GetGlobalLogger(),
-		connections:  NewConnectionManager(),
-		streamConfig: DefaultStreamingConfig(),
-		tlsConfig:    serverTLSConfig,
-		tokenRepo:    tokenRepo,
-		tunnelRepo:   tunnelRepo,
+		logger:        logging.GetGlobalLogger(),
+		connections:   NewConnectionManager(),
+		streamConfig:  DefaultStreamingConfig(),
+		tlsConfig:     serverTLSConfig,
+		tokenRepo:     tokenRepo,
+		tunnelRepo:    tunnelRepo,
 		tunnelService: tunnelService,
 	}
 }
@@ -114,8 +114,6 @@ func (s *TunnelServer) Stop() error {
 
 	return nil
 }
-
-
 
 // UpdateStreamingConfig updates the streaming configuration
 func (s *TunnelServer) UpdateStreamingConfig(config *StreamingConfig) {
@@ -211,10 +209,10 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 
 	// Send success response with domain and port
 	if err := encoder.Encode(TunnelHandshakeResponse{
-		Status:     "success",
-		Message:    "Connected successfully",
-		Domain:     tunnel.Domain,
-		TargetPort: tunnel.TargetPort,
+		Status:         "success",
+		Message:        "Connected successfully",
+		Domain:         tunnel.Domain,
+		TargetPort:     tunnel.TargetPort,
 		ConnectionType: string(connType),
 	}); err != nil {
 		s.logger.Error("Failed to send response: %v", err)
@@ -344,8 +342,8 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData
 			} else {
 				s.logger.Error("[HYBRID] Enhanced fallback failed - no connections available")
 				s.writeHTTPError(conn, 502, "Bad Gateway - No tunnel connections available")
-		return
-	}
+				return
+			}
 		} else {
 			tunnelConn = freshConn
 			isOnDemand = true
@@ -465,12 +463,12 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData
 
 // retryWithFreshConnection attempts to retry the request with a fresh connection from the pool
 func (s *TunnelServer) retryWithFreshConnection(domain string, clientConn net.Conn, requestData []byte, requestBody io.Reader) {
-			retryTunnelConn := s.connections.GetHTTPConnection(domain)
+	retryTunnelConn := s.connections.GetHTTPConnection(domain)
 	if retryTunnelConn == nil || retryTunnelConn.GetConn() == nil {
 		s.logger.Error("[PROXY DEBUG] No fresh connection available for retry")
 		s.writeHTTPError(clientConn, 502, "Bad Gateway - No connections available")
-				return
-			}
+		return
+	}
 
 	s.logger.Info("[PROXY DEBUG] Retrying request with fresh connection from pool")
 
@@ -492,8 +490,8 @@ func (s *TunnelServer) retryWithFreshConnection(domain string, clientConn net.Co
 			s.logger.Error("[PROXY DEBUG] Retry failed - error writing request body: %v", err)
 			s.connections.RemoveSpecificHTTPConnection(domain, retryTunnelConn)
 			s.writeHTTPError(clientConn, 502, "Bad Gateway - Retry failed")
-		return
-	}
+			return
+		}
 	}
 
 	// Set a read timeout for retry - use adaptive timeout
@@ -565,8 +563,6 @@ func (s *TunnelServer) isMediaRequest(requestData []byte) bool {
 
 	return false
 }
-
-
 
 // proxyMediaRequest handles media requests with optimized streaming through the tunnel
 func (s *TunnelServer) proxyMediaRequest(domain string, clientConn net.Conn, requestData []byte, requestBody io.Reader) {
@@ -653,7 +649,7 @@ func (s *TunnelServer) proxyMediaRequest(domain string, clientConn net.Conn, req
 	// Read the HTTP response from the tunnel
 	tunnelReader := bufio.NewReader(tunnelConn.GetConn())
 
-			// Parse the response with error handling
+	// Parse the response with error handling
 	response, err := http.ReadResponse(tunnelReader, nil)
 	if err != nil {
 		s.logger.Error("[MEDIA PROXY] Error reading response from tunnel: %v", err)
@@ -867,7 +863,7 @@ func (s *TunnelServer) recordTimeout() {
 	s.logger.Debug("[CIRCUIT BREAKER] Recorded timeout #%d", timeouts)
 }
 
-	// recycleOldConnections proactively recycles connections that might be getting stuck
+// recycleOldConnections proactively recycles connections that might be getting stuck
 func (s *TunnelServer) recycleOldConnections(domain string) {
 	connections := s.connections.GetAllHTTPConnections(domain)
 	recycledCount := 0
@@ -1066,10 +1062,10 @@ func (s *TunnelServer) getConnectionMemoryOverhead() float64 {
 	// - Application buffers: MediaBufferSize + RegularBufferSize
 	// - Connection struct + metadata: ~1KB
 
-	tcpBuffers := 16.0 * 1024  // 16KB kernel buffers
-	tlsBuffers := 32.0 * 1024  // 32KB TLS buffers
+	tcpBuffers := 16.0 * 1024 // 16KB kernel buffers
+	tlsBuffers := 32.0 * 1024 // 32KB TLS buffers
 	appBuffers := float64(s.streamConfig.MediaBufferSize + s.streamConfig.RegularBufferSize)
-	metadata := 1.0 * 1024     // 1KB struct overhead
+	metadata := 1.0 * 1024 // 1KB struct overhead
 
 	totalBytesPerConn := tcpBuffers + tlsBuffers + appBuffers + metadata
 	return totalBytesPerConn / 1024.0 / 1024.0 // Convert to MB

@@ -8,14 +8,15 @@ import (
 
 // Handlers contains all the route handlers
 type Handlers struct {
-	Auth    *handlers.AuthHandler
-	User    *handlers.UserHandler
-	Health  *handlers.HealthHandler
-	Session *handlers.SessionHandler
-	Token   *handlers.TokenHandler
-	Tunnel  *handlers.TunnelHandler
+	Auth              *handlers.AuthHandler
+	User              *handlers.UserHandler
+	Health            *handlers.HealthHandler
+	Session           *handlers.SessionHandler
+	Token             *handlers.TokenHandler
+	Tunnel            *handlers.TunnelHandler
 	TunnelCertificate *handlers.TunnelCertificateHandler
-	Webhook *handlers.WebhookHandler
+	Webhook           *handlers.WebhookHandler
+	Admin             *handlers.AdminHandler
 }
 
 // Middleware contains all the middleware

@@ -12,8 +12,6 @@ import (
 	"google.golang.org/grpc"
 )
 
-
-
 const (
 	// DefaultChunkSize is the default chunk size for streaming (4MB for faster transfers)
 	DefaultChunkSize = 4 * 1024 * 1024
@@ -148,12 +146,12 @@ func (s *GRPCTunnelServer) streamResponseInChunks(
 
 		// Create chunk message
 		chunk := &proto.LargeFileChunk{
-			RequestId:    requestID,
-			ChunkNumber:  int32(i + 1),
-			Data:         chunkData,
-			IsFinal:      isLastChunk,
-			TotalSize:    totalSize,
-			ContentType:  headers["Content-Type"],
+			RequestId:   requestID,
+			ChunkNumber: int32(i + 1),
+			Data:        chunkData,
+			IsFinal:     isLastChunk,
+			TotalSize:   totalSize,
+			ContentType: headers["Content-Type"],
 		}
 
 		// Include HTTP headers and status only in the first chunk
@@ -212,7 +210,7 @@ func (s *GRPCTunnelServer) isLargeFileRequest(httpReq *http.Request) bool {
 		}
 	}
 
-		// 2. Second priority: File extensions that are typically large (>16MB)
+	// 2. Second priority: File extensions that are typically large (>16MB)
 	path := strings.ToLower(httpReq.URL.Path)
 	typicallyLargeExtensions := []string{
 		// Video files - almost always >16MB
@@ -344,7 +342,7 @@ func (s *GRPCTunnelServer) handleLargeFileWithChunking(domain string, httpReq *h
 func (s *GRPCTunnelServer) collectChunkedResponse(tunnelStream *TunnelStream, req *proto.LargeFileRequest) (*http.Response, error) {
 	s.logger.Debug("[CHUNKED] 📦 Starting MEMORY-EFFICIENT chunk collection for request: %s", req.RequestId)
 
-		// Create response channel and register it in pendingRequests (CRITICAL!)
+	// Create response channel and register it in pendingRequests (CRITICAL!)
 	responseChan := make(chan *proto.TunnelMessage, 250) // Larger buffer for faster streaming
 
 	tunnelStream.requestsMux.Lock()
@@ -407,7 +405,7 @@ func (s *GRPCTunnelServer) collectChunkedResponse(tunnelStream *TunnelStream, re
 		var firstChunk *proto.HTTPResponse
 		chunkCount := 0
 
-				// Set timeout for chunk collection (reasonable timeout - activity tracking prevents tunnel timeout)
+		// Set timeout for chunk collection (reasonable timeout - activity tracking prevents tunnel timeout)
 		timeout := time.After(2 * time.Minute) // 2 minutes max - fail fast if broken
 
 		for {
@@ -416,7 +414,7 @@ func (s *GRPCTunnelServer) collectChunkedResponse(tunnelStream *TunnelStream, re
 				errorCh <- fmt.Errorf("timeout waiting for chunked response after 2 minutes")
 				return
 
-						case response, ok := <-responseChan:
+			case response, ok := <-responseChan:
 				if !ok {
 					s.logger.Info("[CHUNKED] 🔌 Response channel closed during tunnel disconnection - stopping chunk collection")
 					errorCh <- fmt.Errorf("tunnel disconnected during chunked response collection")
@@ -454,7 +452,7 @@ func (s *GRPCTunnelServer) collectChunkedResponse(tunnelStream *TunnelStream, re
 								return
 							}
 
-														s.logger.Debug("[CHUNKED] 📥 Streamed chunk %d (%d bytes) directly to pipe",
+							s.logger.Debug("[CHUNKED] 📥 Streamed chunk %d (%d bytes) directly to pipe",
 								chunkCount, len(chunk.Body))
 
 							// Update activity for each chunk to keep tunnel alive during large transfers

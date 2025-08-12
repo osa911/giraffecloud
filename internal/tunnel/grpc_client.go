@@ -24,10 +24,10 @@ import (
 // This replaces the connection pooling with a single high-performance stream
 type GRPCTunnelClient struct {
 	// Connection details
-	serverAddr    string
-	domain        string
-	targetPort    int32
-	token         string
+	serverAddr string
+	domain     string
+	targetPort int32
+	token      string
 
 	// gRPC connection
 	conn   *grpc.ClientConn
@@ -35,24 +35,24 @@ type GRPCTunnelClient struct {
 	stream proto.TunnelService_EstablishTunnelClient
 
 	// State management
-	connected     bool
-	connecting    bool
-	stopping      bool // Prevent auto-reconnection during shutdown
-	mu            sync.RWMutex
-	stopChan      chan struct{}
-	ctx           context.Context
-	cancel        context.CancelFunc
+	connected  bool
+	connecting bool
+	stopping   bool // Prevent auto-reconnection during shutdown
+	mu         sync.RWMutex
+	stopChan   chan struct{}
+	ctx        context.Context
+	cancel     context.CancelFunc
 
 	// Request handling
-	requestHandler    func(*proto.TunnelMessage) error
-	responseChannels  map[string]chan *proto.TunnelMessage
+	requestHandler     func(*proto.TunnelMessage) error
+	responseChannels   map[string]chan *proto.TunnelMessage
 	responseChannelsMu sync.RWMutex
 
 	// Metrics
-	totalRequests   int64
-	totalResponses  int64
-	totalErrors     int64
-	reconnectCount  int64
+	totalRequests  int64
+	totalResponses int64
+	totalErrors    int64
+	reconnectCount int64
 
 	// Configuration
 	config *GRPCClientConfig
@@ -62,10 +62,10 @@ type GRPCTunnelClient struct {
 // GRPCClientConfig holds configuration for the gRPC client
 type GRPCClientConfig struct {
 	// Connection settings
-	ConnectTimeout    time.Duration
-	RequestTimeout    time.Duration
-	KeepAliveTime     time.Duration
-	KeepAliveTimeout  time.Duration
+	ConnectTimeout   time.Duration
+	RequestTimeout   time.Duration
+	KeepAliveTime    time.Duration
+	KeepAliveTimeout time.Duration
 
 	// Retry settings
 	MaxReconnectAttempts int
@@ -76,8 +76,8 @@ type GRPCClientConfig struct {
 	InsecureSkipVerify bool
 
 	// Performance settings
-	MaxMessageSize     int
-	EnableCompression  bool
+	MaxMessageSize    int
+	EnableCompression bool
 }
 
 // DefaultGRPCClientConfig returns default client configuration
@@ -90,7 +90,7 @@ func DefaultGRPCClientConfig() *GRPCClientConfig {
 		MaxReconnectAttempts: -1, // Infinite retries
 		ReconnectDelay:       1 * time.Second,
 		BackoffMultiplier:    1.5,
-		InsecureSkipVerify:   false, // PRODUCTION: Use proper certificate validation
+		InsecureSkipVerify:   false,            // PRODUCTION: Use proper certificate validation
 		MaxMessageSize:       16 * 1024 * 1024, // 16MB - small files only, large files use chunked streaming
 		EnableCompression:    true,
 	}
@@ -195,6 +195,8 @@ func (c *GRPCTunnelClient) IsConnected() bool {
 
 // connect establishes the gRPC connection and stream
 func (c *GRPCTunnelClient) connect() error {
+	// Ensure consistent config home when running under elevated context
+	EnsureConsistentConfigHome()
 	// PRODUCTION-GRADE: Load configuration and REQUIRE proper certificates
 	cfg, err := LoadConfig()
 	if err != nil {
@@ -212,10 +214,10 @@ func (c *GRPCTunnelClient) connect() error {
 	// CRITICAL: Force fresh TLS state by disabling session resumption during reconnection
 	// This prevents ERR_SSL_PROTOCOL_ERROR after server restarts
 	tlsConfig = tlsConfig.Clone()
-	tlsConfig.ClientSessionCache = nil                             // Completely disable session cache
-	tlsConfig.SessionTicketsDisabled = true                       // Disable session tickets
-	tlsConfig.Renegotiation = tls.RenegotiateNever                 // Disable renegotiation
-	tlsConfig.Time = func() time.Time { return time.Now() }       // Force fresh time for each connection
+	tlsConfig.ClientSessionCache = nil                      // Completely disable session cache
+	tlsConfig.SessionTicketsDisabled = true                 // Disable session tickets
+	tlsConfig.Renegotiation = tls.RenegotiateNever          // Disable renegotiation
+	tlsConfig.Time = func() time.Time { return time.Now() } // Force fresh time for each connection
 
 	// Create gRPC connection
 	dialOpts := []grpc.DialOption{
@@ -281,16 +283,16 @@ func (c *GRPCTunnelClient) sendHandshake() error {
 			Control: &proto.TunnelControl{
 				ControlType: &proto.TunnelControl_Handshake{
 					Handshake: &proto.TunnelHandshake{
-						Token:          c.token,
-						Domain:         c.domain,
-						TargetPort:     c.targetPort,
+						Token:      c.token,
+						Domain:     c.domain,
+						TargetPort: c.targetPort,
 						Capabilities: &proto.TunnelCapabilities{
 							SupportsChunkedStreaming: true,
 							SupportsCompression:      true,
-							MaxChunkSize:            1024 * 1024, // 1MB chunks
-							SupportedEncodings:      []string{"gzip", "deflate"},
+							MaxChunkSize:             1024 * 1024, // 1MB chunks
+							SupportedEncodings:       []string{"gzip", "deflate"},
 						},
-						ClientVersion:  "1.0.0",
+						ClientVersion: "1.0.0",
 					},
 				},
 			},
@@ -354,6 +356,15 @@ func (c *GRPCTunnelClient) saveHandshakeResponseToConfig(status *proto.TunnelSta
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
+
+	c.logger.Info("🔐 PRODUCTION-GRADE: Saving handshake response to config")
+	if path, err := GetConfigPath(); err == nil {
+		c.logger.Info("Config path: %s", path)
+	}
+	c.logger.Info("domain: %s", status.Domain)
+	c.logger.Info("config domain: %s", cfg.Domain)
+	c.logger.Info("target port: %d", status.TargetPort)
+	c.logger.Info("config target port: %d", cfg.LocalPort)
 
 	// Update only if server provided the values (like old handshake)
 	updated := false
@@ -492,7 +503,7 @@ func (c *GRPCTunnelClient) shouldUseChunkedStreaming(httpReq *proto.HTTPRequest)
 		return true
 	}
 
-		// Check file extensions that are typically large (>16MB)
+	// Check file extensions that are typically large (>16MB)
 	path := strings.ToLower(httpReq.Path)
 	typicallyLargeExtensions := []string{
 		// Video files - almost always >16MB
@@ -604,7 +615,7 @@ func (c *GRPCTunnelClient) makeLocalServiceRequest(httpReq *proto.HTTPRequest) (
 
 // streamResponseInChunks streams large responses in chunks for unlimited file size
 func (c *GRPCTunnelClient) streamResponseInChunks(requestID string, response *http.Response) error {
-	const ChunkSize = 4 * 1024 * 1024 // 4MB chunks for faster streaming
+	const ChunkSize = 4 * 1024 * 1024         // 4MB chunks for faster streaming
 	const MaxStreamingTime = 10 * time.Minute // Maximum time for entire streaming
 
 	c.logger.Info("[CHUNKED CLIENT] 📡 Streaming response in %dKB chunks (UNLIMITED SIZE)", ChunkSize/1024)
@@ -687,8 +698,8 @@ func (c *GRPCTunnelClient) streamResponseInChunks(requestID string, response *ht
 
 				// If stream send fails, trigger reconnection to recover
 				if strings.Contains(sendErr.Error(), "EOF") ||
-				   strings.Contains(sendErr.Error(), "connection") ||
-				   strings.Contains(sendErr.Error(), "stream") {
+					strings.Contains(sendErr.Error(), "connection") ||
+					strings.Contains(sendErr.Error(), "stream") {
 					c.logger.Warn("[CHUNKED CLIENT] 🔌 Stream error detected, triggering reconnection")
 				}
 
@@ -701,8 +712,8 @@ func (c *GRPCTunnelClient) streamResponseInChunks(requestID string, response *ht
 		// Check for end of file
 		if err == io.EOF {
 			// Calculate and log streaming performance
-	totalMB := float64(chunkNum * ChunkSize) / (1024 * 1024)
-	c.logger.Info("[CHUNKED CLIENT] 🎉 Completed streaming %d chunks (%.1f MB) for large file", chunkNum, totalMB)
+			totalMB := float64(chunkNum*ChunkSize) / (1024 * 1024)
+			c.logger.Info("[CHUNKED CLIENT] 🎉 Completed streaming %d chunks (%.1f MB) for large file", chunkNum, totalMB)
 			break
 		} else if err != nil {
 			c.logger.Error("[CHUNKED CLIENT] Error reading response: %v", err)
@@ -911,12 +922,12 @@ func (c *GRPCTunnelClient) reconnect() {
 // GetMetrics returns current client metrics
 func (c *GRPCTunnelClient) GetMetrics() map[string]interface{} {
 	return map[string]interface{}{
-		"connected":        c.connected,
-		"total_requests":   atomic.LoadInt64(&c.totalRequests),
-		"total_responses":  atomic.LoadInt64(&c.totalResponses),
-		"total_errors":     atomic.LoadInt64(&c.totalErrors),
-		"reconnect_count":  atomic.LoadInt64(&c.reconnectCount),
-		"domain":           c.domain,
-		"target_port":      c.targetPort,
+		"connected":       c.connected,
+		"total_requests":  atomic.LoadInt64(&c.totalRequests),
+		"total_responses": atomic.LoadInt64(&c.totalResponses),
+		"total_errors":    atomic.LoadInt64(&c.totalErrors),
+		"reconnect_count": atomic.LoadInt64(&c.reconnectCount),
+		"domain":          c.domain,
+		"target_port":     c.targetPort,
 	}
 }

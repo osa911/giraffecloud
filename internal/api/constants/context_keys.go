@@ -3,9 +3,9 @@ package constants
 // Context keys for validated requests
 const (
 	// Auth context keys
-	ContextKeyLogin        = "login"
-	ContextKeyRegister     = "register"
-	ContextKeyVerifyToken  = "verifyToken"
+	ContextKeyLogin       = "login"
+	ContextKeyRegister    = "register"
+	ContextKeyVerifyToken = "verifyToken"
 
 	// User context keys
 	ContextKeyUpdateProfile = "updateProfile"

@@ -15,5 +15,5 @@ func SetupProtectedRoutes(router *gin.RouterGroup, h *Handlers, m *Middleware) {
 	SetupUserRoutes(protected, h.User, m.Validation)
 	SetupSessionRoutes(protected, h.Session)
 	SetupTokenRoutes(protected, h.Token)
-	SetupTunnelRoutes(protected, m, h)
+	// Note: Tunnel routes are set up separately in routes.go to handle both public and protected endpoints
 }

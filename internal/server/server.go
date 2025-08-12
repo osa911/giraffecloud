@@ -47,9 +47,9 @@ func newServerManager(router *gin.Engine, tunnelRouter *tunnel.HybridTunnelRoute
 		httpServer.MaxHeaderBytes = 1 << 20 // 1MB
 	} else {
 		// Development settings - more lenient timeouts for debugging
-		httpServer.ReadTimeout = 120 * time.Second    // Longer timeout for debugging
-		httpServer.WriteTimeout = 120 * time.Second   // Longer timeout for debugging
-		httpServer.IdleTimeout = 180 * time.Second    // Longer idle timeout
+		httpServer.ReadTimeout = 120 * time.Second  // Longer timeout for debugging
+		httpServer.WriteTimeout = 120 * time.Second // Longer timeout for debugging
+		httpServer.IdleTimeout = 180 * time.Second  // Longer idle timeout
 		httpServer.ReadHeaderTimeout = 30 * time.Second
 		httpServer.MaxHeaderBytes = 1 << 20 // 1MB
 	}
@@ -159,7 +159,13 @@ func (s *Server) Init() error {
 	logger.Info("Initializing core services...")
 	auditService := service.NewAuditService()
 	csrfService := service.NewCSRFService()
+	versionService := service.NewVersionService(s.db.DB)
 	logger.Info("Core services initialized")
+
+	// Initialize default version configurations
+	if err := versionService.InitializeDefaultConfigs(context.Background()); err != nil {
+		logger.Warn("Failed to initialize default version configs: %v", err)
+	}
 
 	// Initialize connection manager
 	logger.Info("Initializing connection manager...")
@@ -242,8 +248,10 @@ func (s *Server) Init() error {
 		Health:            handlers.NewHealthHandler(s.db.DB),
 		Session:           handlers.NewSessionHandler(repos.Session),
 		Token:             handlers.NewTokenHandler(tokenService),
-		Tunnel:            handlers.NewTunnelHandler(tunnelService),
+		Tunnel:            handlers.NewTunnelHandler(tunnelService, versionService),
+		TunnelCertificate: handlers.NewTunnelCertificateHandler(),
 		Webhook:           handlers.NewWebhookHandler(),
+		Admin:             handlers.NewAdminHandler(versionService),
 	}
 	logger.Info("Handlers initialized")
 
@@ -382,9 +390,9 @@ func (s *Server) Start(cfg *Config) error {
 			Addr:    ":8081",
 			Handler: httpHandler,
 			// Add timeouts to prevent hanging connections
-			ReadTimeout:    30 * time.Second,
-			WriteTimeout:   30 * time.Second,
-			IdleTimeout:    60 * time.Second,
+			ReadTimeout:  30 * time.Second,
+			WriteTimeout: 30 * time.Second,
+			IdleTimeout:  60 * time.Second,
 		}
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Error("HTTP hijack server error: %v", err)

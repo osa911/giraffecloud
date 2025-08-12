@@ -8,6 +8,35 @@ import (
 )
 
 var (
+	// ClientVersionsColumns holds the columns for the "client_versions" table.
+	ClientVersionsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true},
+		{Name: "channel", Type: field.TypeString, Default: "stable"},
+		{Name: "platform", Type: field.TypeString, Default: "all"},
+		{Name: "arch", Type: field.TypeString, Default: "all"},
+		{Name: "latest_version", Type: field.TypeString},
+		{Name: "minimum_version", Type: field.TypeString},
+		{Name: "download_url", Type: field.TypeString},
+		{Name: "release_notes", Type: field.TypeString, Nullable: true},
+		{Name: "auto_update_enabled", Type: field.TypeBool, Default: true},
+		{Name: "force_update", Type: field.TypeBool, Default: false},
+		{Name: "metadata", Type: field.TypeJSON, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// ClientVersionsTable holds the schema information for the "client_versions" table.
+	ClientVersionsTable = &schema.Table{
+		Name:       "client_versions",
+		Columns:    ClientVersionsColumns,
+		PrimaryKey: []*schema.Column{ClientVersionsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "clientversion_channel_platform_arch",
+				Unique:  true,
+				Columns: []*schema.Column{ClientVersionsColumns[1], ClientVersionsColumns[2], ClientVersionsColumns[3]},
+			},
+		},
+	}
 	// SessionsColumns holds the columns for the "sessions" table.
 	SessionsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeUint32, Increment: true},
@@ -108,6 +137,7 @@ var (
 	}
 	// Tables holds all the tables in the schema.
 	Tables = []*schema.Table{
+		ClientVersionsTable,
 		SessionsTable,
 		TokensTable,
 		TunnelsTable,
