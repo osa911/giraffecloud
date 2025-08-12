@@ -326,8 +326,8 @@ func (s *GRPCTunnelServer) handleLargeFileWithChunking(domain string, httpReq *h
 		return nil, fmt.Errorf("no active tunnel for domain: %s", domain)
 	}
 
-	// Convert HTTP request to protobuf (regular conversion)
-	protoReq, err := s.httpToGRPC(httpReq, clientIP)
+	// Convert HTTP request to protobuf HEADERS ONLY (do not read body)
+	protoReq, err := s.httpToGRPCHeadersOnly(httpReq, clientIP)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert HTTP request: %w", err)
 	}
@@ -335,9 +335,9 @@ func (s *GRPCTunnelServer) handleLargeFileWithChunking(domain string, httpReq *h
 	// Mark as large file for client-side chunked streaming
 	protoReq.GetHttpRequest().IsLargeFile = true
 
-	// Create large file request with a new request id for chunked response
+	// Create large file request (reuse the EstablishTunnel stream for request chunks)
 	largeFileReq := &proto.LargeFileRequest{
-		RequestId:         fmt.Sprintf("chunk-%d", time.Now().UnixNano()),
+		RequestId:         protoReq.RequestId,
 		HttpRequest:       protoReq.GetHttpRequest(),
 		ChunkSize:         DefaultChunkSize,
 		EnableCompression: true,
@@ -346,11 +346,11 @@ func (s *GRPCTunnelServer) handleLargeFileWithChunking(domain string, httpReq *h
 	s.logger.Debug("[CHUNKED] Sending large file request to client: %s", httpReq.URL.Path)
 
 	// Send large file request to client and collect chunked response
-	return s.collectChunkedResponse(tunnelStream, largeFileReq)
+	return s.collectChunkedResponse(tunnelStream, largeFileReq, httpReq.Body)
 }
 
 // collectChunkedResponse sends large file request to client and streams response with minimal memory usage
-func (s *GRPCTunnelServer) collectChunkedResponse(tunnelStream *TunnelStream, req *proto.LargeFileRequest) (*http.Response, error) {
+func (s *GRPCTunnelServer) collectChunkedResponse(tunnelStream *TunnelStream, req *proto.LargeFileRequest, requestBody io.Reader) (*http.Response, error) {
 	s.logger.Debug("[CHUNKED] 📦 Starting MEMORY-EFFICIENT chunk collection for request: %s", req.RequestId)
 
 	// Create response channel and register it in pendingRequests (CRITICAL!)
@@ -363,7 +363,11 @@ func (s *GRPCTunnelServer) collectChunkedResponse(tunnelStream *TunnelStream, re
 	// Note: Channel cleanup is handled by the goroutine when streaming completes
 	// We don't clean up here because the streaming response needs the channel to stay open
 
-	// Note: we do not upload request bodies via gRPC chunking in this path
+	// Mark start of upload streaming
+	if req.HttpRequest.Headers == nil {
+		req.HttpRequest.Headers = make(map[string]string)
+	}
+	req.HttpRequest.Headers["X-Giraffe-Upload-Phase"] = "start"
 
 	// Send the large file HTTP request to the client (marked as large file)
 	requestMsg := &proto.TunnelMessage{
@@ -384,6 +388,69 @@ func (s *GRPCTunnelServer) collectChunkedResponse(tunnelStream *TunnelStream, re
 	tunnelStream.mu.Lock()
 	tunnelStream.lastActivity = time.Now()
 	tunnelStream.mu.Unlock()
+
+	// Start goroutine to stream the incoming upload body to client as request chunks
+	if requestBody != nil {
+		go func() {
+			buf := make([]byte, DefaultChunkSize)
+			chunkNum := 0
+			for {
+				n, readErr := requestBody.Read(buf)
+				if n > 0 {
+					chunkNum++
+					data := make([]byte, n)
+					copy(data, buf[:n])
+
+					// Send chunk as another HTTPRequest message carrying body data
+					chunkReq := &proto.HTTPRequest{
+						IsLargeFile: true,
+						Body:        data,
+						Headers:     map[string]string{"X-Giraffe-Upload-Phase": "chunk"},
+					}
+					chunkMsg := &proto.TunnelMessage{
+						RequestId:   req.RequestId,
+						Timestamp:   time.Now().Unix(),
+						MessageType: &proto.TunnelMessage_HttpRequest{HttpRequest: chunkReq},
+					}
+
+					if err := tunnelStream.Stream.Send(chunkMsg); err != nil {
+						s.logger.Error("[CHUNKED] Failed to send request chunk %d: %v", chunkNum, err)
+						return
+					}
+
+					// Update activity
+					tunnelStream.mu.Lock()
+					tunnelStream.lastActivity = time.Now()
+					tunnelStream.mu.Unlock()
+				}
+
+				if readErr == io.EOF {
+					// Send final chunk marker as empty-body HTTPRequest with final header
+					finalReq := &proto.HTTPRequest{
+						IsLargeFile: true,
+						Body:        nil,
+						Headers:     map[string]string{"X-Giraffe-Upload-Phase": "final"},
+					}
+					finalMsg := &proto.TunnelMessage{
+						RequestId:   req.RequestId,
+						Timestamp:   time.Now().Unix(),
+						MessageType: &proto.TunnelMessage_HttpRequest{HttpRequest: finalReq},
+					}
+					if err := tunnelStream.Stream.Send(finalMsg); err != nil {
+						s.logger.Error("[CHUNKED] Failed to send final request chunk: %v", err)
+					} else {
+						s.logger.Info("[CHUNKED] ✅ Finished sending %d upload chunks for request %s", chunkNum, req.RequestId)
+					}
+					return
+				}
+
+				if readErr != nil {
+					s.logger.Error("[CHUNKED] Error reading upload body: %v", readErr)
+					return
+				}
+			}
+		}()
+	}
 
 	// Create a streaming pipe for memory-efficient processing
 	pipeReader, pipeWriter := io.Pipe()

@@ -44,9 +44,9 @@ type GRPCTunnelClient struct {
 	cancel     context.CancelFunc
 
 	// Request handling
-	requestHandler   func(*proto.TunnelMessage) error
-	responseChannels map[string]chan *proto.TunnelMessage
-	// Upload chunk routing removed in rollback; TCP handles uploads for now
+	requestHandler     func(*proto.TunnelMessage) error
+	responseChannels   map[string]chan *proto.TunnelMessage
+	responseChannelsMu sync.RWMutex
 
 	// Metrics
 	totalRequests  int64
@@ -445,9 +445,7 @@ func (c *GRPCTunnelClient) handleIncomingMessages() {
 func (c *GRPCTunnelClient) handleMessage(msg *proto.TunnelMessage) error {
 	switch msgType := msg.MessageType.(type) {
 	case *proto.TunnelMessage_HttpRequest:
-		// If this is an upload-phase message for an existing request, route it to upload channel
-		// No upload-channel routing in rollback mode
-		// Handle regular HTTP request from server
+		// Handle HTTP request from server
 		return c.handleHTTPRequest(msg)
 
 	case *proto.TunnelMessage_Control:
@@ -548,8 +546,46 @@ func (c *GRPCTunnelClient) shouldUseChunkedStreaming(httpReq *proto.HTTPRequest)
 func (c *GRPCTunnelClient) forwardLargeFileWithChunking(msg *proto.TunnelMessage, httpReq *proto.HTTPRequest) error {
 	c.logger.Info("[CHUNKED CLIENT] 📦 Implementing chunked upload+response streaming for unlimited size")
 
-	// Make request to local service (no upload streaming here; uploads should go via TCP)
-	response, err := c.makeLocalServiceRequest(httpReq)
+	// Create a pipe to stream request body from server chunks into local request
+	pr, pw := io.Pipe()
+	defer pr.Close()
+
+	// Start goroutine to receive request body messages from server and write into pipe
+	go func(requestID string) {
+		defer pw.Close()
+		for {
+			// Receive next message from stream until we get our chunk or something else
+			incoming, err := c.stream.Recv()
+			if err != nil {
+				c.logger.Error("[CHUNKED CLIENT] Failed to receive upload chunk: %v", err)
+				return
+			}
+			if hreq := incoming.GetHttpRequest(); hreq != nil && incoming.RequestId == requestID && hreq.IsLargeFile {
+				phase := strings.ToLower(hreq.Headers["X-Giraffe-Upload-Phase"])
+				if phase == "chunk" && len(hreq.Body) > 0 {
+					if _, werr := pw.Write(hreq.Body); werr != nil {
+						c.logger.Error("[CHUNKED CLIENT] Failed to write upload chunk: %v", werr)
+						return
+					}
+					continue
+				}
+				if phase == "final" {
+					c.logger.Info("[CHUNKED CLIENT] ✅ Completed receiving upload chunks for %s", requestID)
+					return
+				}
+				// Ignore 'start' marker
+				continue
+			}
+
+			// If it's not our chunk, handle normally (may be control or response for other request)
+			if err := c.handleMessage(incoming); err != nil {
+				c.logger.Warn("[CHUNKED CLIENT] Side message handling error: %v", err)
+			}
+		}
+	}(msg.RequestId)
+
+	// Make request to local service using the pipe as Body
+	response, err := c.makeLocalServiceRequestWithBody(httpReq, pr)
 	if err != nil {
 		return c.sendErrorResponse(msg.RequestId, fmt.Sprintf("Local service request failed: %v", err))
 	}
