@@ -297,10 +297,10 @@ func (r *HybridTunnelRouter) analyzeRequest(requestData []byte) (isWebSocket boo
 		}
 	}
 
-	// Check for large files that should use TCP streaming instead of gRPC
+	// Check for large files that should use gRPC chunked streaming (downloads)
 	if r.isLargeFile(path) {
-		isWebSocket = true // Route to TCP tunnel for streaming
-		r.logger.Debug("[HYBRID] Path %s detected as large file, routing to TCP for streaming", path)
+		isWebSocket = true // Mark as special handling to divert from normal gRPC path
+		r.logger.Debug("[HYBRID] Path %s detected as large file, routing to gRPC chunked streaming", path)
 		return isWebSocket, method, path
 	}
 
