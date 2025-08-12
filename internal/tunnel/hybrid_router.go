@@ -172,8 +172,8 @@ func (r *HybridTunnelRouter) ProxyConnection(domain string, conn net.Conn, reque
 		if isActualWebSocket {
 			r.routeToTCPTunnel(domain, conn, requestData, requestBody, clientIP)
 		} else {
-			// Large file - route to gRPC chunked streaming (works without TCP tunnel)
-			r.routeToGRPCChunkedStreaming(domain, conn, requestData, requestBody, clientIP, httpMethod, requestPath)
+			// Large file - use legacy TCP streaming for stability and performance
+			r.routeToTCPForLargeFile(domain, conn, requestData, requestBody, clientIP, httpMethod, requestPath)
 		}
 	} else {
 		r.routeToGRPCTunnel(domain, conn, requestData, requestBody, clientIP, httpMethod, requestPath)
