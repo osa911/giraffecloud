@@ -288,17 +288,17 @@ func (s *GRPCTunnelServer) estimateResponseSize(httpReq *http.Request) int64 {
 // ProxyHTTPRequestWithChunking handles HTTP requests with intelligent routing
 // PERFECT BINARY SPLIT: ≤16MB = Regular gRPC (16MB), >16MB = Unlimited Chunked Streaming
 func (s *GRPCTunnelServer) ProxyHTTPRequestWithChunking(domain string, httpReq *http.Request, clientIP string) (*http.Response, error) {
+	// Always stream uploads via Start/Chunk/End to avoid 16MB gRPC limits
+	switch strings.ToUpper(httpReq.Method) {
+	case http.MethodPost, http.MethodPut, http.MethodPatch:
+		return s.handleLargeFileUploadWithStreaming(domain, httpReq, clientIP)
+	}
+
 	// Check if this should use chunked streaming for unlimited size
 	if s.isLargeFileRequest(httpReq) {
 		s.logger.Info("[CHUNKED] 🚀 Large file (>16MB) detected → UNLIMITED chunked streaming: %s %s",
 			httpReq.Method, httpReq.URL.Path)
 
-		// Split by method: uploads vs downloads
-		method := strings.ToUpper(httpReq.Method)
-		if method == http.MethodPost || method == http.MethodPut || method == http.MethodPatch {
-			// Upload path: Start/Chunk/End without sending an extra HTTPRequest
-			return s.handleLargeFileUploadWithStreaming(domain, httpReq, clientIP)
-		}
 		// Download path: old LargeFileRequest flow
 		return s.handleLargeFileDownloadWithChunking(domain, httpReq, clientIP)
 	}
