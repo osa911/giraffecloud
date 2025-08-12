@@ -246,27 +246,15 @@ func (s *AutoUpdateService) performUpdate(updateInfo *UpdateInfo) error {
 func (s *AutoUpdateService) restartServiceGracefully() error {
 	s.logger.Info("Gracefully restarting service...")
 
-	// Try restart first (most services support this)
-	if err := s.serviceManager.Restart(); err == nil {
-		s.logger.Info("Service restarted successfully")
-		return nil
+	// Issue a single restart command. Avoid stop/start fallback because
+	// when invoked from within the running service process, a stop will
+	// terminate this process before it can execute the subsequent start.
+	if err := s.serviceManager.Restart(); err != nil {
+		s.logger.Error("Service restart command failed: %v", err)
+		return err
 	}
 
-	// Fallback: stop and start
-	s.logger.Info("Restart failed, trying stop and start...")
-
-	if err := s.serviceManager.Stop(); err != nil {
-		s.logger.Warn("Failed to stop service: %v", err)
-	}
-
-	// Wait a moment for the service to stop
-	time.Sleep(2 * time.Second)
-
-	if err := s.serviceManager.Start(); err != nil {
-		return fmt.Errorf("failed to start service: %w", err)
-	}
-
-	s.logger.Info("Service stopped and started successfully")
+	s.logger.Info("Service restart command issued successfully")
 	return nil
 }
 
