@@ -25,7 +25,6 @@ message TunnelMessage {
         TunnelControl control = 4;
         ErrorMessage error = 5;
         TunnelStatus status = 6;
-        HTTPRequestChunk http_request_chunk = 7; // NEW: Request body chunking for uploads
     }
 
     string request_id = 10;
@@ -92,15 +91,6 @@ message LargeFileChunk {
     map<string, string> headers = 7; // HTTP headers (sent with first chunk)
     int32 status_code = 8;   // HTTP status (sent with first chunk)
     string error_message = 9; // Error if chunk failed
-}
-
-// NEW: Chunked HTTP request body for large uploads over the tunnel stream
-message HTTPRequestChunk {
-    string request_id = 1;   // Must match the original HTTPRequest.request_id
-    int32 chunk_number = 2;  // 1-based index
-    bytes data = 3;          // Chunk payload
-    bool is_final = 4;       // Marks last chunk
-    int64 total_size = 5;    // Optional total size if known
 }
 
 // TunnelControl handles tunnel lifecycle management

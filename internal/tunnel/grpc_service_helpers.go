@@ -376,46 +376,6 @@ func (s *GRPCTunnelServer) httpToGRPC(req *http.Request, clientIP string) (*prot
 	return grpcMsg, nil
 }
 
-// httpToGRPCHeadersOnly converts HTTP request to gRPC message without reading body
-// Used for streaming large uploads where the body will be sent in chunks separately
-func (s *GRPCTunnelServer) httpToGRPCHeadersOnly(req *http.Request, clientIP string) (*proto.TunnelMessage, error) {
-	// Convert headers
-	headers := make(map[string]string)
-	for key, values := range req.Header {
-		if len(values) > 0 {
-			headers[key] = values[0]
-		}
-	}
-
-	// Determine request type
-	reqType := proto.RequestType_REQUEST_TYPE_API
-	if strings.Contains(req.URL.Path, "/api/assets/") ||
-		strings.Contains(req.URL.Path, "/media/") ||
-		strings.Contains(req.URL.Path, "/static/") {
-		reqType = proto.RequestType_REQUEST_TYPE_MEDIA
-	}
-
-	grpcMsg := &proto.TunnelMessage{
-		RequestId: generateRequestID(),
-		Timestamp: time.Now().Unix(),
-		MessageType: &proto.TunnelMessage_HttpRequest{
-			HttpRequest: &proto.HTTPRequest{
-				Method:   req.Method,
-				Path:     req.URL.RequestURI(),
-				Headers:  headers,
-				Body:     nil, // Body will be streamed via HTTPRequestChunk messages
-				ClientIp: clientIP,
-				Metadata: &proto.RequestMetadata{
-					Type:     reqType,
-					Priority: proto.Priority_PRIORITY_NORMAL,
-				},
-			},
-		},
-	}
-
-	return grpcMsg, nil
-}
-
 // sendRequestAndWaitResponse sends a request and waits for the response
 func (s *GRPCTunnelServer) sendRequestAndWaitResponse(tunnelStream *TunnelStream, grpcMsg *proto.TunnelMessage) (*http.Response, error) {
 	// Create response channel

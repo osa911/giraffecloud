@@ -544,48 +544,10 @@ func (c *GRPCTunnelClient) shouldUseChunkedStreaming(httpReq *proto.HTTPRequest)
 
 // forwardLargeFileWithChunking handles large file requests with streaming
 func (c *GRPCTunnelClient) forwardLargeFileWithChunking(msg *proto.TunnelMessage, httpReq *proto.HTTPRequest) error {
-	c.logger.Info("[CHUNKED CLIENT] 📦 Implementing chunked upload+response streaming for unlimited size")
+	c.logger.Info("[CHUNKED CLIENT] 📦 Implementing chunked response streaming for unlimited file size")
 
-	// Create a pipe to stream request body from server chunks into local request
-	pr, pw := io.Pipe()
-	defer pr.Close()
-
-	// Start goroutine to receive request body messages from server and write into pipe
-	go func(requestID string) {
-		defer pw.Close()
-		for {
-			// Receive next message from stream until we get our chunk or something else
-			incoming, err := c.stream.Recv()
-			if err != nil {
-				c.logger.Error("[CHUNKED CLIENT] Failed to receive upload chunk: %v", err)
-				return
-			}
-			if hreq := incoming.GetHttpRequest(); hreq != nil && incoming.RequestId == requestID && hreq.IsLargeFile {
-				phase := strings.ToLower(hreq.Headers["X-Giraffe-Upload-Phase"])
-				if phase == "chunk" && len(hreq.Body) > 0 {
-					if _, werr := pw.Write(hreq.Body); werr != nil {
-						c.logger.Error("[CHUNKED CLIENT] Failed to write upload chunk: %v", werr)
-						return
-					}
-					continue
-				}
-				if phase == "final" {
-					c.logger.Info("[CHUNKED CLIENT] ✅ Completed receiving upload chunks for %s", requestID)
-					return
-				}
-				// Ignore 'start' marker
-				continue
-			}
-
-			// If it's not our chunk, handle normally (may be control or response for other request)
-			if err := c.handleMessage(incoming); err != nil {
-				c.logger.Warn("[CHUNKED CLIENT] Side message handling error: %v", err)
-			}
-		}
-	}(msg.RequestId)
-
-	// Make request to local service using the pipe as Body
-	response, err := c.makeLocalServiceRequestWithBody(httpReq, pr)
+	// Make request to local service
+	response, err := c.makeLocalServiceRequest(httpReq)
 	if err != nil {
 		return c.sendErrorResponse(msg.RequestId, fmt.Sprintf("Local service request failed: %v", err))
 	}
@@ -648,38 +610,6 @@ func (c *GRPCTunnelClient) makeLocalServiceRequest(httpReq *proto.HTTPRequest) (
 	c.logger.Debug("[gRPC CLIENT] Local service responded in %v: %d %s",
 		processingTime, resp.StatusCode, httpReq.Path)
 
-	return resp, nil
-}
-
-// makeLocalServiceRequestWithBody creates a local HTTP request with a streaming body
-func (c *GRPCTunnelClient) makeLocalServiceRequestWithBody(httpReq *proto.HTTPRequest, body io.Reader) (*http.Response, error) {
-	url := fmt.Sprintf("http://127.0.0.1:%d%s", c.targetPort, httpReq.Path)
-
-	req, err := http.NewRequest(httpReq.Method, url, body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	for key, value := range httpReq.Headers {
-		req.Header.Set(key, value)
-	}
-
-	// Unknown length since we stream
-	req.ContentLength = -1
-
-	client := &http.Client{Timeout: 10 * time.Minute}
-
-	startTime := time.Now()
-	c.logger.Debug("[gRPC CLIENT] Forwarding streaming upload to local service: %s %s", httpReq.Method, httpReq.Path)
-	resp, err := client.Do(req)
-	processingTime := time.Since(startTime)
-
-	if err != nil {
-		c.logger.Error("[gRPC CLIENT] Local service streaming request failed after %v: %v", processingTime, err)
-		return nil, err
-	}
-
-	c.logger.Debug("[gRPC CLIENT] Local service responded in %v: %d %s", processingTime, resp.StatusCode, httpReq.Path)
 	return resp, nil
 }
 
