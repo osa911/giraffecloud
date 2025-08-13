@@ -447,6 +447,13 @@ func (c *GRPCTunnelClient) handleMessage(msg *proto.TunnelMessage) error {
 	case *proto.TunnelMessage_HttpRequest:
 		// Handle HTTP request from server
 		return c.handleHTTPRequest(msg)
+	case *proto.TunnelMessage_HttpRequestStart:
+		// Initialize streaming upload to local service
+		return c.handleUploadStart(msg)
+	case *proto.TunnelMessage_HttpRequestChunk:
+		return c.handleUploadChunk(msg)
+	case *proto.TunnelMessage_HttpRequestEnd:
+		return c.handleUploadEnd(msg)
 
 	case *proto.TunnelMessage_Control:
 		// Handle control message
@@ -462,6 +469,86 @@ func (c *GRPCTunnelClient) handleMessage(msg *proto.TunnelMessage) error {
 		c.logger.Warn("Unknown message type: %T", msgType)
 		return nil
 	}
+}
+
+// Upload streaming state
+type uploadSession struct {
+	pipeWriter *io.PipeWriter
+}
+
+var (
+	uploadSessions   = make(map[string]*uploadSession)
+	uploadSessionsMu sync.Mutex
+)
+
+func (c *GRPCTunnelClient) handleUploadStart(msg *proto.TunnelMessage) error {
+	start := msg.GetHttpRequestStart()
+	if start == nil {
+		return nil
+	}
+
+	pr, pw := io.Pipe()
+
+	// Build local request without Content-Length
+	url := fmt.Sprintf("http://127.0.0.1:%d%s", c.targetPort, start.Path)
+	req, err := http.NewRequest(start.Method, url, pr)
+	if err != nil {
+		pw.Close()
+		return c.sendErrorResponse(msg.RequestId, fmt.Sprintf("failed to create local request: %v", err))
+	}
+	for k, v := range start.Headers {
+		req.Header.Set(k, v)
+	}
+	req.ContentLength = -1
+
+	// Save session before starting request
+	uploadSessionsMu.Lock()
+	uploadSessions[msg.RequestId] = &uploadSession{pipeWriter: pw}
+	uploadSessionsMu.Unlock()
+
+	// Send to local service asynchronously; stream response back
+	go func(requestID string) {
+		defer pr.Close()
+		resp, err := (&http.Client{Timeout: 10 * time.Minute}).Do(req)
+		if err != nil {
+			c.sendErrorResponse(requestID, fmt.Sprintf("Local service request failed: %v", err))
+			return
+		}
+		defer resp.Body.Close()
+		c.streamResponseInChunks(requestID, resp)
+	}(msg.RequestId)
+
+	return nil
+}
+
+func (c *GRPCTunnelClient) handleUploadChunk(msg *proto.TunnelMessage) error {
+	chunk := msg.GetHttpRequestChunk()
+	if chunk == nil {
+		return nil
+	}
+	uploadSessionsMu.Lock()
+	sess := uploadSessions[msg.RequestId]
+	uploadSessionsMu.Unlock()
+	if sess == nil || sess.pipeWriter == nil {
+		return nil
+	}
+	if len(chunk.Data) > 0 {
+		if _, err := sess.pipeWriter.Write(chunk.Data); err != nil {
+			return c.sendErrorResponse(msg.RequestId, fmt.Sprintf("Failed to write upload chunk: %v", err))
+		}
+	}
+	return nil
+}
+
+func (c *GRPCTunnelClient) handleUploadEnd(msg *proto.TunnelMessage) error {
+	uploadSessionsMu.Lock()
+	sess := uploadSessions[msg.RequestId]
+	delete(uploadSessions, msg.RequestId)
+	uploadSessionsMu.Unlock()
+	if sess != nil && sess.pipeWriter != nil {
+		sess.pipeWriter.Close()
+	}
+	return nil
 }
 
 // handleHTTPRequest handles an HTTP request from the server

@@ -204,7 +204,15 @@ func (r *HybridTunnelRouter) routeToGRPCTunnel(domain string, conn net.Conn, req
 	}
 
 	// Proxy through gRPC tunnel
-	response, err := r.grpcTunnel.ProxyHTTPRequest(domain, httpReq, clientIP)
+	var response *http.Response
+	switch strings.ToUpper(method) {
+	case http.MethodPost, http.MethodPut, http.MethodPatch:
+		// Stream uploads to avoid 16MB gRPC limits
+		response, err = r.grpcTunnel.ProxyHTTPRequestWithChunking(domain, httpReq, clientIP)
+	default:
+		// Fast path for GET/HEAD and small requests
+		response, err = r.grpcTunnel.ProxyHTTPRequest(domain, httpReq, clientIP)
+	}
 	if err != nil {
 		r.logger.Error("[HYBRID→gRPC] gRPC proxy error: %v", err)
 		atomic.AddInt64(&r.routingErrors, 1)
@@ -289,10 +297,10 @@ func (r *HybridTunnelRouter) analyzeRequest(requestData []byte) (isWebSocket boo
 		}
 	}
 
-	// Check for large files that should use TCP streaming instead of gRPC
+	// Check for large files that should use gRPC chunked streaming (downloads)
 	if r.isLargeFile(path) {
-		isWebSocket = true // Route to TCP tunnel for streaming
-		r.logger.Debug("[HYBRID] Path %s detected as large file, routing to TCP for streaming", path)
+		isWebSocket = true // Mark as special handling to divert from normal gRPC path
+		r.logger.Debug("[HYBRID] Path %s detected as large file, routing to gRPC chunked streaming", path)
 		return isWebSocket, method, path
 	}
 

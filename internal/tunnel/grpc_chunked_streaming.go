@@ -288,13 +288,19 @@ func (s *GRPCTunnelServer) estimateResponseSize(httpReq *http.Request) int64 {
 // ProxyHTTPRequestWithChunking handles HTTP requests with intelligent routing
 // PERFECT BINARY SPLIT: ≤16MB = Regular gRPC (16MB), >16MB = Unlimited Chunked Streaming
 func (s *GRPCTunnelServer) ProxyHTTPRequestWithChunking(domain string, httpReq *http.Request, clientIP string) (*http.Response, error) {
+	// Always stream uploads via Start/Chunk/End to avoid 16MB gRPC limits
+	switch strings.ToUpper(httpReq.Method) {
+	case http.MethodPost, http.MethodPut, http.MethodPatch:
+		return s.handleLargeFileUploadWithStreaming(domain, httpReq, clientIP)
+	}
+
 	// Check if this should use chunked streaming for unlimited size
 	if s.isLargeFileRequest(httpReq) {
 		s.logger.Info("[CHUNKED] 🚀 Large file (>16MB) detected → UNLIMITED chunked streaming: %s %s",
 			httpReq.Method, httpReq.URL.Path)
 
-		// Route to TRUE chunked streaming for unlimited file size support
-		return s.handleLargeFileWithChunking(domain, httpReq, clientIP)
+		// Download path: old LargeFileRequest flow
+		return s.handleLargeFileDownloadWithChunking(domain, httpReq, clientIP)
 	}
 
 	// Small files: use regular gRPC (≤16MB, perfect alignment)
@@ -303,9 +309,97 @@ func (s *GRPCTunnelServer) ProxyHTTPRequestWithChunking(domain string, httpReq *
 }
 
 // handleLargeFileWithChunking processes large files using TRUE chunked streaming
-func (s *GRPCTunnelServer) handleLargeFileWithChunking(domain string, httpReq *http.Request, clientIP string) (*http.Response, error) {
+func (s *GRPCTunnelServer) handleLargeFileUploadWithStreaming(domain string, httpReq *http.Request, clientIP string) (*http.Response, error) {
 	s.logger.Info("[CHUNKED] 🚀 Implementing TRUE chunked streaming for unlimited file sizes")
 
+	// Get tunnel stream for domain
+	s.tunnelStreamsMux.RLock()
+	tunnelStream, exists := s.tunnelStreams[domain]
+	s.tunnelStreamsMux.RUnlock()
+
+	if !exists || !tunnelStream.connected {
+		return nil, fmt.Errorf("no active tunnel for domain: %s", domain)
+	}
+
+	// Convert headers only; body will be streamed via Start/Chunk/End
+	// Build Start message directly
+	headers := make(map[string]string)
+	for k, v := range httpReq.Header {
+		if len(v) > 0 {
+			headers[k] = v[0]
+		}
+	}
+	requestID := generateRequestID()
+
+	// Register response channel first
+	responseChan := make(chan *proto.TunnelMessage, 250)
+	tunnelStream.requestsMux.Lock()
+	tunnelStream.pendingRequests[requestID] = responseChan
+	tunnelStream.requestsMux.Unlock()
+
+	// Send Start message
+	startMsg := &proto.TunnelMessage{
+		RequestId: requestID,
+		Timestamp: time.Now().Unix(),
+		MessageType: &proto.TunnelMessage_HttpRequestStart{
+			HttpRequestStart: &proto.HTTPRequestStart{
+				RequestId:   requestID,
+				Method:      httpReq.Method,
+				Path:        httpReq.URL.RequestURI(),
+				Headers:     headers,
+				ClientIp:    clientIP,
+				IsLargeFile: true,
+			},
+		},
+	}
+	if err := tunnelStream.Stream.Send(startMsg); err != nil {
+		return nil, fmt.Errorf("failed to send upload start: %w", err)
+	}
+
+	// Stream request body as chunks
+	if httpReq.Body != nil {
+		buf := make([]byte, DefaultChunkSize)
+		for {
+			n, er := httpReq.Body.Read(buf)
+			if n > 0 {
+				data := make([]byte, n)
+				copy(data, buf[:n])
+				chunkMsg := &proto.TunnelMessage{
+					RequestId: requestID,
+					Timestamp: time.Now().Unix(),
+					MessageType: &proto.TunnelMessage_HttpRequestChunk{
+						HttpRequestChunk: &proto.HTTPRequestChunk{RequestId: requestID, Data: data},
+					},
+				}
+				if err := tunnelStream.Stream.Send(chunkMsg); err != nil {
+					return nil, fmt.Errorf("failed to send upload chunk: %w", err)
+				}
+			}
+			if er == io.EOF {
+				break
+			}
+			if er != nil {
+				return nil, fmt.Errorf("read upload body failed: %w", er)
+			}
+		}
+	}
+
+	// Send End
+	endMsg := &proto.TunnelMessage{
+		RequestId:   requestID,
+		Timestamp:   time.Now().Unix(),
+		MessageType: &proto.TunnelMessage_HttpRequestEnd{HttpRequestEnd: &proto.HTTPRequestEnd{RequestId: requestID}},
+	}
+	if err := tunnelStream.Stream.Send(endMsg); err != nil {
+		return nil, fmt.Errorf("failed to send upload end: %w", err)
+	}
+
+	// Now collect chunked response using existing io.Pipe pathway without re-sending request
+	return s.collectChunkedResponseNoSend(tunnelStream, requestID)
+}
+
+// handleLargeFileDownloadWithChunking uses the old LargeFileRequest path for downloads
+func (s *GRPCTunnelServer) handleLargeFileDownloadWithChunking(domain string, httpReq *http.Request, clientIP string) (*http.Response, error) {
 	// Get tunnel stream for domain
 	s.tunnelStreamsMux.RLock()
 	tunnelStream, exists := s.tunnelStreams[domain]
@@ -328,13 +422,13 @@ func (s *GRPCTunnelServer) handleLargeFileWithChunking(domain string, httpReq *h
 	largeFileReq := &proto.LargeFileRequest{
 		RequestId:         fmt.Sprintf("chunk-%d", time.Now().UnixNano()),
 		HttpRequest:       protoReq.GetHttpRequest(),
-		ChunkSize:         DefaultChunkSize, // 1MB chunks
+		ChunkSize:         DefaultChunkSize, // 4MB chunks
 		EnableCompression: true,
 	}
 
-	s.logger.Debug("[CHUNKED] Sending large file request to client: %s", httpReq.URL.Path)
+	s.logger.Debug("[CHUNKED] Sending large file request to client (download): %s", httpReq.URL.Path)
 
-	// Send large file request to client and collect chunked response
+	// Send large file request to client and collect chunked response (this method sends the HTTPRequest)
 	return s.collectChunkedResponse(tunnelStream, largeFileReq)
 }
 
@@ -519,6 +613,120 @@ func (s *GRPCTunnelServer) collectChunkedResponse(tunnelStream *TunnelStream, re
 	case <-time.After(60 * time.Second):
 		pipeReader.Close()
 		s.logger.Error("[CHUNKED] ⏰ Timeout waiting for chunked response metadata after 60s")
+		return nil, fmt.Errorf("timeout waiting for chunked response metadata")
+	}
+}
+
+// collectChunkedResponseNoSend streams the response for a request that was already started (no HTTPRequest send here)
+func (s *GRPCTunnelServer) collectChunkedResponseNoSend(tunnelStream *TunnelStream, requestID string) (*http.Response, error) {
+	s.logger.Debug("[CHUNKED] 📦 Starting response collection (no-send) for request: %s", requestID)
+
+	// Lookup existing response channel
+	tunnelStream.requestsMux.RLock()
+	responseChan, exists := tunnelStream.pendingRequests[requestID]
+	tunnelStream.requestsMux.RUnlock()
+	if !exists {
+		return nil, fmt.Errorf("no pending request channel for request: %s", requestID)
+	}
+
+	// Create a streaming pipe
+	pipeReader, pipeWriter := io.Pipe()
+
+	metadataCh := make(chan *proto.HTTPResponse, 1)
+	errorCh := make(chan error, 1)
+
+	// Start goroutine to forward chunks to pipe
+	go func() {
+		defer pipeWriter.Close()
+
+		// Cleanup pendingRequests entry on exit
+		defer func() {
+			s.logger.Debug("[CHUNKED] 🧹 Goroutine exiting (no-send), cleaning up request: %s", requestID)
+			tunnelStream.requestsMux.Lock()
+			if ch, ok := tunnelStream.pendingRequests[requestID]; ok {
+				delete(tunnelStream.pendingRequests, requestID)
+				// Safely close channel
+				func() {
+					defer func() { _ = recover() }()
+					close(ch)
+				}()
+			}
+			tunnelStream.requestsMux.Unlock()
+		}()
+
+		var firstChunk *proto.HTTPResponse
+		chunkCount := 0
+		timeout := time.After(2 * time.Minute)
+
+		for {
+			select {
+			case <-timeout:
+				errorCh <- fmt.Errorf("timeout waiting for chunked response after 2 minutes")
+				return
+			case response, ok := <-responseChan:
+				if !ok {
+					errorCh <- fmt.Errorf("tunnel disconnected during chunked response collection")
+					return
+				}
+
+				// Update activity
+				tunnelStream.mu.Lock()
+				tunnelStream.lastActivity = time.Now()
+				tunnelStream.mu.Unlock()
+
+				switch msgType := response.MessageType.(type) {
+				case *proto.TunnelMessage_HttpResponse:
+					chunk := msgType.HttpResponse
+					if firstChunk == nil {
+						firstChunk = chunk
+						metadataCh <- chunk
+					}
+					if chunk.IsChunked {
+						chunkCount++
+						if len(chunk.Body) > 0 {
+							if _, err := pipeWriter.Write(chunk.Body); err != nil {
+								errorCh <- fmt.Errorf("failed to write chunk to pipe: %w", err)
+								return
+							}
+						}
+						if strings.HasSuffix(chunk.ChunkId, "_final") {
+							return
+						}
+					} else {
+						if _, err := pipeWriter.Write(chunk.Body); err != nil {
+							errorCh <- fmt.Errorf("failed to write non-chunked response: %w", err)
+							return
+						}
+						return
+					}
+				case *proto.TunnelMessage_Error:
+					errorCh <- fmt.Errorf("client error during chunked streaming: %s", msgType.Error.Message)
+					return
+				}
+			}
+		}
+	}()
+
+	// Wait for metadata
+	select {
+	case firstChunk := <-metadataCh:
+		response := &http.Response{
+			StatusCode:    int(firstChunk.StatusCode),
+			Status:        firstChunk.StatusText,
+			Header:        make(http.Header),
+			Body:          pipeReader,
+			ContentLength: -1,
+		}
+		for k, v := range firstChunk.Headers {
+			response.Header.Set(k, v)
+		}
+		response.Header.Del("Content-Length")
+		return response, nil
+	case err := <-errorCh:
+		pipeReader.Close()
+		return nil, err
+	case <-time.After(60 * time.Second):
+		pipeReader.Close()
 		return nil, fmt.Errorf("timeout waiting for chunked response metadata")
 	}
 }

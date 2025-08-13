@@ -839,7 +839,7 @@ func (t *Tunnel) coordinatedReconnectWithContext(isIntentional bool) {
 	}()
 
 	if isIntentional {
-		t.logger.Info("Starting intentional reconnection (WebSocket recycling)...")
+		t.logger.Info("Starting intentional reconnection (WebSocket recycling) — preserving gRPC tunnel...")
 	} else {
 		t.logger.Info("Starting automatic reconnection (connection lost)...")
 	}
@@ -864,14 +864,18 @@ func (t *Tunnel) coordinatedReconnectWithContext(isIntentional bool) {
 		t.httpConnections = nil
 	}
 
-	// CRITICAL: Completely stop and recreate gRPC client to prevent duplicate instances
+	// Preserve gRPC client during intentional WebSocket recycling to avoid dropping in-flight uploads/downloads
 	if t.grpcClient != nil {
-		t.logger.Info("[CLEANUP] 🛑 Stopping existing gRPC client to prevent duplicates")
-		if err := t.grpcClient.Stop(); err != nil {
-			t.logger.Error("Error stopping gRPC client: %v", err)
+		if isIntentional {
+			t.logger.Info("[CLEANUP] Preserving gRPC client during WebSocket recycling")
+		} else {
+			t.logger.Info("[CLEANUP] 🛑 Stopping existing gRPC client to prevent duplicates")
+			if err := t.grpcClient.Stop(); err != nil {
+				t.logger.Error("Error stopping gRPC client: %v", err)
+			}
+			t.grpcClient = nil
+			t.grpcEnabled = false
 		}
-		t.grpcClient = nil
-		t.grpcEnabled = false
 	}
 
 	// Stop health monitoring
