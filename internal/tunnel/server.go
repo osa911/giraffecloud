@@ -48,8 +48,7 @@ type TunnelServer struct {
 	poolMisses     int64 // Failed pool connections
 
 	// Connection health monitoring
-	lastCleanup  time.Time      // Last cleanup time
-	cleanupStats map[string]int // Cleanup statistics
+	lastCleanup time.Time // Last cleanup time
 
 	// Circuit breaker for cascade failure prevention
 	recentTimeouts  int64     // Recent timeout count
@@ -1071,88 +1070,7 @@ func (s *TunnelServer) getConnectionMemoryOverhead() float64 {
 	return totalBytesPerConn / 1024.0 / 1024.0 // Convert to MB
 }
 
-// ProxyConnectionOnTheFly handles proxying with fresh tunnel per request
-func (s *TunnelServer) ProxyConnectionOnTheFly(domain string, conn net.Conn, requestData []byte, requestBody io.Reader) {
-	defer conn.Close()
-
-	// Performance monitoring
-	atomic.AddInt64(&s.requestCount, 1)
-	concurrent := atomic.AddInt64(&s.concurrentReqs, 1)
-	defer atomic.AddInt64(&s.concurrentReqs, -1)
-
-	s.logger.Info("[ON-THE-FLY] Creating fresh tunnel for request to domain: %s (concurrent: %d)", domain, concurrent)
-
-	// Create a fresh tunnel connection for this request only
-	tunnelConn, err := s.createFreshTunnelConnection(domain)
-	if err != nil {
-		s.logger.Error("[ON-THE-FLY] Failed to create fresh tunnel: %v", err)
-		s.writeHTTPError(conn, 502, "Bad Gateway - Failed to create tunnel")
-		return
-	}
-
-	// Ensure we always close this connection
-	defer func() {
-		s.logger.Debug("[ON-THE-FLY] Closing fresh tunnel connection")
-		tunnelConn.Close()
-	}()
-
-	s.logger.Debug("[ON-THE-FLY] Fresh tunnel established, processing request")
-
-	// Check if this is a media/video request
-	isMediaRequest := s.isMediaRequest(requestData)
-	timeout := s.streamConfig.RegularTimeout
-	if isMediaRequest {
-		timeout = s.streamConfig.MediaTimeout
-		s.logger.Info("[ON-THE-FLY] Using media timeout: %v", timeout)
-	}
-
-	// Set timeout for the entire request-response cycle
-	tunnelConn.GetConn().SetDeadline(time.Now().Add(timeout))
-	defer tunnelConn.GetConn().SetDeadline(time.Time{})
-
-	// Write the HTTP request headers to the tunnel connection
-	if _, err := tunnelConn.GetConn().Write(requestData); err != nil {
-		s.logger.Error("[ON-THE-FLY] Error writing request headers: %v", err)
-		s.writeHTTPError(conn, 502, "Bad Gateway - Failed to write request")
-		return
-	}
-
-	// Copy request body if present
-	if requestBody != nil {
-		if _, err := io.Copy(tunnelConn.GetConn(), requestBody); err != nil {
-			s.logger.Error("[ON-THE-FLY] Error writing request body: %v", err)
-			s.writeHTTPError(conn, 502, "Bad Gateway - Failed to write body")
-			return
-		}
-	}
-
-	s.logger.Debug("[ON-THE-FLY] Request sent, reading response...")
-
-	// Read the HTTP response from the tunnel
-	tunnelReader := bufio.NewReader(tunnelConn.GetConn())
-	response, err := http.ReadResponse(tunnelReader, nil)
-	if err != nil {
-		s.logger.Error("[ON-THE-FLY] Error reading response: %v", err)
-		s.writeHTTPError(conn, 502, "Bad Gateway - Failed to read response")
-		return
-	}
-
-	s.logger.Debug("[ON-THE-FLY] Response received: %s, writing to client", response.Status)
-
-	// Write the response back to the client
-	clientWriter := bufio.NewWriter(conn)
-	if err := response.Write(clientWriter); err != nil {
-		s.logger.Debug("[ON-THE-FLY] Error writing response to client: %v", err)
-		return
-	}
-
-	if err := clientWriter.Flush(); err != nil {
-		s.logger.Debug("[ON-THE-FLY] Error flushing response: %v", err)
-		return
-	}
-
-	s.logger.Debug("[ON-THE-FLY] Request completed successfully, tunnel will be closed")
-}
+// (removed) ProxyConnectionOnTheFly was deprecated and is no longer used
 
 // createFreshTunnelConnection creates a new tunnel connection on-demand
 func (s *TunnelServer) createFreshTunnelConnection(domain string) (*TunnelConnection, error) {
