@@ -81,6 +81,9 @@ type Tunnel struct {
 	localPort int
 	logger    *logging.Logger
 
+	// Singleton management
+	singletonManager *SingletonManager
+
 	// Enhanced connection management
 	state       ConnectionState
 	stateMutex  sync.RWMutex
@@ -139,12 +142,19 @@ type TunnelState struct {
 
 // NewTunnel creates a new tunnel instance with enhanced features
 func NewTunnel() *Tunnel {
+	singletonManager, err := NewSingletonManager()
+	if err != nil {
+		// Log error but don't fail - singleton is optional for backward compatibility
+		logging.GetGlobalLogger().Warn("Failed to create singleton manager: %v", err)
+	}
+
 	return &Tunnel{
-		stopChan:     make(chan struct{}),
-		logger:       logging.GetGlobalLogger(),
-		state:        StateDisconnected,
-		retryConfig:  DefaultRetryConfig(),
-		streamConfig: DefaultStreamingConfig(), // Use default streaming config
+		stopChan:         make(chan struct{}),
+		logger:           logging.GetGlobalLogger(),
+		singletonManager: singletonManager,
+		state:            StateDisconnected,
+		retryConfig:      DefaultRetryConfig(),
+		streamConfig:     DefaultStreamingConfig(), // Use default streaming config
 	}
 }
 
@@ -177,6 +187,24 @@ func (t *Tunnel) setState(state ConnectionState) {
 
 // Connect establishes tunnel connections with retry logic
 func (t *Tunnel) Connect(ctx context.Context, serverAddr, token, domain string, localPort int, tlsConfig *tls.Config) error {
+	// Check singleton lock before connecting
+	if t.singletonManager != nil {
+		// Clean up any stale locks first
+		if err := t.singletonManager.CleanupStaleLock(); err != nil {
+			t.logger.Warn("Failed to cleanup stale lock: %v", err)
+		}
+
+		// Check for service conflicts
+		if err := t.singletonManager.CheckServiceConflict(); err != nil {
+			return fmt.Errorf("service conflict detected: %w", err)
+		}
+
+		// Acquire singleton lock
+		if err := t.singletonManager.AcquireLock(); err != nil {
+			return fmt.Errorf("failed to acquire singleton lock: %w", err)
+		}
+	}
+
 	// Use the provided context instead of creating our own
 	t.ctx, t.cancel = context.WithCancel(ctx)
 
@@ -904,6 +932,13 @@ func (t *Tunnel) reconnect() {
 
 // Disconnect closes the tunnel connection and cleans up resources
 func (t *Tunnel) Disconnect() error {
+	// Release singleton lock
+	if t.singletonManager != nil {
+		if err := t.singletonManager.ReleaseLock(); err != nil {
+			t.logger.Warn("Failed to release singleton lock: %v", err)
+		}
+	}
+
 	// Cancel context to stop all goroutines
 	t.cancel()
 

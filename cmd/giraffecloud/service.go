@@ -331,6 +331,39 @@ func initServiceCommands() {
 	}
 	serviceCmd.AddCommand(logsCmd)
 
+	// Singleton status command
+	singletonCmd := &cobra.Command{
+		Use:   "singleton",
+		Short: "Show singleton lock status",
+		Run: func(cmd *cobra.Command, args []string) {
+			sm, err := tunnel.NewSingletonManager()
+			if err != nil {
+				logger.Error("Failed to create singleton manager: %v", err)
+				os.Exit(1)
+			}
+
+			isRunning := sm.IsRunning()
+			pid := sm.GetRunningPID()
+
+			logger.Info("Singleton lock status:")
+			logger.Info("  Running: %v", isRunning)
+			if isRunning {
+				logger.Info("  PID: %d", pid)
+				logger.Info("  PID File: %s", sm.PidFile)
+			} else {
+				logger.Info("  No tunnel instance currently running")
+			}
+
+			// Check for service conflicts
+			if err := sm.CheckServiceConflict(); err != nil {
+				logger.Warn("Service conflict detected: %v", err)
+			} else {
+				logger.Info("  No service conflicts detected")
+			}
+		},
+	}
+	serviceCmd.AddCommand(singletonCmd)
+
 	// Add flags to health-check command
 	// System-level only; user-level flags removed
 	logsCmd.Flags().Bool("follow", false, "Follow live logs (Linux/macOS)")
