@@ -301,7 +301,7 @@ func (t *Tunnel) attemptDualConnections(serverAddr string, tlsConfig *tls.Config
 		t.logger.Info("Falling back to TCP-only mode...")
 		t.grpcEnabled = false
 	} else {
-		t.logger.Info("✅ gRPC tunnel established successfully - unlimited HTTP concurrency enabled!")
+		t.logger.Info("✅ gRPC tunnel established successfully - unlimited HTTP concurrency enabled! Client ID: %s", t.grpcClient.GetClientID())
 		t.grpcEnabled = true
 	}
 
@@ -869,7 +869,7 @@ func (t *Tunnel) coordinatedReconnectWithContext(isIntentional bool) {
 		if isIntentional {
 			t.logger.Info("[CLEANUP] Preserving gRPC client during WebSocket recycling")
 		} else {
-			t.logger.Info("[CLEANUP] 🛑 Stopping existing gRPC client to prevent duplicates")
+			t.logger.Info("[CLEANUP] 🛑 Stopping existing gRPC client to prevent duplicates (Client ID: %s)", t.grpcClient.GetClientID())
 			if err := t.grpcClient.Stop(); err != nil {
 				t.logger.Error("Error stopping gRPC client: %v", err)
 			}
@@ -923,12 +923,12 @@ func (t *Tunnel) Disconnect() error {
 	// Close gRPC client if enabled
 	var err error
 	if t.grpcEnabled && t.grpcClient != nil {
-		t.logger.Info("Closing gRPC tunnel client...")
+		t.logger.Info("Closing gRPC tunnel client (Client ID: %s)...", t.grpcClient.GetClientID())
 		if grpcErr := t.grpcClient.Stop(); grpcErr != nil {
 			t.logger.Error("Error closing gRPC client: %v", grpcErr)
 			err = grpcErr
 		} else {
-			t.logger.Info("✅ gRPC tunnel client closed successfully")
+			t.logger.Info("✅ gRPC tunnel client closed successfully (Client ID: %s)", t.grpcClient.GetClientID())
 		}
 		t.grpcClient = nil
 		t.grpcEnabled = false
