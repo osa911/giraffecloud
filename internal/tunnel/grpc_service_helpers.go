@@ -529,7 +529,8 @@ func (s *GRPCTunnelServer) grpcToHTTP(msg *proto.TunnelMessage) (*http.Response,
 		}
 		s.tunnelStreamsMux.RUnlock()
 		if domain != "" && len(httpResp.Body) > 0 && userID != 0 {
-			s.usage.Increment(userID, tunnelID, domain, 0, int64(len(httpResp.Body)), 1)
+			// Do not increment request count here; it is counted at the call site
+			s.usage.Increment(userID, tunnelID, domain, 0, int64(len(httpResp.Body)), 0)
 		}
 	}
 

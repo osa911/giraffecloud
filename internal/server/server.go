@@ -241,9 +241,9 @@ func (s *Server) Init() error {
 	// Adapt service.QuotaService to tunnel.QuotaChecker
 	s.tunnelRouter.SetQuotaChecker(quotaAdapter{q: quotaService})
 
-	// Periodically flush usage to DB (every 5 minutes)
+	// Periodically flush usage to DB (every 1 minute)
 	go func() {
-		ticker := time.NewTicker(5 * time.Minute)
+		ticker := time.NewTicker(1 * time.Minute)
 		defer ticker.Stop()
 		for range ticker.C {
 			if err := usageService.FlushToDB(context.Background(), s.db.DB); err != nil {

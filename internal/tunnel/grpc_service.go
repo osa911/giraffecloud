@@ -467,7 +467,7 @@ func (s *GRPCTunnelServer) ProxyHTTPRequest(domain string, req *http.Request, cl
 		if b := grpcReq.GetHttpRequest().Body; len(b) > 0 {
 			reqBytes = int64(len(b))
 		}
-		s.usage.Increment(tunnelStream.UserID, 0, domain, reqBytes, 0, 1)
+		s.usage.Increment(tunnelStream.UserID, tunnelStream.TunnelID, domain, reqBytes, 0, 1)
 	}
 	atomic.AddInt64(&s.totalResponses, 1)
 	return response, nil
