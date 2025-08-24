@@ -174,6 +174,26 @@ func (uu *UserUpdate) ClearLastActivity() *UserUpdate {
 	return uu
 }
 
+// SetPlanName sets the "plan_name" field.
+func (uu *UserUpdate) SetPlanName(s string) *UserUpdate {
+	uu.mutation.SetPlanName(s)
+	return uu
+}
+
+// SetNillablePlanName sets the "plan_name" field if the given value is not nil.
+func (uu *UserUpdate) SetNillablePlanName(s *string) *UserUpdate {
+	if s != nil {
+		uu.SetPlanName(*s)
+	}
+	return uu
+}
+
+// ClearPlanName clears the value of the "plan_name" field.
+func (uu *UserUpdate) ClearPlanName() *UserUpdate {
+	uu.mutation.ClearPlanName()
+	return uu
+}
+
 // AddSessionIDs adds the "sessions" edge to the Session entity by IDs.
 func (uu *UserUpdate) AddSessionIDs(ids ...uint32) *UserUpdate {
 	uu.mutation.AddSessionIDs(ids...)
@@ -370,6 +390,12 @@ func (uu *UserUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	}
 	if uu.mutation.LastActivityCleared() {
 		_spec.ClearField(user.FieldLastActivity, field.TypeTime)
+	}
+	if value, ok := uu.mutation.PlanName(); ok {
+		_spec.SetField(user.FieldPlanName, field.TypeString, value)
+	}
+	if uu.mutation.PlanNameCleared() {
+		_spec.ClearField(user.FieldPlanName, field.TypeString)
 	}
 	if uu.mutation.SessionsCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -668,6 +694,26 @@ func (uuo *UserUpdateOne) ClearLastActivity() *UserUpdateOne {
 	return uuo
 }
 
+// SetPlanName sets the "plan_name" field.
+func (uuo *UserUpdateOne) SetPlanName(s string) *UserUpdateOne {
+	uuo.mutation.SetPlanName(s)
+	return uuo
+}
+
+// SetNillablePlanName sets the "plan_name" field if the given value is not nil.
+func (uuo *UserUpdateOne) SetNillablePlanName(s *string) *UserUpdateOne {
+	if s != nil {
+		uuo.SetPlanName(*s)
+	}
+	return uuo
+}
+
+// ClearPlanName clears the value of the "plan_name" field.
+func (uuo *UserUpdateOne) ClearPlanName() *UserUpdateOne {
+	uuo.mutation.ClearPlanName()
+	return uuo
+}
+
 // AddSessionIDs adds the "sessions" edge to the Session entity by IDs.
 func (uuo *UserUpdateOne) AddSessionIDs(ids ...uint32) *UserUpdateOne {
 	uuo.mutation.AddSessionIDs(ids...)
@@ -894,6 +940,12 @@ func (uuo *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) 
 	}
 	if uuo.mutation.LastActivityCleared() {
 		_spec.ClearField(user.FieldLastActivity, field.TypeTime)
+	}
+	if value, ok := uuo.mutation.PlanName(); ok {
+		_spec.SetField(user.FieldPlanName, field.TypeString, value)
+	}
+	if uuo.mutation.PlanNameCleared() {
+		_spec.ClearField(user.FieldPlanName, field.TypeString)
 	}
 	if uuo.mutation.SessionsCleared() {
 		edge := &sqlgraph.EdgeSpec{

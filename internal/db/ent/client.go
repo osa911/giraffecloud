@@ -12,9 +12,11 @@ import (
 	"giraffecloud/internal/db/ent/migrate"
 
 	"giraffecloud/internal/db/ent/clientversion"
+	"giraffecloud/internal/db/ent/plan"
 	"giraffecloud/internal/db/ent/session"
 	"giraffecloud/internal/db/ent/token"
 	"giraffecloud/internal/db/ent/tunnel"
+	"giraffecloud/internal/db/ent/usage"
 	"giraffecloud/internal/db/ent/user"
 
 	"entgo.io/ent"
@@ -31,12 +33,16 @@ type Client struct {
 	Schema *migrate.Schema
 	// ClientVersion is the client for interacting with the ClientVersion builders.
 	ClientVersion *ClientVersionClient
+	// Plan is the client for interacting with the Plan builders.
+	Plan *PlanClient
 	// Session is the client for interacting with the Session builders.
 	Session *SessionClient
 	// Token is the client for interacting with the Token builders.
 	Token *TokenClient
 	// Tunnel is the client for interacting with the Tunnel builders.
 	Tunnel *TunnelClient
+	// Usage is the client for interacting with the Usage builders.
+	Usage *UsageClient
 	// User is the client for interacting with the User builders.
 	User *UserClient
 }
@@ -51,9 +57,11 @@ func NewClient(opts ...Option) *Client {
 func (c *Client) init() {
 	c.Schema = migrate.NewSchema(c.driver)
 	c.ClientVersion = NewClientVersionClient(c.config)
+	c.Plan = NewPlanClient(c.config)
 	c.Session = NewSessionClient(c.config)
 	c.Token = NewTokenClient(c.config)
 	c.Tunnel = NewTunnelClient(c.config)
+	c.Usage = NewUsageClient(c.config)
 	c.User = NewUserClient(c.config)
 }
 
@@ -148,9 +156,11 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		ctx:           ctx,
 		config:        cfg,
 		ClientVersion: NewClientVersionClient(cfg),
+		Plan:          NewPlanClient(cfg),
 		Session:       NewSessionClient(cfg),
 		Token:         NewTokenClient(cfg),
 		Tunnel:        NewTunnelClient(cfg),
+		Usage:         NewUsageClient(cfg),
 		User:          NewUserClient(cfg),
 	}, nil
 }
@@ -172,9 +182,11 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		ctx:           ctx,
 		config:        cfg,
 		ClientVersion: NewClientVersionClient(cfg),
+		Plan:          NewPlanClient(cfg),
 		Session:       NewSessionClient(cfg),
 		Token:         NewTokenClient(cfg),
 		Tunnel:        NewTunnelClient(cfg),
+		Usage:         NewUsageClient(cfg),
 		User:          NewUserClient(cfg),
 	}, nil
 }
@@ -204,21 +216,21 @@ func (c *Client) Close() error {
 // Use adds the mutation hooks to all the entity clients.
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
-	c.ClientVersion.Use(hooks...)
-	c.Session.Use(hooks...)
-	c.Token.Use(hooks...)
-	c.Tunnel.Use(hooks...)
-	c.User.Use(hooks...)
+	for _, n := range []interface{ Use(...Hook) }{
+		c.ClientVersion, c.Plan, c.Session, c.Token, c.Tunnel, c.Usage, c.User,
+	} {
+		n.Use(hooks...)
+	}
 }
 
 // Intercept adds the query interceptors to all the entity clients.
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
-	c.ClientVersion.Intercept(interceptors...)
-	c.Session.Intercept(interceptors...)
-	c.Token.Intercept(interceptors...)
-	c.Tunnel.Intercept(interceptors...)
-	c.User.Intercept(interceptors...)
+	for _, n := range []interface{ Intercept(...Interceptor) }{
+		c.ClientVersion, c.Plan, c.Session, c.Token, c.Tunnel, c.Usage, c.User,
+	} {
+		n.Intercept(interceptors...)
+	}
 }
 
 // Mutate implements the ent.Mutator interface.
@@ -226,12 +238,16 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 	switch m := m.(type) {
 	case *ClientVersionMutation:
 		return c.ClientVersion.mutate(ctx, m)
+	case *PlanMutation:
+		return c.Plan.mutate(ctx, m)
 	case *SessionMutation:
 		return c.Session.mutate(ctx, m)
 	case *TokenMutation:
 		return c.Token.mutate(ctx, m)
 	case *TunnelMutation:
 		return c.Tunnel.mutate(ctx, m)
+	case *UsageMutation:
+		return c.Usage.mutate(ctx, m)
 	case *UserMutation:
 		return c.User.mutate(ctx, m)
 	default:
@@ -369,6 +385,139 @@ func (c *ClientVersionClient) mutate(ctx context.Context, m *ClientVersionMutati
 		return (&ClientVersionDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown ClientVersion mutation op: %q", m.Op())
+	}
+}
+
+// PlanClient is a client for the Plan schema.
+type PlanClient struct {
+	config
+}
+
+// NewPlanClient returns a client for the Plan from the given config.
+func NewPlanClient(c config) *PlanClient {
+	return &PlanClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `plan.Hooks(f(g(h())))`.
+func (c *PlanClient) Use(hooks ...Hook) {
+	c.hooks.Plan = append(c.hooks.Plan, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `plan.Intercept(f(g(h())))`.
+func (c *PlanClient) Intercept(interceptors ...Interceptor) {
+	c.inters.Plan = append(c.inters.Plan, interceptors...)
+}
+
+// Create returns a builder for creating a Plan entity.
+func (c *PlanClient) Create() *PlanCreate {
+	mutation := newPlanMutation(c.config, OpCreate)
+	return &PlanCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of Plan entities.
+func (c *PlanClient) CreateBulk(builders ...*PlanCreate) *PlanCreateBulk {
+	return &PlanCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *PlanClient) MapCreateBulk(slice any, setFunc func(*PlanCreate, int)) *PlanCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &PlanCreateBulk{err: fmt.Errorf("calling to PlanClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*PlanCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &PlanCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for Plan.
+func (c *PlanClient) Update() *PlanUpdate {
+	mutation := newPlanMutation(c.config, OpUpdate)
+	return &PlanUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *PlanClient) UpdateOne(pl *Plan) *PlanUpdateOne {
+	mutation := newPlanMutation(c.config, OpUpdateOne, withPlan(pl))
+	return &PlanUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *PlanClient) UpdateOneID(id int) *PlanUpdateOne {
+	mutation := newPlanMutation(c.config, OpUpdateOne, withPlanID(id))
+	return &PlanUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for Plan.
+func (c *PlanClient) Delete() *PlanDelete {
+	mutation := newPlanMutation(c.config, OpDelete)
+	return &PlanDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *PlanClient) DeleteOne(pl *Plan) *PlanDeleteOne {
+	return c.DeleteOneID(pl.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *PlanClient) DeleteOneID(id int) *PlanDeleteOne {
+	builder := c.Delete().Where(plan.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &PlanDeleteOne{builder}
+}
+
+// Query returns a query builder for Plan.
+func (c *PlanClient) Query() *PlanQuery {
+	return &PlanQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypePlan},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a Plan entity by its id.
+func (c *PlanClient) Get(ctx context.Context, id int) (*Plan, error) {
+	return c.Query().Where(plan.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *PlanClient) GetX(ctx context.Context, id int) *Plan {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *PlanClient) Hooks() []Hook {
+	return c.hooks.Plan
+}
+
+// Interceptors returns the client interceptors.
+func (c *PlanClient) Interceptors() []Interceptor {
+	return c.inters.Plan
+}
+
+func (c *PlanClient) mutate(ctx context.Context, m *PlanMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&PlanCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&PlanUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&PlanUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&PlanDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown Plan mutation op: %q", m.Op())
 	}
 }
 
@@ -819,6 +968,139 @@ func (c *TunnelClient) mutate(ctx context.Context, m *TunnelMutation) (Value, er
 	}
 }
 
+// UsageClient is a client for the Usage schema.
+type UsageClient struct {
+	config
+}
+
+// NewUsageClient returns a client for the Usage from the given config.
+func NewUsageClient(c config) *UsageClient {
+	return &UsageClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `usage.Hooks(f(g(h())))`.
+func (c *UsageClient) Use(hooks ...Hook) {
+	c.hooks.Usage = append(c.hooks.Usage, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `usage.Intercept(f(g(h())))`.
+func (c *UsageClient) Intercept(interceptors ...Interceptor) {
+	c.inters.Usage = append(c.inters.Usage, interceptors...)
+}
+
+// Create returns a builder for creating a Usage entity.
+func (c *UsageClient) Create() *UsageCreate {
+	mutation := newUsageMutation(c.config, OpCreate)
+	return &UsageCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of Usage entities.
+func (c *UsageClient) CreateBulk(builders ...*UsageCreate) *UsageCreateBulk {
+	return &UsageCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *UsageClient) MapCreateBulk(slice any, setFunc func(*UsageCreate, int)) *UsageCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &UsageCreateBulk{err: fmt.Errorf("calling to UsageClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*UsageCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &UsageCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for Usage.
+func (c *UsageClient) Update() *UsageUpdate {
+	mutation := newUsageMutation(c.config, OpUpdate)
+	return &UsageUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *UsageClient) UpdateOne(u *Usage) *UsageUpdateOne {
+	mutation := newUsageMutation(c.config, OpUpdateOne, withUsage(u))
+	return &UsageUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *UsageClient) UpdateOneID(id int) *UsageUpdateOne {
+	mutation := newUsageMutation(c.config, OpUpdateOne, withUsageID(id))
+	return &UsageUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for Usage.
+func (c *UsageClient) Delete() *UsageDelete {
+	mutation := newUsageMutation(c.config, OpDelete)
+	return &UsageDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *UsageClient) DeleteOne(u *Usage) *UsageDeleteOne {
+	return c.DeleteOneID(u.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *UsageClient) DeleteOneID(id int) *UsageDeleteOne {
+	builder := c.Delete().Where(usage.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &UsageDeleteOne{builder}
+}
+
+// Query returns a query builder for Usage.
+func (c *UsageClient) Query() *UsageQuery {
+	return &UsageQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeUsage},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a Usage entity by its id.
+func (c *UsageClient) Get(ctx context.Context, id int) (*Usage, error) {
+	return c.Query().Where(usage.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *UsageClient) GetX(ctx context.Context, id int) *Usage {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *UsageClient) Hooks() []Hook {
+	return c.hooks.Usage
+}
+
+// Interceptors returns the client interceptors.
+func (c *UsageClient) Interceptors() []Interceptor {
+	return c.inters.Usage
+}
+
+func (c *UsageClient) mutate(ctx context.Context, m *UsageMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&UsageCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&UsageUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&UsageUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&UsageDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown Usage mutation op: %q", m.Op())
+	}
+}
+
 // UserClient is a client for the User schema.
 type UserClient struct {
 	config
@@ -1003,9 +1285,9 @@ func (c *UserClient) mutate(ctx context.Context, m *UserMutation) (Value, error)
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		ClientVersion, Session, Token, Tunnel, User []ent.Hook
+		ClientVersion, Plan, Session, Token, Tunnel, Usage, User []ent.Hook
 	}
 	inters struct {
-		ClientVersion, Session, Token, Tunnel, User []ent.Interceptor
+		ClientVersion, Plan, Session, Token, Tunnel, Usage, User []ent.Interceptor
 	}
 )

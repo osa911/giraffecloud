@@ -13,6 +13,7 @@ type TunnelRepository interface {
 	GetByID(ctx context.Context, id uint32) (*ent.Tunnel, error)
 	GetByUserID(ctx context.Context, userID uint32) ([]*ent.Tunnel, error)
 	GetByToken(ctx context.Context, token string) (*ent.Tunnel, error)
+	GetByDomain(ctx context.Context, domain string) (*ent.Tunnel, error)
 	Update(ctx context.Context, id uint32, updates interface{}) (*ent.Tunnel, error)
 	Delete(ctx context.Context, id uint32) error
 	UpdateClientIP(ctx context.Context, id uint32, clientIP string) error
@@ -57,6 +58,13 @@ func (r *tunnelRepository) GetByUserID(ctx context.Context, userID uint32) ([]*e
 func (r *tunnelRepository) GetByToken(ctx context.Context, token string) (*ent.Tunnel, error) {
 	return r.client.Tunnel.Query().
 		Where(tunnel.TokenEQ(token)).
+		Only(ctx)
+}
+
+// GetByDomain retrieves a tunnel by its domain
+func (r *tunnelRepository) GetByDomain(ctx context.Context, domain string) (*ent.Tunnel, error) {
+	return r.client.Tunnel.Query().
+		Where(tunnel.DomainEQ(domain)).
 		Only(ctx)
 }
 

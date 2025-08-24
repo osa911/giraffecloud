@@ -7,9 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"giraffecloud/internal/db/ent/clientversion"
+	"giraffecloud/internal/db/ent/plan"
 	"giraffecloud/internal/db/ent/session"
 	"giraffecloud/internal/db/ent/token"
 	"giraffecloud/internal/db/ent/tunnel"
+	"giraffecloud/internal/db/ent/usage"
 	"giraffecloud/internal/db/ent/user"
 	"reflect"
 	"sync"
@@ -78,9 +80,11 @@ func checkColumn(table, column string) error {
 	initCheck.Do(func() {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
 			clientversion.Table: clientversion.ValidColumn,
+			plan.Table:          plan.ValidColumn,
 			session.Table:       session.ValidColumn,
 			token.Table:         token.ValidColumn,
 			tunnel.Table:        tunnel.ValidColumn,
+			usage.Table:         usage.ValidColumn,
 			user.Table:          user.ValidColumn,
 		})
 	})

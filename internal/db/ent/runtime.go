@@ -4,10 +4,12 @@ package ent
 
 import (
 	"giraffecloud/internal/db/ent/clientversion"
+	"giraffecloud/internal/db/ent/plan"
 	"giraffecloud/internal/db/ent/schema"
 	"giraffecloud/internal/db/ent/session"
 	"giraffecloud/internal/db/ent/token"
 	"giraffecloud/internal/db/ent/tunnel"
+	"giraffecloud/internal/db/ent/usage"
 	"giraffecloud/internal/db/ent/user"
 	"time"
 
@@ -50,6 +52,37 @@ func init() {
 	clientversion.DefaultUpdatedAt = clientversionDescUpdatedAt.Default.(func() time.Time)
 	// clientversion.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	clientversion.UpdateDefaultUpdatedAt = clientversionDescUpdatedAt.UpdateDefault.(func() time.Time)
+	planMixin := schema.Plan{}.Mixin()
+	planMixinFields0 := planMixin[0].Fields()
+	_ = planMixinFields0
+	planFields := schema.Plan{}.Fields()
+	_ = planFields
+	// planDescCreatedAt is the schema descriptor for created_at field.
+	planDescCreatedAt := planMixinFields0[0].Descriptor()
+	// plan.DefaultCreatedAt holds the default value on creation for the created_at field.
+	plan.DefaultCreatedAt = planDescCreatedAt.Default.(func() time.Time)
+	// planDescUpdatedAt is the schema descriptor for updated_at field.
+	planDescUpdatedAt := planMixinFields0[1].Descriptor()
+	// plan.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	plan.DefaultUpdatedAt = planDescUpdatedAt.Default.(func() time.Time)
+	// plan.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	plan.UpdateDefaultUpdatedAt = planDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// planDescName is the schema descriptor for name field.
+	planDescName := planFields[0].Descriptor()
+	// plan.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	plan.NameValidator = planDescName.Validators[0].(func(string) error)
+	// planDescMonthlyLimitBytes is the schema descriptor for monthly_limit_bytes field.
+	planDescMonthlyLimitBytes := planFields[1].Descriptor()
+	// plan.DefaultMonthlyLimitBytes holds the default value on creation for the monthly_limit_bytes field.
+	plan.DefaultMonthlyLimitBytes = planDescMonthlyLimitBytes.Default.(int64)
+	// planDescOveragePerGBCents is the schema descriptor for overage_per_gb_cents field.
+	planDescOveragePerGBCents := planFields[2].Descriptor()
+	// plan.DefaultOveragePerGBCents holds the default value on creation for the overage_per_gb_cents field.
+	plan.DefaultOveragePerGBCents = planDescOveragePerGBCents.Default.(int)
+	// planDescActive is the schema descriptor for active field.
+	planDescActive := planFields[3].Descriptor()
+	// plan.DefaultActive holds the default value on creation for the active field.
+	plan.DefaultActive = planDescActive.Default.(bool)
 	sessionMixin := schema.Session{}.Mixin()
 	sessionMixinFields0 := sessionMixin[0].Fields()
 	_ = sessionMixinFields0
@@ -124,6 +157,37 @@ func init() {
 	tunnelDescTargetPort := tunnelFields[4].Descriptor()
 	// tunnel.TargetPortValidator is a validator for the "target_port" field. It is called by the builders before save.
 	tunnel.TargetPortValidator = tunnelDescTargetPort.Validators[0].(func(int) error)
+	usageMixin := schema.Usage{}.Mixin()
+	usageMixinFields0 := usageMixin[0].Fields()
+	_ = usageMixinFields0
+	usageFields := schema.Usage{}.Fields()
+	_ = usageFields
+	// usageDescCreatedAt is the schema descriptor for created_at field.
+	usageDescCreatedAt := usageMixinFields0[0].Descriptor()
+	// usage.DefaultCreatedAt holds the default value on creation for the created_at field.
+	usage.DefaultCreatedAt = usageDescCreatedAt.Default.(func() time.Time)
+	// usageDescUpdatedAt is the schema descriptor for updated_at field.
+	usageDescUpdatedAt := usageMixinFields0[1].Descriptor()
+	// usage.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	usage.DefaultUpdatedAt = usageDescUpdatedAt.Default.(func() time.Time)
+	// usage.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	usage.UpdateDefaultUpdatedAt = usageDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// usageDescDomain is the schema descriptor for domain field.
+	usageDescDomain := usageFields[3].Descriptor()
+	// usage.DefaultDomain holds the default value on creation for the domain field.
+	usage.DefaultDomain = usageDescDomain.Default.(string)
+	// usageDescBytesIn is the schema descriptor for bytes_in field.
+	usageDescBytesIn := usageFields[4].Descriptor()
+	// usage.DefaultBytesIn holds the default value on creation for the bytes_in field.
+	usage.DefaultBytesIn = usageDescBytesIn.Default.(int64)
+	// usageDescBytesOut is the schema descriptor for bytes_out field.
+	usageDescBytesOut := usageFields[5].Descriptor()
+	// usage.DefaultBytesOut holds the default value on creation for the bytes_out field.
+	usage.DefaultBytesOut = usageDescBytesOut.Default.(int64)
+	// usageDescRequests is the schema descriptor for requests field.
+	usageDescRequests := usageFields[6].Descriptor()
+	// usage.DefaultRequests holds the default value on creation for the requests field.
+	usage.DefaultRequests = usageDescRequests.Default.(int64)
 	userMixin := schema.User{}.Mixin()
 	userMixinFields0 := userMixin[0].Fields()
 	_ = userMixinFields0

@@ -40,6 +40,8 @@ type TunnelServer struct {
 	tunnelService interfaces.TunnelService
 	connections   *ConnectionManager
 	streamConfig  *StreamingConfig // Streaming configuration
+	usageRecorder UsageRecorder
+	quotaChecker  QuotaChecker
 
 	// Performance monitoring
 	requestCount   int64 // Total requests handled
@@ -86,6 +88,12 @@ func NewServer(tokenRepo repository.TokenRepository, tunnelRepo repository.Tunne
 		tunnelService: tunnelService,
 	}
 }
+
+// SetUsageRecorder wires a usage recorder for accounting.
+func (s *TunnelServer) SetUsageRecorder(rec UsageRecorder) { s.usageRecorder = rec }
+
+// SetQuotaChecker wires a quota checker for enforcement.
+func (s *TunnelServer) SetQuotaChecker(q QuotaChecker) { s.quotaChecker = q }
 
 // Start starts the tunnel server
 func (s *TunnelServer) Start(addr string) error {
@@ -219,7 +227,7 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 	}
 
 	// Create connection object and add to manager with type
-	s.connections.AddConnection(tunnel.Domain, conn, tunnel.TargetPort, connType)
+	s.connections.AddConnection(tunnel.Domain, conn, tunnel.TargetPort, connType, tunnel.UserID, uint32(tunnel.ID))
 	defer s.connections.RemoveConnection(tunnel.Domain, connType)
 
 	s.logger.Info("Tunnel connection established for domain: %s (type: %s)", tunnel.Domain, connType)
@@ -394,13 +402,20 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData
 
 	// Copy request body if present
 	if requestBody != nil {
-		if _, err := io.Copy(tunnelConn.GetConn(), requestBody); err != nil {
+		if n, err := io.Copy(tunnelConn.GetConn(), requestBody); err != nil {
 			s.logger.Error("[HYBRID] Error writing request body to tunnel: %v", err)
 			if !isOnDemand {
 				s.connections.RemoveSpecificHTTPConnection(domain, tunnelConn)
 			}
 			s.writeHTTPError(conn, 502, "Bad Gateway - Failed to write body to tunnel")
 			return
+		} else {
+			// Record upload bytes to tunnel (client -> tunnel)
+			if s.usageRecorder != nil {
+				if userID, tunnelID, ok := s.connections.GetDomainOwner(domain); ok {
+					s.usageRecorder.Increment(userID, tunnelID, domain, n, 0, 0)
+				}
+			}
 		}
 	}
 
@@ -441,6 +456,29 @@ func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData
 	if err := clientWriter.Flush(); err != nil {
 		s.logger.Debug("[HYBRID] Error flushing response: %v", err)
 		return
+	}
+	// Approximate bytes out: Content-Length header if present
+	if s.usageRecorder != nil && response != nil {
+		if cl := response.Header.Get("Content-Length"); cl != "" {
+			if userID, tunnelID, ok := s.connections.GetDomainOwner(domain); ok {
+				// best-effort parse
+				var length int64
+				fmt.Sscanf(cl, "%d", &length)
+				if length > 0 {
+					s.usageRecorder.Increment(userID, tunnelID, domain, 0, length, 1)
+				} else {
+					s.usageRecorder.Increment(userID, tunnelID, domain, 0, 0, 1)
+				}
+			}
+		} else if response.ContentLength > 0 {
+			if userID, tunnelID, ok := s.connections.GetDomainOwner(domain); ok {
+				s.usageRecorder.Increment(userID, tunnelID, domain, 0, response.ContentLength, 1)
+			}
+		} else {
+			if userID, tunnelID, ok := s.connections.GetDomainOwner(domain); ok {
+				s.usageRecorder.Increment(userID, tunnelID, domain, 0, 0, 1)
+			}
+		}
 	}
 
 	// HYBRID CLEANUP: Aggressive connection management like frp
@@ -941,6 +979,16 @@ func (s *TunnelServer) isClientDisconnectionError(err error) bool {
 func (s *TunnelServer) ProxyWebSocketConnection(domain string, clientConn net.Conn, r *http.Request) {
 	defer clientConn.Close()
 
+	// Quota check: block upgrades if user exceeded quota
+	if s.quotaChecker != nil {
+		if userID, _, ok := s.connections.GetDomainOwner(domain); ok {
+			if res, _ := s.quotaChecker.CheckUser(context.Background(), userID); res.Decision == QuotaBlock {
+				s.writeHTTPError(clientConn, http.StatusPaymentRequired, "Quota exceeded")
+				return
+			}
+		}
+	}
+
 	tunnelConn := s.connections.GetWebSocketConnection(domain)
 	if tunnelConn == nil {
 		s.logger.Error("No WebSocket tunnel connection found for domain: %s", domain)
@@ -1032,13 +1080,23 @@ func (s *TunnelServer) ProxyWebSocketConnection(domain string, clientConn net.Co
 
 	// Copy from client to tunnel
 	go func() {
-		_, err := io.Copy(tunnelConn.GetConn(), clientConn)
+		n, err := io.Copy(tunnelConn.GetConn(), clientConn)
+		if s.usageRecorder != nil {
+			if userID, tunnelID, ok := s.connections.GetDomainOwner(domain); ok && n > 0 {
+				s.usageRecorder.Increment(userID, tunnelID, domain, n, 0, 0)
+			}
+		}
 		errChan <- err
 	}()
 
 	// Copy from tunnel to client
 	go func() {
-		_, err := io.Copy(clientConn, tunnelConn.GetConn())
+		n, err := io.Copy(clientConn, tunnelConn.GetConn())
+		if s.usageRecorder != nil {
+			if userID, tunnelID, ok := s.connections.GetDomainOwner(domain); ok && n > 0 {
+				s.usageRecorder.Increment(userID, tunnelID, domain, 0, n, 1)
+			}
+		}
 		errChan <- err
 	}()
 

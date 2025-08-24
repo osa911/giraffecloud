@@ -501,10 +501,35 @@ func (s *GRPCTunnelServer) grpcToHTTP(msg *proto.TunnelMessage) (*http.Response,
 		Header:     make(http.Header),
 		Body:       io.NopCloser(bytes.NewReader(httpResp.Body)),
 	}
+	// Preserve upstream headers
+	for k, v := range httpResp.Headers {
+		resp.Header.Set(k, v)
+	}
 
 	// Convert headers
 	for key, value := range httpResp.Headers {
 		resp.Header.Set(key, value)
+	}
+
+	// Record usage best-effort (response bytes). Requests counted at call site.
+	if s.usage != nil {
+		s.tunnelStreamsMux.RLock()
+		// We don't know domain here; embed in message headers if needed. For now, try X-Forwarded-Host.
+		domain := httpResp.Headers["X-Forwarded-Host"]
+		if domain == "" {
+			domain = httpResp.Headers["Host"]
+		}
+		// Find stream by domain to get user/tunnel IDs
+		var userID uint32
+		var tunnelID uint32
+		if ts, ok := s.tunnelStreams[domain]; ok {
+			userID = ts.UserID
+			tunnelID = ts.TunnelID
+		}
+		s.tunnelStreamsMux.RUnlock()
+		if domain != "" && len(httpResp.Body) > 0 && userID != 0 {
+			s.usage.Increment(userID, tunnelID, domain, 0, int64(len(httpResp.Body)), 1)
+		}
 	}
 
 	return resp, nil

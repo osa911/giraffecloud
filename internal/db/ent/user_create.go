@@ -148,6 +148,20 @@ func (uc *UserCreate) SetNillableLastActivity(t *time.Time) *UserCreate {
 	return uc
 }
 
+// SetPlanName sets the "plan_name" field.
+func (uc *UserCreate) SetPlanName(s string) *UserCreate {
+	uc.mutation.SetPlanName(s)
+	return uc
+}
+
+// SetNillablePlanName sets the "plan_name" field if the given value is not nil.
+func (uc *UserCreate) SetNillablePlanName(s *string) *UserCreate {
+	if s != nil {
+		uc.SetPlanName(*s)
+	}
+	return uc
+}
+
 // SetID sets the "id" field.
 func (uc *UserCreate) SetID(u uint32) *UserCreate {
 	uc.mutation.SetID(u)
@@ -347,6 +361,10 @@ func (uc *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 	if value, ok := uc.mutation.LastActivity(); ok {
 		_spec.SetField(user.FieldLastActivity, field.TypeTime, value)
 		_node.LastActivity = &value
+	}
+	if value, ok := uc.mutation.PlanName(); ok {
+		_spec.SetField(user.FieldPlanName, field.TypeString, value)
+		_node.PlanName = &value
 	}
 	if nodes := uc.mutation.SessionsIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{

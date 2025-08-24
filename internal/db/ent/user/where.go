@@ -105,6 +105,11 @@ func LastActivity(v time.Time) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldLastActivity, v))
 }
 
+// PlanName applies equality check predicate on the "plan_name" field. It's identical to PlanNameEQ.
+func PlanName(v string) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldPlanName, v))
+}
+
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.
 func CreatedAtEQ(v time.Time) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldCreatedAt, v))
@@ -638,6 +643,81 @@ func LastActivityIsNil() predicate.User {
 // LastActivityNotNil applies the NotNil predicate on the "last_activity" field.
 func LastActivityNotNil() predicate.User {
 	return predicate.User(sql.FieldNotNull(FieldLastActivity))
+}
+
+// PlanNameEQ applies the EQ predicate on the "plan_name" field.
+func PlanNameEQ(v string) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldPlanName, v))
+}
+
+// PlanNameNEQ applies the NEQ predicate on the "plan_name" field.
+func PlanNameNEQ(v string) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldPlanName, v))
+}
+
+// PlanNameIn applies the In predicate on the "plan_name" field.
+func PlanNameIn(vs ...string) predicate.User {
+	return predicate.User(sql.FieldIn(FieldPlanName, vs...))
+}
+
+// PlanNameNotIn applies the NotIn predicate on the "plan_name" field.
+func PlanNameNotIn(vs ...string) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldPlanName, vs...))
+}
+
+// PlanNameGT applies the GT predicate on the "plan_name" field.
+func PlanNameGT(v string) predicate.User {
+	return predicate.User(sql.FieldGT(FieldPlanName, v))
+}
+
+// PlanNameGTE applies the GTE predicate on the "plan_name" field.
+func PlanNameGTE(v string) predicate.User {
+	return predicate.User(sql.FieldGTE(FieldPlanName, v))
+}
+
+// PlanNameLT applies the LT predicate on the "plan_name" field.
+func PlanNameLT(v string) predicate.User {
+	return predicate.User(sql.FieldLT(FieldPlanName, v))
+}
+
+// PlanNameLTE applies the LTE predicate on the "plan_name" field.
+func PlanNameLTE(v string) predicate.User {
+	return predicate.User(sql.FieldLTE(FieldPlanName, v))
+}
+
+// PlanNameContains applies the Contains predicate on the "plan_name" field.
+func PlanNameContains(v string) predicate.User {
+	return predicate.User(sql.FieldContains(FieldPlanName, v))
+}
+
+// PlanNameHasPrefix applies the HasPrefix predicate on the "plan_name" field.
+func PlanNameHasPrefix(v string) predicate.User {
+	return predicate.User(sql.FieldHasPrefix(FieldPlanName, v))
+}
+
+// PlanNameHasSuffix applies the HasSuffix predicate on the "plan_name" field.
+func PlanNameHasSuffix(v string) predicate.User {
+	return predicate.User(sql.FieldHasSuffix(FieldPlanName, v))
+}
+
+// PlanNameIsNil applies the IsNil predicate on the "plan_name" field.
+func PlanNameIsNil() predicate.User {
+	return predicate.User(sql.FieldIsNull(FieldPlanName))
+}
+
+// PlanNameNotNil applies the NotNil predicate on the "plan_name" field.
+func PlanNameNotNil() predicate.User {
+	return predicate.User(sql.FieldNotNull(FieldPlanName))
+}
+
+// PlanNameEqualFold applies the EqualFold predicate on the "plan_name" field.
+func PlanNameEqualFold(v string) predicate.User {
+	return predicate.User(sql.FieldEqualFold(FieldPlanName, v))
+}
+
+// PlanNameContainsFold applies the ContainsFold predicate on the "plan_name" field.
+func PlanNameContainsFold(v string) predicate.User {
+	return predicate.User(sql.FieldContainsFold(FieldPlanName, v))
 }
 
 // HasSessions applies the HasEdge predicate on the "sessions" edge.
