@@ -20,6 +20,3 @@ type QuotaResult struct {
 type QuotaChecker interface {
 	CheckUser(ctx context.Context, userID uint32) (QuotaResult, error)
 }
-
-
-

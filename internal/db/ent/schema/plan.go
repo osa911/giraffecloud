@@ -20,6 +20,3 @@ func (Plan) Fields() []ent.Field {
 }
 
 func (Plan) Mixin() []ent.Mixin { return []ent.Mixin{Mixin{}} }
-
-
-
