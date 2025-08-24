@@ -49,6 +49,7 @@ type GRPCTunnelServer struct {
 	concurrentReqs int64
 	totalResponses int64
 	totalErrors    int64
+	timeoutErrors  int64
 	totalBytesIn   int64
 	totalBytesOut  int64
 
@@ -391,6 +392,7 @@ func (s *GRPCTunnelServer) HealthCheck(ctx context.Context, req *proto.HealthChe
 			"concurrent_requests": fmt.Sprintf("%d", concurrent),
 			"total_requests":      fmt.Sprintf("%d", atomic.LoadInt64(&s.totalRequests)),
 			"total_errors":        fmt.Sprintf("%d", atomic.LoadInt64(&s.totalErrors)),
+			"timeout_errors":      fmt.Sprintf("%d", atomic.LoadInt64(&s.timeoutErrors)),
 		},
 	}, nil
 }
@@ -453,6 +455,9 @@ func (s *GRPCTunnelServer) ProxyHTTPRequest(domain string, req *http.Request, cl
 	response, err := s.sendRequestAndWaitResponse(tunnelStream, grpcReq)
 	if err != nil {
 		atomic.AddInt64(&s.totalErrors, 1)
+		if isTimeoutError(err) {
+			atomic.AddInt64(&s.timeoutErrors, 1)
+		}
 		return nil, err
 	}
 

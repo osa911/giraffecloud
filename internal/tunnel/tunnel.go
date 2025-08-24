@@ -81,6 +81,9 @@ type Tunnel struct {
 	localPort int
 	logger    *logging.Logger
 
+	// Singleton management
+	singletonManager *SingletonManager
+
 	// Enhanced connection management
 	state       ConnectionState
 	stateMutex  sync.RWMutex
@@ -139,12 +142,19 @@ type TunnelState struct {
 
 // NewTunnel creates a new tunnel instance with enhanced features
 func NewTunnel() *Tunnel {
+	singletonManager, err := NewSingletonManager()
+	if err != nil {
+		// Log error but don't fail - singleton is optional for backward compatibility
+		logging.GetGlobalLogger().Warn("Failed to create singleton manager: %v", err)
+	}
+
 	return &Tunnel{
-		stopChan:     make(chan struct{}),
-		logger:       logging.GetGlobalLogger(),
-		state:        StateDisconnected,
-		retryConfig:  DefaultRetryConfig(),
-		streamConfig: DefaultStreamingConfig(), // Use default streaming config
+		stopChan:         make(chan struct{}),
+		logger:           logging.GetGlobalLogger(),
+		singletonManager: singletonManager,
+		state:            StateDisconnected,
+		retryConfig:      DefaultRetryConfig(),
+		streamConfig:     DefaultStreamingConfig(), // Use default streaming config
 	}
 }
 
@@ -177,6 +187,24 @@ func (t *Tunnel) setState(state ConnectionState) {
 
 // Connect establishes tunnel connections with retry logic
 func (t *Tunnel) Connect(ctx context.Context, serverAddr, token, domain string, localPort int, tlsConfig *tls.Config) error {
+	// Check singleton lock before connecting
+	if t.singletonManager != nil {
+		// Clean up any stale locks first
+		if err := t.singletonManager.CleanupStaleLock(); err != nil {
+			t.logger.Warn("Failed to cleanup stale lock: %v", err)
+		}
+
+		// Check for service conflicts
+		if err := t.singletonManager.CheckServiceConflict(); err != nil {
+			return fmt.Errorf("service conflict detected: %w", err)
+		}
+
+		// Acquire singleton lock
+		if err := t.singletonManager.AcquireLock(); err != nil {
+			return fmt.Errorf("failed to acquire singleton lock: %w", err)
+		}
+	}
+
 	// Use the provided context instead of creating our own
 	t.ctx, t.cancel = context.WithCancel(ctx)
 
@@ -301,7 +329,7 @@ func (t *Tunnel) attemptDualConnections(serverAddr string, tlsConfig *tls.Config
 		t.logger.Info("Falling back to TCP-only mode...")
 		t.grpcEnabled = false
 	} else {
-		t.logger.Info("✅ gRPC tunnel established successfully - unlimited HTTP concurrency enabled!")
+		t.logger.Info("✅ gRPC tunnel established successfully - unlimited HTTP concurrency enabled! Client ID: %s", t.grpcClient.GetClientID())
 		t.grpcEnabled = true
 	}
 
@@ -869,7 +897,7 @@ func (t *Tunnel) coordinatedReconnectWithContext(isIntentional bool) {
 		if isIntentional {
 			t.logger.Info("[CLEANUP] Preserving gRPC client during WebSocket recycling")
 		} else {
-			t.logger.Info("[CLEANUP] 🛑 Stopping existing gRPC client to prevent duplicates")
+			t.logger.Info("[CLEANUP] 🛑 Stopping existing gRPC client to prevent duplicates (Client ID: %s)", t.grpcClient.GetClientID())
 			if err := t.grpcClient.Stop(); err != nil {
 				t.logger.Error("Error stopping gRPC client: %v", err)
 			}
@@ -904,6 +932,13 @@ func (t *Tunnel) reconnect() {
 
 // Disconnect closes the tunnel connection and cleans up resources
 func (t *Tunnel) Disconnect() error {
+	// Release singleton lock
+	if t.singletonManager != nil {
+		if err := t.singletonManager.ReleaseLock(); err != nil {
+			t.logger.Warn("Failed to release singleton lock: %v", err)
+		}
+	}
+
 	// Cancel context to stop all goroutines
 	t.cancel()
 
@@ -923,12 +958,12 @@ func (t *Tunnel) Disconnect() error {
 	// Close gRPC client if enabled
 	var err error
 	if t.grpcEnabled && t.grpcClient != nil {
-		t.logger.Info("Closing gRPC tunnel client...")
+		t.logger.Info("Closing gRPC tunnel client (Client ID: %s)...", t.grpcClient.GetClientID())
 		if grpcErr := t.grpcClient.Stop(); grpcErr != nil {
 			t.logger.Error("Error closing gRPC client: %v", grpcErr)
 			err = grpcErr
 		} else {
-			t.logger.Info("✅ gRPC tunnel client closed successfully")
+			t.logger.Info("✅ gRPC tunnel client closed successfully (Client ID: %s)", t.grpcClient.GetClientID())
 		}
 		t.grpcClient = nil
 		t.grpcEnabled = false
@@ -1033,7 +1068,9 @@ func (t *Tunnel) GetStats() map[string]interface{} {
 		stats["grpc_requests"] = grpcMetrics["total_requests"]
 		stats["grpc_responses"] = grpcMetrics["total_responses"]
 		stats["grpc_errors"] = grpcMetrics["total_errors"]
+		stats["grpc_timeout_errors"] = grpcMetrics["timeout_errors"]
 		stats["grpc_reconnects"] = grpcMetrics["reconnect_count"]
+		stats["grpc_timeout_reconnects"] = grpcMetrics["timeout_reconnects"]
 	}
 
 	return stats
