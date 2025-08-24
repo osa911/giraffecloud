@@ -26,6 +26,8 @@ type UpdaterService struct {
 	currentExePath  string
 	backupDir       string
 	tempDir         string
+	// OnPrivilegeEscalation is called right before attempting sudo escalation (if any)
+	OnPrivilegeEscalation func()
 }
 
 // UpdateInfo contains information about an available update
@@ -243,8 +245,13 @@ func (u *UpdaterService) InstallUpdate(downloadPath string) error {
 	if err := u.replaceExecutable(newExePath); err != nil {
 		// Attempt privilege escalation for permission errors on Unix-like systems when interactive
 		if (runtime.GOOS == "linux" || runtime.GOOS == "darwin") && u.shouldAttemptSudo(err) {
+			// Notify UI (e.g., to stop spinners) before sudo escalation
+			if u.OnPrivilegeEscalation != nil {
+				u.OnPrivilegeEscalation()
+			}
 			u.logger.Warn("Permission issue detected while replacing executable. Attempting sudo install...")
-			u.logger.Info("Sudo required to update: %s. You may be prompted for your password now.", u.currentExePath)
+			u.logger.Info("Sudo required to update: %s", u.currentExePath)
+			u.logger.Info("If prompted, please enter your system password to continue.")
 			u.logger.Info("Manual command: sudo install -m 0755 %q %q", newExePath, u.currentExePath)
 			if sudoErr := u.installWithSudo(newExePath); sudoErr == nil {
 				u.logger.Info("Replaced executable via sudo successfully")
@@ -565,6 +572,7 @@ func (u *UpdaterService) shouldAttemptSudo(err error) bool {
 // installWithSudo replaces the executable using sudo install
 func (u *UpdaterService) installWithSudo(newExePath string) error {
 	cmd := exec.Command("sudo", "install", "-m", "0755", newExePath, u.currentExePath)
+	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()

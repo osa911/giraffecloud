@@ -165,9 +165,12 @@ Examples:
 
 		// Install update
 		logger.Info("🔧 Installing update...")
+		// Show spinner during install by default
 		s.Suffix = " Installing update..."
+		updater.OnPrivilegeEscalation = func() {
+			s.Stop()
+		}
 		s.Start()
-
 		err = updater.InstallUpdate(downloadPath)
 		s.Stop()
 
