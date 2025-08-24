@@ -344,36 +344,6 @@ func (r *HybridTunnelRouter) isWebSocketUpgrade(requestData []byte) bool {
 		strings.Contains(requestLower, "connection: upgrade")
 }
 
-// routeToTCPForLargeFile routes large files to TCP tunnel for efficient streaming
-func (r *HybridTunnelRouter) routeToTCPForLargeFile(domain string, conn net.Conn, requestData []byte, requestBody io.Reader, clientIP, method, path string) {
-	atomic.AddInt64(&r.tcpRequests, 1)
-
-	r.logger.Debug("[HYBRID→TCP] Routing large file via TCP streaming: %s %s", method, path)
-
-	// Check if TCP tunnel is available
-	if !r.tcpTunnel.IsTunnelDomain(domain) {
-		r.logger.Warn("[HYBRID→TCP] No active TCP tunnel for domain: %s, falling back to gRPC", domain)
-
-		// Fallback to gRPC tunnel for large files if TCP is unavailable
-		if r.grpcTunnel.IsTunnelActive(domain) {
-			r.logger.Info("[HYBRID→TCP→gRPC] Fallback: Routing large file via gRPC: %s %s", method, path)
-			r.routeToGRPCTunnel(domain, conn, requestData, requestBody, clientIP, method, path)
-			return
-		}
-
-		r.logger.Error("[HYBRID→TCP] No tunnel available for domain: %s", domain)
-		atomic.AddInt64(&r.routingErrors, 1)
-		r.writeHTTPError(conn, 502, "Bad Gateway - No tunnel connections available")
-		return
-	}
-
-	// Use the existing ProxyConnection method for HTTP requests over TCP
-	// This will handle the request as a regular HTTP request but over TCP tunnel for streaming
-	r.tcpTunnel.ProxyConnection(domain, conn, requestData, requestBody)
-
-	r.logger.Debug("[HYBRID→TCP] Large file streaming completed")
-}
-
 // routeToGRPCChunkedStreaming routes large files to gRPC chunked streaming for unlimited concurrency
 func (r *HybridTunnelRouter) routeToGRPCChunkedStreaming(domain string, conn net.Conn, requestData []byte, requestBody io.Reader, clientIP, method, path string) {
 	atomic.AddInt64(&r.grpcRequests, 1)
