@@ -55,10 +55,13 @@ type GRPCTunnelClient struct {
 	responseChannelsMu sync.RWMutex
 
 	// Metrics
-	totalRequests  int64
-	totalResponses int64
-	totalErrors    int64
-	reconnectCount int64
+	totalRequests     int64
+	totalResponses    int64
+	totalErrors       int64
+	reconnectCount    int64
+	timeoutErrors     int64
+	timeoutReconnects int64
+	lastError         error // Track the last error for reconnection classification
 
 	// Configuration
 	config *GRPCClientConfig
@@ -427,6 +430,16 @@ func (c *GRPCTunnelClient) handleIncomingMessages() {
 			} else {
 				c.logger.Error("[%s] Error receiving message: %v", c.clientID, err)
 				atomic.AddInt64(&c.totalErrors, 1)
+
+				// Store the last error for reconnection classification
+				c.mu.Lock()
+				c.lastError = err
+				c.mu.Unlock()
+
+				// Check if this is a timeout error
+				if isTimeoutError(err) {
+					atomic.AddInt64(&c.timeoutErrors, 1)
+				}
 			}
 
 			// Trigger reconnection if not stopping
@@ -936,15 +949,26 @@ func (c *GRPCTunnelClient) reportMetrics() {
 	total := atomic.LoadInt64(&c.totalRequests)
 	responses := atomic.LoadInt64(&c.totalResponses)
 	errors := atomic.LoadInt64(&c.totalErrors)
+	timeoutErrors := atomic.LoadInt64(&c.timeoutErrors)
 	reconnects := atomic.LoadInt64(&c.reconnectCount)
+	timeoutReconnects := atomic.LoadInt64(&c.timeoutReconnects)
 
-	c.logger.Info("[gRPC CLIENT] ID: %s, Domain: %s, Requests: %d, Responses: %d, Errors: %d, Reconnects: %d",
-		c.clientID, c.domain, total, responses, errors, reconnects)
+	c.logger.Info("[gRPC CLIENT] ID: %s, Domain: %s, Requests: %d, Responses: %d, Errors: %d (Timeout: %d), Reconnects: %d (Timeout: %d)",
+		c.clientID, c.domain, total, responses, errors, timeoutErrors, reconnects, timeoutReconnects)
 }
 
 // reconnect attempts to reconnect the tunnel
 func (c *GRPCTunnelClient) reconnect() {
 	atomic.AddInt64(&c.reconnectCount, 1)
+
+	// Check if this reconnection was triggered by a timeout error
+	c.mu.Lock()
+	lastErr := c.lastError
+	c.mu.Unlock()
+
+	if lastErr != nil && isTimeoutError(lastErr) {
+		atomic.AddInt64(&c.timeoutReconnects, 1)
+	}
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -1021,16 +1045,51 @@ func (c *GRPCTunnelClient) reconnect() {
 	}
 }
 
+// isTimeoutError checks if the error is a timeout-related error
+func isTimeoutError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errStr := err.Error()
+	timeoutKeywords := []string{
+		"timeout",
+		"deadline",
+		"context deadline exceeded",
+		"connection timed out",
+		"i/o timeout",
+		"tunnel inactive",
+	}
+
+	for _, keyword := range timeoutKeywords {
+		if strings.Contains(strings.ToLower(errStr), strings.ToLower(keyword)) {
+			return true
+		}
+	}
+
+	// Check for gRPC timeout status codes
+	if st, ok := status.FromError(err); ok {
+		switch st.Code() {
+		case codes.DeadlineExceeded, codes.Unavailable:
+			return true
+		}
+	}
+
+	return false
+}
+
 // GetMetrics returns current client metrics
 func (c *GRPCTunnelClient) GetMetrics() map[string]interface{} {
 	return map[string]interface{}{
-		"client_id":       c.clientID,
-		"connected":       c.connected,
-		"total_requests":  atomic.LoadInt64(&c.totalRequests),
-		"total_responses": atomic.LoadInt64(&c.totalResponses),
-		"total_errors":    atomic.LoadInt64(&c.totalErrors),
-		"reconnect_count": atomic.LoadInt64(&c.reconnectCount),
-		"domain":          c.domain,
-		"target_port":     c.targetPort,
+		"client_id":          c.clientID,
+		"connected":          c.connected,
+		"total_requests":     atomic.LoadInt64(&c.totalRequests),
+		"total_responses":    atomic.LoadInt64(&c.totalResponses),
+		"total_errors":       atomic.LoadInt64(&c.totalErrors),
+		"timeout_errors":     atomic.LoadInt64(&c.timeoutErrors),
+		"reconnect_count":    atomic.LoadInt64(&c.reconnectCount),
+		"timeout_reconnects": atomic.LoadInt64(&c.timeoutReconnects),
+		"domain":             c.domain,
+		"target_port":        c.targetPort,
 	}
 }

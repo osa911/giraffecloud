@@ -28,6 +28,7 @@ type HybridTunnelRouter struct {
 	tcpRequests       int64
 	websocketUpgrades int64
 	routingErrors     int64
+	timeoutErrors     int64
 
 	// Configuration
 	config *HybridRouterConfig
@@ -216,6 +217,9 @@ func (r *HybridTunnelRouter) routeToGRPCTunnel(domain string, conn net.Conn, req
 	if err != nil {
 		r.logger.Error("[HYBRID→gRPC] gRPC proxy error: %v", err)
 		atomic.AddInt64(&r.routingErrors, 1)
+		if isTimeoutError(err) {
+			atomic.AddInt64(&r.timeoutErrors, 1)
+		}
 		r.writeHTTPError(conn, 502, fmt.Sprintf("Bad Gateway - %v", err))
 		return
 	}
@@ -372,6 +376,9 @@ func (r *HybridTunnelRouter) routeToGRPCChunkedStreaming(domain string, conn net
 	if err != nil {
 		r.logger.Error("[HYBRID→gRPC-CHUNKED] gRPC chunked proxy error: %v", err)
 		atomic.AddInt64(&r.routingErrors, 1)
+		if isTimeoutError(err) {
+			atomic.AddInt64(&r.timeoutErrors, 1)
+		}
 		r.writeHTTPError(conn, 502, fmt.Sprintf("Bad Gateway - %v", err))
 		return
 	}
@@ -448,6 +455,7 @@ func (r *HybridTunnelRouter) reportMetrics() {
 		tcp := atomic.LoadInt64(&r.tcpRequests)
 		ws := atomic.LoadInt64(&r.websocketUpgrades)
 		errors := atomic.LoadInt64(&r.routingErrors)
+		timeoutErrors := atomic.LoadInt64(&r.timeoutErrors)
 
 		grpcPercent := float64(0)
 		tcpPercent := float64(0)
@@ -456,8 +464,8 @@ func (r *HybridTunnelRouter) reportMetrics() {
 			tcpPercent = float64(tcp) / float64(total) * 100
 		}
 
-		r.logger.Info("[HYBRID METRICS] Total: %d, gRPC: %d (%.1f%%), TCP: %d (%.1f%%), WebSocket: %d, Errors: %d",
-			total, grpc, grpcPercent, tcp, tcpPercent, ws, errors)
+		r.logger.Info("[HYBRID METRICS] Total: %d, gRPC: %d (%.1f%%), TCP: %d (%.1f%%), WebSocket: %d, Errors: %d (Timeout: %d)",
+			total, grpc, grpcPercent, tcp, tcpPercent, ws, errors, timeoutErrors)
 	}
 }
 
@@ -469,6 +477,7 @@ func (r *HybridTunnelRouter) GetMetrics() map[string]interface{} {
 		"tcp_requests":       atomic.LoadInt64(&r.tcpRequests),
 		"websocket_upgrades": atomic.LoadInt64(&r.websocketUpgrades),
 		"routing_errors":     atomic.LoadInt64(&r.routingErrors),
+		"timeout_errors":     atomic.LoadInt64(&r.timeoutErrors),
 	}
 }
 

@@ -1068,7 +1068,9 @@ func (t *Tunnel) GetStats() map[string]interface{} {
 		stats["grpc_requests"] = grpcMetrics["total_requests"]
 		stats["grpc_responses"] = grpcMetrics["total_responses"]
 		stats["grpc_errors"] = grpcMetrics["total_errors"]
+		stats["grpc_timeout_errors"] = grpcMetrics["timeout_errors"]
 		stats["grpc_reconnects"] = grpcMetrics["reconnect_count"]
+		stats["grpc_timeout_reconnects"] = grpcMetrics["timeout_reconnects"]
 	}
 
 	return stats

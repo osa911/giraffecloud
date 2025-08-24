@@ -374,9 +374,10 @@ func (s *GRPCTunnelServer) reportMetrics() {
 		concurrentReqs := atomic.LoadInt64(&s.concurrentReqs)
 		totalResponses := atomic.LoadInt64(&s.totalResponses)
 		totalErrors := atomic.LoadInt64(&s.totalErrors)
+		timeoutErrors := atomic.LoadInt64(&s.timeoutErrors)
 
-		s.logger.Info("[gRPC METRICS] Active Streams: %d, Total Requests: %d, Concurrent: %d, Responses: %d, Errors: %d",
-			activeStreams, totalReqs, concurrentReqs, totalResponses, totalErrors)
+		s.logger.Info("[gRPC METRICS] Active Streams: %d, Total Requests: %d, Concurrent: %d, Responses: %d, Errors: %d (Timeout: %d)",
+			activeStreams, totalReqs, concurrentReqs, totalResponses, totalErrors, timeoutErrors)
 	}
 }
 
