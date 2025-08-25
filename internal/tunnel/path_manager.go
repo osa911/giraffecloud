@@ -40,8 +40,15 @@ func (sm *ServiceManager) addToUnixPath() error {
 		return fmt.Errorf("failed to create %s: %w", binDir, err)
 	}
 
+	// Avoid circular/self symlink if the executable already lives at the target path
+	target := filepath.Join(binDir, "giraffecloud")
+	if sm.executablePath == target {
+		sm.logger.Info("CLI already available at: %s", target)
+		return nil
+	}
+
 	// Create symlink
-	symlink := filepath.Join(binDir, "giraffecloud")
+	symlink := target
 
 	// Remove existing symlink if it exists
 	if _, err := os.Lstat(symlink); err == nil {
