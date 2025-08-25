@@ -14,10 +14,13 @@ jobs:
     steps:
       - name: Delete old pre-releases
         env:
+          # Provide auth and explicit repo context so gh doesn't need a .git directory
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           # Get all releases
-          releases=$(gh release list --limit 1000)
+          releases=$(gh release list --limit 1000 --repo "$GH_REPO")
           current_time=$(date +%s)
           month_ago=$(date -d "30 days ago" +%s)
 
@@ -37,7 +40,7 @@ jobs:
               # Check if it's a pre-release (Draft or Pre-release)
               if [[ "$type" == "Pre-release" ]] && [[ $release_time -lt $month_ago ]]; then
                 echo "Deleting old pre-release: $title ($tag) from $date"
-                gh release delete "$tag" --yes || echo "Failed to delete release $tag"
+                gh release delete "$tag" --yes --repo "$GH_REPO" || echo "Failed to delete release $tag"
               fi
             fi
           done <<< "$releases"
