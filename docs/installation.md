@@ -16,6 +16,14 @@ Linux system service (one command):
 curl -fsSL https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/install.sh | bash -s -- --service system
 ```
 
+### Interactive install (prompts)
+
+To enable prompts (install as a system service, enter API token), run the script in a TTY:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/install.sh)
+```
+
 Windows (PowerShell):
 
 ```powershell
@@ -100,6 +108,17 @@ rm -f ~/.local/bin/giraffecloud
 macOS/Linux (system install):
 
 ```bash
+sudo rm -f /usr/local/bin/giraffecloud
+```
+
+Linux system service uninstall:
+
+```bash
+sudo systemctl stop giraffecloud || true
+sudo systemctl disable giraffecloud || true
+sudo rm -f /etc/systemd/system/giraffecloud.service
+sudo systemctl daemon-reload
+# Optional: remove binary
 sudo rm -f /usr/local/bin/giraffecloud
 ```
 

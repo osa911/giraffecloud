@@ -72,6 +72,31 @@ case "$GOARCH" in
   *) echo "Unsupported architecture: $GOARCH" >&2; exit 1 ;;
 esac
 
+# Interactive prompts when running in a TTY and no explicit options were passed
+if [[ -t 0 && -t 1 ]]; then
+  # Offer to install as a system service on Linux
+  if [[ "$OS" == "linux" && "$SERVICE_MODE" == "none" ]]; then
+    read -r -p "Install and start GiraffeCloud as a system service now? [Y/n] " _ans || true
+    case "${_ans:-Y}" in
+      [nN]*) : ;;
+      *) SERVICE_MODE="system"; INSTALL_MODE="system" ;;
+    esac
+  fi
+  # Offer to capture API token if not provided
+  if [[ -z "$LOGIN_TOKEN" ]]; then
+    read -r -p "Provide API token now to login after install? [y/N] " _ans || true
+    case "${_ans:-N}" in
+      [yY]*)
+        printf "Enter API token: "
+        stty -echo || true
+        read -r LOGIN_TOKEN || true
+        stty echo || true
+        printf "\n"
+        ;;
+    esac
+  fi
+fi
+
 # If a system service is requested, ensure we install system-wide for a stable ExecStart path
 if [[ "$SERVICE_MODE" == "system" && "$INSTALL_MODE" != "system" ]]; then
   echo "Note: --service system requested; switching to system-wide install at /usr/local/bin"
@@ -192,10 +217,26 @@ if [[ "$SERVICE_MODE" != "none" ]]; then
     echo "Service installation is currently supported on Linux only; skipping." >&2
   else
     echo "Installing service: $SERVICE_MODE"
+    # Pre-auth sudo interactively for a smoother flow
+    if [[ -t 0 && -t 1 ]]; then
+      sudo -v || true
+    fi
     # Always system for now
     sudo "$DEST" service install
-    # Ensure env flags are applied and restart
+    # Patch unit to ensure correct ExecStart path and required env flags
+    UNIT_PATH="/etc/systemd/system/giraffecloud.service"
+    if [[ -f "$UNIT_PATH" ]]; then
+      sudo sed -i 's#^ExecStart=.*#ExecStart=/usr/local/bin/giraffecloud connect#' "$UNIT_PATH"
+      if ! grep -q '^Environment=GIRAFFECLOUD_HOME=' "$UNIT_PATH"; then
+        sudo sed -i "/^\\[Service\\]/a Environment=GIRAFFECLOUD_HOME=$HOME/.giraffecloud" "$UNIT_PATH"
+      fi
+      if ! grep -q '^Environment=GIRAFFECLOUD_IS_SERVICE=' "$UNIT_PATH"; then
+        sudo sed -i "/^\\[Service\\]/a Environment=GIRAFFECLOUD_IS_SERVICE=1" "$UNIT_PATH"
+      fi
+    fi
+    # Apply and start
     sudo systemctl daemon-reload || true
+    sudo systemctl enable giraffecloud || true
     sudo systemctl restart giraffecloud || true
   fi
 fi
