@@ -19,12 +19,7 @@ export default function HomeServerPage() {
           <Typography variant="h1" component="h1" gutterBottom>
             Welcome to GiraffeCloud
           </Typography>
-          <Typography
-            variant="h5"
-            component="h2"
-            gutterBottom
-            color="text.secondary"
-          >
+          <Typography variant="h5" component="h2" gutterBottom color="text.secondary">
             Secure and efficient reverse tunnel service
           </Typography>
           <Box sx={{ mt: 4 }}>

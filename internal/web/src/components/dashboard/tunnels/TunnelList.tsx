@@ -78,18 +78,9 @@ export default function TunnelList() {
     <>
       <Card>
         <Box sx={{ p: 3 }}>
-          <Stack
-            direction="row"
-            justifyContent="space-between"
-            alignItems="center"
-            spacing={2}
-          >
+          <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
             <Typography variant="h5">Tunnels</Typography>
-            <Button
-              variant="contained"
-              color="primary"
-              onClick={() => handleOpenDialog()}
-            >
+            <Button variant="contained" color="primary" onClick={() => handleOpenDialog()}>
               Create Tunnel
             </Button>
           </Stack>
@@ -119,23 +110,13 @@ export default function TunnelList() {
                       color="primary"
                     />
                   </TableCell>
-                  <TableCell>
-                    {format(new Date(tunnel.created_at), "PPp")}
-                  </TableCell>
-                  <TableCell>
-                    {format(new Date(tunnel.updated_at), "PPp")}
-                  </TableCell>
+                  <TableCell>{format(new Date(tunnel.created_at), "PPp")}</TableCell>
+                  <TableCell>{format(new Date(tunnel.updated_at), "PPp")}</TableCell>
                   <TableCell align="right">
-                    <IconButton
-                      size="small"
-                      onClick={() => handleOpenDialog(tunnel)}
-                    >
+                    <IconButton size="small" onClick={() => handleOpenDialog(tunnel)}>
                       <EditIcon />
                     </IconButton>
-                    <IconButton
-                      size="small"
-                      onClick={() => handleDelete(tunnel)}
-                    >
+                    <IconButton size="small" onClick={() => handleDelete(tunnel)}>
                       <DeleteIcon />
                     </IconButton>
                   </TableCell>

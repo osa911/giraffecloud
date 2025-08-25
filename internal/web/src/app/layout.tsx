@@ -27,9 +27,7 @@ type RootServerLayoutProps = {
   children: React.ReactNode;
 };
 
-export default async function RootServerLayout({
-  children,
-}: RootServerLayoutProps) {
+export default async function RootServerLayout({ children }: RootServerLayoutProps) {
   const initialUser = await getAuthUser({ redirect: false });
 
   return (

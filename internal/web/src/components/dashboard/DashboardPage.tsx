@@ -1,13 +1,7 @@
 "use client";
 
-import {
-  Box,
-  Grid,
-  Typography,
-  Card,
-  CardContent,
-  CardHeader,
-} from "@mui/material";
+import { Box, Grid, Typography, Card, CardContent, CardHeader } from "@mui/material";
+import UsageCard from "@/components/dashboard/UsageCard";
 
 interface DashboardStats {
   totalTunnels: number;
@@ -46,11 +40,12 @@ export default function DashboardPage({ initialStats }: DashboardPageProps) {
           <Card>
             <CardHeader title="Total Traffic" />
             <CardContent>
-              <Typography variant="h3">
-                {initialStats.totalTraffic} GB
-              </Typography>
+              <Typography variant="h3">{initialStats.totalTraffic} GB</Typography>
             </CardContent>
           </Card>
+        </Grid>
+        <Grid size={{ xs: 12, md: 4 }}>
+          <UsageCard monthlyLimitBytes={undefined} />
         </Grid>
       </Grid>
     </Box>

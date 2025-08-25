@@ -23,12 +23,7 @@ import {
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
 import { format } from "date-fns";
-import {
-  createToken,
-  getTokensList,
-  revokeToken,
-  type Token,
-} from "@/api/tokenApi";
+import { createToken, getTokensList, revokeToken, type Token } from "@/api/tokenApi";
 import { ApiError } from "@/utils/error";
 
 const TokenManagement: React.FC = () => {
@@ -46,9 +41,7 @@ const TokenManagement: React.FC = () => {
       setTokens(data);
       setError(null);
     } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : "Failed to fetch tokens"
-      );
+      setError(err instanceof ApiError ? err.message : "Failed to fetch tokens");
       console.error("Error fetching tokens:", err);
     } finally {
       setLoading(false);
@@ -76,9 +69,7 @@ const TokenManagement: React.FC = () => {
       ]);
       setError(null);
     } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : "Failed to create token"
-      );
+      setError(err instanceof ApiError ? err.message : "Failed to create token");
       console.error("Error creating token:", err);
     } finally {
       setLoading(false);
@@ -92,9 +83,7 @@ const TokenManagement: React.FC = () => {
       setTokens(tokens.filter((token) => token.id !== id));
       setError(null);
     } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : "Failed to revoke token"
-      );
+      setError(err instanceof ApiError ? err.message : "Failed to revoke token");
       console.error("Error revoking token:", err);
     } finally {
       setLoading(false);
@@ -115,11 +104,7 @@ const TokenManagement: React.FC = () => {
     <Box sx={{ p: 3 }}>
       <Box sx={{ display: "flex", justifyContent: "space-between", mb: 3 }}>
         <Typography variant="h5">API Tokens</Typography>
-        <Button
-          variant="contained"
-          onClick={() => setOpen(true)}
-          disabled={loading}
-        >
+        <Button variant="contained" onClick={() => setOpen(true)} disabled={loading}>
           Create New Token
         </Button>
       </Box>
@@ -139,15 +124,9 @@ const TokenManagement: React.FC = () => {
             {tokens.map((token) => (
               <TableRow key={token.id}>
                 <TableCell>{token.name}</TableCell>
-                <TableCell>
-                  {format(new Date(token.created_at), "PPp")}
-                </TableCell>
-                <TableCell>
-                  {format(new Date(token.last_used_at), "PPp")}
-                </TableCell>
-                <TableCell>
-                  {format(new Date(token.expires_at), "PPp")}
-                </TableCell>
+                <TableCell>{format(new Date(token.created_at), "PPp")}</TableCell>
+                <TableCell>{format(new Date(token.last_used_at), "PPp")}</TableCell>
+                <TableCell>{format(new Date(token.expires_at), "PPp")}</TableCell>
                 <TableCell>
                   <IconButton
                     onClick={() => handleRevokeToken(token.id)}
@@ -165,15 +144,12 @@ const TokenManagement: React.FC = () => {
       </TableContainer>
 
       <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
-        <DialogTitle>
-          {newTokenValue ? "Save Your Token" : "Create New Token"}
-        </DialogTitle>
+        <DialogTitle>{newTokenValue ? "Save Your Token" : "Create New Token"}</DialogTitle>
         <DialogContent>
           {newTokenValue ? (
             <Box sx={{ mt: 2 }}>
               <Typography variant="body2" color="error" gutterBottom>
-                Make sure to copy your token now. You won't be able to see it
-                again!
+                Make sure to copy your token now. You won't be able to see it again!
               </Typography>
               <TextField
                 fullWidth
@@ -219,11 +195,7 @@ const TokenManagement: React.FC = () => {
         onClose={handleErrorClose}
         anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
       >
-        <Alert
-          onClose={handleErrorClose}
-          severity="error"
-          sx={{ width: "100%" }}
-        >
+        <Alert onClose={handleErrorClose} severity="error" sx={{ width: "100%" }}>
           {error}
         </Alert>
       </Snackbar>

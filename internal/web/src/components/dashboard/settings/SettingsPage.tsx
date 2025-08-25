@@ -49,11 +49,7 @@ const SettingsPage = (props: Props) => {
       </Typography>
       <Paper sx={{ width: "100%" }}>
         <Box sx={{ borderBottom: 1, borderColor: "divider" }}>
-          <Tabs
-            value={value}
-            onChange={handleChange}
-            aria-label="settings tabs"
-          >
+          <Tabs value={value} onChange={handleChange} aria-label="settings tabs">
             <Tab label="API Tokens" {...a11yProps(0)} />
             {/* Add more tabs here as needed */}
           </Tabs>
