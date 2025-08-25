@@ -134,6 +134,14 @@ func (sm *SingletonManager) getPIDFromFile() int {
 
 // CheckServiceConflict checks if there's a conflict with the system service
 func (sm *SingletonManager) CheckServiceConflict() error {
+	// If running under managed service, skip self-conflict detection
+	if os.Getenv("GIRAFFECLOUD_IS_SERVICE") == "1" {
+		if sm.logger != nil {
+			sm.logger.Debug("Running under system service; skipping service conflict check")
+		}
+		return nil
+	}
+
 	serviceManager, err := NewServiceManager()
 	if err != nil {
 		if sm.logger != nil {

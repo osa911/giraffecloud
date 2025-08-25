@@ -243,6 +243,7 @@ After=network.target
 Type=simple
 ExecStart=%s connect
 Environment=GIRAFFECLOUD_HOME=%s/.giraffecloud
+Environment=GIRAFFECLOUD_IS_SERVICE=1
 Restart=always
 RestartSec=10
 StandardOutput=append:%s/tunnel.log
