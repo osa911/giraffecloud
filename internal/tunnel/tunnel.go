@@ -111,6 +111,10 @@ type Tunnel struct {
 	isReconnecting         bool
 	isIntentionalReconnect bool // Flag to prevent race conditions during WebSocket recycling
 
+	// WebSocket re-establishment loop control (hybrid mode)
+	wsReconnectMu         sync.Mutex
+	wsReconnectInProgress bool
+
 	// Streaming configuration
 	streamConfig *StreamingConfig
 
@@ -360,8 +364,10 @@ func (t *Tunnel) attemptDualConnections(serverAddr string, tlsConfig *tls.Config
 		wsConn, err := t.establishConnection(serverAddr, tlsConfig, "websocket")
 		if err != nil {
 			t.logger.Error("Failed to establish WebSocket tunnel: %v", err)
-			// If WebSocket fails but gRPC succeeded, continue with gRPC-only
+			// If WebSocket fails but gRPC succeeded, continue with gRPC-only and start background retries
 			t.logger.Warn("WebSocket tunnel failed - continuing with gRPC-only mode (HTTP traffic only)")
+			// Start background re-establishment loop for WebSocket while keeping gRPC active
+			t.startWebSocketReconnectLoop(serverAddr, tlsConfig)
 		} else {
 			t.wsConn = wsConn
 			t.logger.Info("✅ WebSocket tunnel established successfully")
@@ -437,6 +443,100 @@ func (t *Tunnel) attemptDualConnections(serverAddr string, tlsConfig *tls.Config
 
 	t.logger.Info("All legacy TCP tunnel handlers started (%d HTTP + 1 WebSocket)", len(httpConnections))
 	return nil
+}
+
+// startWebSocketReconnectLoop continuously retries establishing the WebSocket tunnel
+// while gRPC remains connected. It exits on success or when the context is cancelled.
+func (t *Tunnel) startWebSocketReconnectLoop(serverAddr string, tlsConfig *tls.Config) {
+	// Avoid multiple concurrent loops
+	t.wsReconnectMu.Lock()
+	if t.wsReconnectInProgress || t.ctx == nil {
+		// Already running, or no active context
+		t.wsReconnectMu.Unlock()
+		return
+	}
+	// If a WebSocket connection already exists, nothing to do
+	if t.wsConn != nil {
+		t.wsReconnectMu.Unlock()
+		return
+	}
+	// Mark as in progress
+	t.wsReconnectInProgress = true
+	t.wsReconnectMu.Unlock()
+
+	go func() {
+		defer func() {
+			// Reset flag on exit
+			t.wsReconnectMu.Lock()
+			t.wsReconnectInProgress = false
+			t.wsReconnectMu.Unlock()
+		}()
+
+		// Backoff settings based on retryConfig
+		delay := t.retryConfig.InitialDelay
+		for {
+			// Exit conditions
+			select {
+			case <-t.ctx.Done():
+				return
+			default:
+			}
+
+			// Do not interfere with a full reconnection in progress
+			if t.isReconnecting {
+				time.Sleep(500 * time.Millisecond)
+				continue
+			}
+
+			// If gRPC is not enabled/connected anymore, stop this loop
+			if !t.grpcEnabled || t.grpcClient == nil || !t.grpcClient.IsConnected() {
+				return
+			}
+
+			// Prepare TLS config if needed to ensure fresh TLS state
+			useTLS := tlsConfig
+			if useTLS == nil {
+				EnsureConsistentConfigHome()
+				cfg, err := LoadConfig()
+				if err != nil {
+					// If config can't be loaded, retry later
+					t.logger.Warn("[WS RETRY] Failed to load TLS config: %v", err)
+					// Exponential backoff with jitter
+					time.Sleep(t.calculateNextDelay(delay))
+					continue
+				}
+				c, err := CreateSecureTLSConfig(cfg.Security.CACert, cfg.Security.ClientCert, cfg.Security.ClientKey)
+				if err != nil {
+					t.logger.Warn("[WS RETRY] Failed to create TLS config: %v", err)
+					time.Sleep(t.calculateNextDelay(delay))
+					continue
+				}
+				c = c.Clone()
+				c.ClientSessionCache = nil
+				c.SessionTicketsDisabled = true
+				c.Renegotiation = tls.RenegotiateNever
+				c.Time = func() time.Time { return time.Now() }
+				useTLS = c
+			}
+
+			// Attempt to establish WebSocket connection
+			wsConn, err := t.establishConnection(serverAddr, useTLS, "websocket")
+			if err != nil {
+				t.logger.Warn("[WS RETRY] WebSocket reconnect attempt failed: %v", err)
+				// Exponential backoff with jitter
+				delay = t.calculateNextDelay(delay)
+				time.Sleep(delay)
+				continue
+			}
+
+			// Success: set connection and start handler
+			t.wsConn = wsConn
+			t.logger.Info("✅ WebSocket tunnel re-established successfully")
+			t.wg.Add(1)
+			go t.handleWebSocketConnection(wsConn)
+			return
+		}
+	}()
 }
 
 // establishConnection establishes a single tunnel connection of specified type
