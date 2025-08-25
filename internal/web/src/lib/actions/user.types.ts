@@ -38,25 +38,17 @@ export type FormState = {
 
 // Action types
 export type GetProfileAction = () => Promise<UserResponse>;
-export type UpdateProfileAction = (
-  data: UpdateProfileRequest
-) => Promise<UserResponse>;
+export type UpdateProfileAction = (data: UpdateProfileRequest) => Promise<UserResponse>;
 export type DeleteProfileAction = () => Promise<void>;
 
-export type ListUsersAction = (
-  page?: number,
-  pageSize?: number
-) => Promise<ListUsersResponse>;
+export type ListUsersAction = (page?: number, pageSize?: number) => Promise<ListUsersResponse>;
 export type GetUserAction = (id: number) => Promise<UserResponse>;
-export type UpdateUserAction = (
-  id: number,
-  data: UpdateUserRequest
-) => Promise<UserResponse>;
+export type UpdateUserAction = (id: number, data: UpdateUserRequest) => Promise<UserResponse>;
 export type DeleteUserAction = (id: number) => Promise<void>;
 
 export type UpdateProfileFormAction = (
   prevState: FormState,
-  formData: FormData
+  formData: FormData,
 ) => Promise<FormState>;
 
 // Error types

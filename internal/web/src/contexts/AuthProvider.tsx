@@ -20,15 +20,8 @@ import {
 import { auth as firebaseAuth } from "@/services/firebaseService";
 import { handleTokenChanged } from "@/lib/actions/auth.actions";
 import { User } from "@/lib/actions/user.types";
-import {
-  logout,
-  loginWithTokenAction,
-  registerWithEmailAction,
-} from "@/lib/actions/auth.actions";
-import {
-  LoginWithTokenFormState,
-  RegisterRequest,
-} from "@/lib/actions/auth.types";
+import { logout, loginWithTokenAction, registerWithEmailAction } from "@/lib/actions/auth.actions";
+import { LoginWithTokenFormState, RegisterRequest } from "@/lib/actions/auth.types";
 
 type AuthContextType = {
   user: User | null;
@@ -58,11 +51,11 @@ export const AuthProvider = ({ children, initialUser }: AuthProviderProps) => {
   const [, startTransition] = useTransition();
   const [, loginWithToken] = useActionState<undefined, LoginWithTokenFormState>(
     loginWithTokenAction,
-    undefined
+    undefined,
   );
   const [, registerWithEmail] = useActionState<undefined, RegisterRequest>(
     registerWithEmailAction,
-    undefined
+    undefined,
   );
   /**
    * Handle refresh token changes
@@ -79,11 +72,7 @@ export const AuthProvider = ({ children, initialUser }: AuthProviderProps) => {
 
   const signUp = async (email: string, password: string, name: string) => {
     try {
-      const userCredential = await createUserWithEmailAndPassword(
-        firebaseAuth,
-        email,
-        password
-      );
+      const userCredential = await createUserWithEmailAndPassword(firebaseAuth, email, password);
 
       const registerData: RegisterRequest = {
         email,
@@ -114,11 +103,7 @@ export const AuthProvider = ({ children, initialUser }: AuthProviderProps) => {
 
   const signIn = async (email: string, password: string) => {
     try {
-      const userCredential = await signInWithEmailAndPassword(
-        firebaseAuth,
-        email,
-        password
-      );
+      const userCredential = await signInWithEmailAndPassword(firebaseAuth, email, password);
 
       const idToken = await userCredential.user.getIdToken();
       await handleLoginWithToken(idToken);

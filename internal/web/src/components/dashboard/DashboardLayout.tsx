@@ -44,10 +44,7 @@ interface DashboardLayoutClientProps {
   user: User;
 }
 
-export default function DashboardLayoutClient({
-  children,
-  user,
-}: DashboardLayoutClientProps) {
+export default function DashboardLayoutClient({ children, user }: DashboardLayoutClientProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const { logout } = useAuth();
@@ -135,9 +132,7 @@ export default function DashboardLayoutClient({
             aria-controls="user-menu"
             aria-haspopup="true"
           >
-            <Avatar sx={{ width: 32, height: 32 }}>
-              {user?.name?.charAt(0) || "U"}
-            </Avatar>
+            <Avatar sx={{ width: 32, height: 32 }}>{user?.name?.charAt(0) || "U"}</Avatar>
           </IconButton>
           <Menu
             id="user-menu"
@@ -146,17 +141,12 @@ export default function DashboardLayoutClient({
             onClose={handleMenuClose}
             onClick={handleMenuClose}
           >
-            <MenuItem onClick={() => router.push("/dashboard/profile")}>
-              Profile
-            </MenuItem>
+            <MenuItem onClick={() => router.push("/dashboard/profile")}>Profile</MenuItem>
             <MenuItem onClick={logout}>Logout</MenuItem>
           </Menu>
         </Toolbar>
       </AppBar>
-      <Box
-        component="nav"
-        sx={{ width: { sm: drawerWidth }, flexShrink: { sm: 0 } }}
-      >
+      <Box component="nav" sx={{ width: { sm: drawerWidth }, flexShrink: { sm: 0 } }}>
         <Drawer
           variant="temporary"
           open={mobileOpen}

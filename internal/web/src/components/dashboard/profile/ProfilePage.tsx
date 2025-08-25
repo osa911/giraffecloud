@@ -1,15 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import {
-  Box,
-  Paper,
-  Typography,
-  TextField,
-  Button,
-  Grid,
-  Avatar,
-} from "@mui/material";
+import { Box, Paper, Typography, TextField, Button, Grid, Avatar } from "@mui/material";
 import { updateProfileAction } from "@/lib/actions/user.actions";
 import { User } from "@/lib/actions/user.types";
 
@@ -58,13 +50,7 @@ export default function ProfilePage({ initialUser }: ProfilePageProps) {
                 autoComplete="name"
                 defaultValue={state.name}
               />
-              <Button
-                type="submit"
-                fullWidth
-                variant="contained"
-                sx={{ mt: 3 }}
-                disabled={loading}
-              >
+              <Button type="submit" fullWidth variant="contained" sx={{ mt: 3 }} disabled={loading}>
                 {loading ? "Saving..." : "Save Changes"}
               </Button>
             </Box>

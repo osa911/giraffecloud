@@ -7,10 +7,7 @@ const fetcher = async (url: string) => {
 };
 
 export function useTunnels() {
-  const { data, error, isLoading, mutate } = useSWR<Tunnel[]>(
-    "/tunnels",
-    fetcher
-  );
+  const { data, error, isLoading, mutate } = useSWR<Tunnel[]>("/tunnels", fetcher);
 
   return {
     tunnels: data,
