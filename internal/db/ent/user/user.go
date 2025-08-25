@@ -34,6 +34,8 @@ const (
 	FieldLastLoginIP = "last_login_ip"
 	// FieldLastActivity holds the string denoting the last_activity field in the database.
 	FieldLastActivity = "last_activity"
+	// FieldPlanName holds the string denoting the plan_name field in the database.
+	FieldPlanName = "plan_name"
 	// EdgeSessions holds the string denoting the sessions edge name in mutations.
 	EdgeSessions = "sessions"
 	// EdgeTokens holds the string denoting the tokens edge name in mutations.
@@ -78,6 +80,7 @@ var Columns = []string{
 	FieldLastLogin,
 	FieldLastLoginIP,
 	FieldLastActivity,
+	FieldPlanName,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -161,6 +164,11 @@ func ByLastLoginIP(opts ...sql.OrderTermOption) OrderOption {
 // ByLastActivity orders the results by the last_activity field.
 func ByLastActivity(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldLastActivity, opts...).ToFunc()
+}
+
+// ByPlanName orders the results by the plan_name field.
+func ByPlanName(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPlanName, opts...).ToFunc()
 }
 
 // BySessionsCount orders the results by sessions count.

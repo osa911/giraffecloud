@@ -72,6 +72,47 @@ case "$GOARCH" in
   *) echo "Unsupported architecture: $GOARCH" >&2; exit 1 ;;
 esac
 
+# Interactive prompts when running in a TTY and no explicit options were passed
+if [[ -t 0 && -t 1 ]]; then
+  # Offer to install as a system service on Linux
+  if [[ "$OS" == "linux" && "$SERVICE_MODE" == "none" ]]; then
+    read -r -p "Install and start GiraffeCloud as a system service now? [Y/n] " _ans || true
+    case "${_ans:-Y}" in
+      [nN]*) : ;;
+      *) SERVICE_MODE="system"; INSTALL_MODE="system" ;;
+    esac
+  fi
+  # Offer to capture API token if not provided
+  if [[ -z "$LOGIN_TOKEN" ]]; then
+    read -r -p "Provide API token now to login after install? [y/N] " _ans || true
+    case "${_ans:-N}" in
+      [yY]*)
+        printf "Enter API token: "
+        stty -echo || true
+        read -r LOGIN_TOKEN || true
+        stty echo || true
+        printf "\n"
+        ;;
+    esac
+  fi
+fi
+
+# If a system service is requested, ensure we install system-wide for a stable ExecStart path
+if [[ "$SERVICE_MODE" == "system" && "$INSTALL_MODE" != "system" ]]; then
+  echo "Note: --service system requested; switching to system-wide install at /usr/local/bin"
+  INSTALL_MODE="system"
+fi
+
+# If user service is requested, warn and fall back to system service for simplicity
+if [[ "$SERVICE_MODE" == "user" ]]; then
+  echo "Note: user service mode is not yet fully supported by this installer; using system service instead"
+  SERVICE_MODE="system"
+  if [[ "$INSTALL_MODE" != "system" ]]; then
+    echo "Switching to system-wide install at /usr/local/bin"
+    INSTALL_MODE="system"
+  fi
+fi
+
 TMPDIR="$(mktemp -d 2>/dev/null || mktemp -d -t giraffecloud)"
 cleanup() { rm -rf "$TMPDIR"; }
 trap cleanup EXIT
@@ -111,6 +152,21 @@ if [[ -z "$BIN_PATH" ]]; then
   exit 1
 fi
 
+# Pre-clean: remove broken /usr/local/bin/giraffecloud symlink if present
+if [[ -L "/usr/local/bin/giraffecloud" && ! -e "/usr/local/bin/giraffecloud" ]]; then
+  echo "Removing broken symlink: /usr/local/bin/giraffecloud"
+  sudo rm -f /usr/local/bin/giraffecloud || true
+fi
+# Also force-remove any existing file to avoid circular symlink issues
+sudo rm -f /usr/local/bin/giraffecloud || true
+
+# Stop existing service before overwrite (best effort)
+if command -v systemctl >/dev/null 2>&1; then
+  if [[ "$SERVICE_MODE" == "system" ]]; then
+    sudo systemctl stop giraffecloud >/dev/null 2>&1 || true
+  fi
+fi
+
 if [[ "$INSTALL_MODE" == "system" ]]; then
   echo "Installing system-wide to /usr/local/bin (requires sudo)..."
   sudo install -m 0755 "$BIN_PATH" /usr/local/bin/giraffecloud
@@ -143,9 +199,6 @@ if [[ -n "$LOGIN_TOKEN" ]]; then
   "$DEST" login --token "$LOGIN_TOKEN"
 fi
 
-# Track whether we added PATH to a shell rc file
-ADDED_PATH_TO_RC=0
-
 # Determine if destination directory is already in PATH of the caller's environment
 case "$DEST" in
   /usr/local/bin/*)
@@ -154,26 +207,11 @@ case "$DEST" in
     DEST_DIR="$HOME/.local/bin" ;;
   *)
     DEST_DIR="$(dirname "$DEST")" ;;
+
 esac
 
 PATH_HAS_DEST=0
 echo "$PATH" | tr ':' '\n' | grep -Fxq "$DEST_DIR" && PATH_HAS_DEST=1 || true
-
-# If user-mode install and PATH doesn't include ~/.local/bin, append to shell rc
-if [[ "$INSTALL_MODE" != "system" && $PATH_HAS_DEST -eq 0 ]]; then
-  case "${SHELL##*/}" in
-    bash)
-      if ! grep -q 'export PATH="$HOME/.local/bin:$PATH"' "$HOME/.bashrc" 2>/dev/null; then
-        echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
-        ADDED_PATH_TO_RC=1
-      fi ;;
-    zsh)
-      if ! grep -q 'export PATH="$HOME/.local/bin:$PATH"' "$HOME/.zshrc" 2>/dev/null; then
-        echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.zshrc"
-        ADDED_PATH_TO_RC=1
-      fi ;;
-  esac
-fi
 
 # Optional service install (Linux only for now)
 if [[ "$SERVICE_MODE" != "none" ]]; then
@@ -181,16 +219,31 @@ if [[ "$SERVICE_MODE" != "none" ]]; then
     echo "Service installation is currently supported on Linux only; skipping." >&2
   else
     echo "Installing service: $SERVICE_MODE"
-    if [[ "$SERVICE_MODE" == "user" ]]; then
-      "$DEST" service install --user
-      command -v systemctl >/dev/null 2>&1 && systemctl --user restart giraffecloud || true
-    elif [[ "$SERVICE_MODE" == "system" ]]; then
-      sudo "$DEST" service install
-      command -v systemctl >/dev/null 2>&1 && sudo systemctl restart giraffecloud || true
-    else
-      echo "Unknown service mode: $SERVICE_MODE" >&2
-      exit 1
+    # Pre-auth sudo interactively for a smoother flow
+    if [[ -t 0 && -t 1 ]]; then
+      sudo -v || true
     fi
+    # Always system for now
+    sudo "$DEST" service install
+    # After service install, some older binaries may create a self-referential symlink.
+    # Force-replace /usr/local/bin/giraffecloud with the fresh binary to eliminate loops.
+    sudo rm -f /usr/local/bin/giraffecloud || true
+    sudo install -m 0755 "$BIN_PATH" /usr/local/bin/giraffecloud || true
+    # Patch unit to ensure correct ExecStart path and required env flags
+    UNIT_PATH="/etc/systemd/system/giraffecloud.service"
+    if [[ -f "$UNIT_PATH" ]]; then
+      sudo sed -i 's#^ExecStart=.*#ExecStart=/usr/local/bin/giraffecloud connect#' "$UNIT_PATH"
+      if ! grep -q '^Environment=GIRAFFECLOUD_HOME=' "$UNIT_PATH"; then
+        sudo sed -i "/^\\[Service\\]/a Environment=GIRAFFECLOUD_HOME=$HOME/.giraffecloud" "$UNIT_PATH"
+      fi
+      if ! grep -q '^Environment=GIRAFFECLOUD_IS_SERVICE=' "$UNIT_PATH"; then
+        sudo sed -i "/^\\[Service\\]/a Environment=GIRAFFECLOUD_IS_SERVICE=1" "$UNIT_PATH"
+      fi
+    fi
+    # Apply and start
+    sudo systemctl daemon-reload || true
+    sudo systemctl enable giraffecloud || true
+    sudo systemctl restart giraffecloud || true
   fi
 fi
 
@@ -206,19 +259,11 @@ else
   else
     case "${SHELL##*/}" in
       zsh)
-        if [[ $ADDED_PATH_TO_RC -eq 1 ]]; then
-          echo "We've added ~/.local/bin to your ~/.zshrc. Run: source ~/.zshrc, or open a new terminal."
-        else
-          echo "Add this to your ~/.zshrc then run 'source ~/.zshrc':"
-          echo "  export PATH=\"$HOME/.local/bin:$PATH\""
-        fi ;;
+        echo "Add this to your ~/.zshrc then run 'source ~/.zshrc':"
+        echo "  export PATH=\"$HOME/.local/bin:$PATH\"" ;;
       bash)
-        if [[ $ADDED_PATH_TO_RC -eq 1 ]]; then
-          echo "We've added ~/.local/bin to your ~/.bashrc. Run: source ~/.bashrc, or open a new terminal."
-        else
-          echo "Add this to your ~/.bashrc then run 'source ~/.bashrc':"
-          echo "  export PATH=\"$HOME/.local/bin:$PATH\""
-        fi ;;
+        echo "Add this to your ~/.bashrc then run 'source ~/.bashrc':"
+        echo "  export PATH=\"$HOME/.local/bin:$PATH\"" ;;
       *)
         echo "Add $HOME/.local/bin to your PATH and restart your shell:"
         echo "  export PATH=\"$HOME/.local/bin:$PATH\"" ;;

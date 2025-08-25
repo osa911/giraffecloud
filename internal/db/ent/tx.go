@@ -14,12 +14,16 @@ type Tx struct {
 	config
 	// ClientVersion is the client for interacting with the ClientVersion builders.
 	ClientVersion *ClientVersionClient
+	// Plan is the client for interacting with the Plan builders.
+	Plan *PlanClient
 	// Session is the client for interacting with the Session builders.
 	Session *SessionClient
 	// Token is the client for interacting with the Token builders.
 	Token *TokenClient
 	// Tunnel is the client for interacting with the Tunnel builders.
 	Tunnel *TunnelClient
+	// Usage is the client for interacting with the Usage builders.
+	Usage *UsageClient
 	// User is the client for interacting with the User builders.
 	User *UserClient
 
@@ -154,9 +158,11 @@ func (tx *Tx) Client() *Client {
 
 func (tx *Tx) init() {
 	tx.ClientVersion = NewClientVersionClient(tx.config)
+	tx.Plan = NewPlanClient(tx.config)
 	tx.Session = NewSessionClient(tx.config)
 	tx.Token = NewTokenClient(tx.config)
 	tx.Tunnel = NewTunnelClient(tx.config)
+	tx.Usage = NewUsageClient(tx.config)
 	tx.User = NewUserClient(tx.config)
 }
 

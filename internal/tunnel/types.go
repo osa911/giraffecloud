@@ -21,6 +21,11 @@ type TunnelHandshakeResponse struct {
 	ConnectionType string `json:"connection_type,omitempty"` // "http" or "websocket"
 }
 
+// UsageRecorder is a lightweight interface for recording usage stats.
+type UsageRecorder interface {
+	Increment(userID uint32, tunnelID uint32, domain string, bytesIn int64, bytesOut int64, requests int64)
+}
+
 // TunnelConnection represents an active tunnel connection with per-connection synchronization
 // Each connection maintains HTTP/1.1 request-response ordering while the pool enables concurrency
 type TunnelConnection struct {

@@ -9,6 +9,9 @@ import (
 // ClientVersion is the predicate function for clientversion builders.
 type ClientVersion func(*sql.Selector)
 
+// Plan is the predicate function for plan builders.
+type Plan func(*sql.Selector)
+
 // Session is the predicate function for session builders.
 type Session func(*sql.Selector)
 
@@ -17,6 +20,9 @@ type Token func(*sql.Selector)
 
 // Tunnel is the predicate function for tunnel builders.
 type Tunnel func(*sql.Selector)
+
+// Usage is the predicate function for usage builders.
+type Usage func(*sql.Selector)
 
 // User is the predicate function for user builders.
 type User func(*sql.Selector)

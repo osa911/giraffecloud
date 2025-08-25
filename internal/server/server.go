@@ -160,11 +160,19 @@ func (s *Server) Init() error {
 	auditService := service.NewAuditService()
 	csrfService := service.NewCSRFService()
 	versionService := service.NewVersionService(s.db.DB)
+	planService := service.NewPlanService(s.db.DB)
+	usageService := service.NewUsageService()
+	quotaService := service.NewQuotaService(s.db.DB)
 	logger.Info("Core services initialized")
 
 	// Initialize default version configurations
 	if err := versionService.InitializeDefaultConfigs(context.Background()); err != nil {
 		logger.Warn("Failed to initialize default version configs: %v", err)
+	}
+
+	// Seed default plans (idempotent)
+	if err := planService.SeedDefaultPlans(context.Background()); err != nil {
+		logger.Warn("Failed to seed default plans: %v", err)
 	}
 
 	// Initialize connection manager
@@ -228,6 +236,21 @@ func (s *Server) Init() error {
 
 	// Create the hybrid tunnel router
 	s.tunnelRouter = tunnel.NewHybridTunnelRouter(repos.Token, repos.Tunnel, tunnelService, routerConfig)
+	// Wire usage recorder into tunnel router and underlying servers
+	s.tunnelRouter.SetUsageRecorder(usageService)
+	// Adapt service.QuotaService to tunnel.QuotaChecker
+	s.tunnelRouter.SetQuotaChecker(quotaAdapter{q: quotaService})
+
+	// Periodically flush usage to DB (every 1 minute)
+	go func() {
+		ticker := time.NewTicker(1 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			if err := usageService.FlushToDB(context.Background(), s.db.DB); err != nil {
+				logger.Warn("Failed to flush usage to DB: %v", err)
+			}
+		}
+	}()
 
 	// Start the hybrid tunnel router
 	if err := s.tunnelRouter.Start(); err != nil {
@@ -252,6 +275,7 @@ func (s *Server) Init() error {
 		TunnelCertificate: handlers.NewTunnelCertificateHandler(),
 		Webhook:           handlers.NewWebhookHandler(),
 		Admin:             handlers.NewAdminHandler(versionService),
+		Usage:             handlers.NewUsageHandler(s.db.DB, quotaService),
 	}
 	logger.Info("Handlers initialized")
 

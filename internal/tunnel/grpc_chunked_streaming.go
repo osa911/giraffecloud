@@ -91,7 +91,7 @@ func (s *GRPCTunnelServer) handleChunkedStreaming(
 	}
 
 	// Now stream the response body in chunks
-	return s.streamResponseInChunks(response, stream, chunkSize, requestID)
+	return s.streamResponseInChunks(response, stream, chunkSize, requestID, tunnelStream)
 }
 
 // streamResponseInChunks streams an HTTP response body in chunks
@@ -100,6 +100,7 @@ func (s *GRPCTunnelServer) streamResponseInChunks(
 	stream grpc.ServerStreamingServer[proto.LargeFileChunk],
 	chunkSize int,
 	requestID string,
+	tunnelStream *TunnelStream,
 ) error {
 
 	defer response.Body.Close()
@@ -113,6 +114,10 @@ func (s *GRPCTunnelServer) streamResponseInChunks(
 	}
 
 	totalSize := int64(len(responseData))
+	// Record bytes_out once per response for chunked streaming
+	if s.usage != nil && tunnelStream != nil && totalSize > 0 {
+		s.usage.Increment(tunnelStream.UserID, tunnelStream.TunnelID, tunnelStream.Domain, 0, totalSize, 0)
+	}
 
 	// Calculate number of chunks
 	numChunks := int((totalSize + int64(chunkSize) - 1) / int64(chunkSize))

@@ -23,6 +23,9 @@ import (
 // Global counter for generating unique client IDs
 var globalClientCounter int64
 
+// processStableClientID holds a stable ID for the lifetime of the process
+var processStableClientID string
+
 // GRPCTunnelClient handles the client-side gRPC tunnel connection
 // This replaces the connection pooling with a single high-performance stream
 type GRPCTunnelClient struct {
@@ -113,8 +116,11 @@ func NewGRPCTunnelClient(serverAddr, domain, token string, targetPort int32, con
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	// Generate unique client ID
-	clientID := fmt.Sprintf("grpc-client-%d", atomic.AddInt64(&globalClientCounter, 1))
+	// Generate stable client ID for the process on first use
+	if processStableClientID == "" {
+		processStableClientID = fmt.Sprintf("grpc-client-%d", atomic.AddInt64(&globalClientCounter, 1))
+	}
+	clientID := processStableClientID
 
 	client := &GRPCTunnelClient{
 		clientID:         clientID,

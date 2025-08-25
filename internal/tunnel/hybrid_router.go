@@ -32,6 +32,11 @@ type HybridTunnelRouter struct {
 
 	// Configuration
 	config *HybridRouterConfig
+
+	// Usage aggregation
+	usage UsageRecorder
+	// Quotas
+	quota QuotaChecker
 }
 
 // HybridRouterConfig holds configuration for the hybrid router
@@ -104,6 +109,37 @@ func NewHybridTunnelRouter(
 	router.tcpTunnel = NewServer(tokenRepo, tunnelRepo, tunnelService)
 
 	return router
+}
+
+// SetUsageRecorder sets a usage recorder for both gRPC and TCP tunnel servers
+func (r *HybridTunnelRouter) SetUsageRecorder(rec UsageRecorder) {
+	r.usage = rec
+	if r.grpcTunnel != nil {
+		r.grpcTunnel.SetUsageRecorder(rec)
+	}
+	if r.tcpTunnel != nil {
+		r.tcpTunnel.SetUsageRecorder(rec)
+	}
+}
+
+// Grpc exposes the gRPC tunnel server (if needed by callers)
+func (r *HybridTunnelRouter) Grpc() *GRPCTunnelServer { return r.grpcTunnel }
+
+// Tcp exposes the TCP tunnel server (if needed by callers)
+func (r *HybridTunnelRouter) Tcp() *TunnelServer { return r.tcpTunnel }
+
+// QuotaChecker minimal interface to avoid tight coupling
+// QuotaChecker is defined in quota.go and implemented by services
+
+// SetQuotaChecker sets quota checker service into underlying servers
+func (r *HybridTunnelRouter) SetQuotaChecker(q QuotaChecker) {
+	r.quota = q
+	if r.grpcTunnel != nil {
+		r.grpcTunnel.SetQuotaChecker(q)
+	}
+	if r.tcpTunnel != nil {
+		r.tcpTunnel.SetQuotaChecker(q)
+	}
 }
 
 // Start starts both tunnel servers

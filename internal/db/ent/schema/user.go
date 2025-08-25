@@ -23,6 +23,7 @@ func (User) Fields() []ent.Field {
 		field.Time("last_login").Optional().Nillable(),
 		field.String("last_login_ip").Optional().Nillable(),
 		field.Time("last_activity").Optional().Nillable(),
+		field.String("plan_name").Optional().Nillable(),
 	}
 }
 

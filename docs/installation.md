@@ -10,6 +10,20 @@ macOS/Linux (Bash):
 curl -fsSL https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/install.sh | bash
 ```
 
+Linux system service (one command):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/install.sh | bash -s -- --service system
+```
+
+### Interactive install (prompts)
+
+To enable prompts (install as a system service, enter API token), run the script in a TTY:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/install.sh)
+```
+
 Windows (PowerShell):
 
 ```powershell
@@ -27,14 +41,14 @@ giraffecloud version
 macOS/Linux script (`install.sh`):
 
 - **--system**: Install system-wide to `/usr/local/bin` (requires sudo). Default: user install to `~/.local/bin`.
-- **--service [user|system]**: Install and start the service using systemd (Linux only). Default: none.
+- **--service [user|system]**: Install and start the service (Linux/systemd). If `--service system` is used, the installer automatically installs the binary to `/usr/local/bin`, cleans broken symlinks, and configures the service environment.
 - **--url <tar.gz>**: Install from a specific release asset URL instead of auto-detecting the latest.
 - **--token <API_TOKEN>**: Run `giraffecloud login --token <API_TOKEN>` after install.
 
 Example:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/install.sh | bash -s -- --service user --token YOUR_API_TOKEN
+curl -fsSL https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/install.sh | bash -s -- --service system --token YOUR_API_TOKEN
 ```
 
 Windows script (`install.ps1`):
@@ -57,7 +71,16 @@ iex "& { $(iwr -useb https://raw.githubusercontent.com/osa911/giraffecloud/main/
 
 ### Service installation (Linux only)
 
-When `--service user|system` is provided on Linux, the installer invokes `giraffecloud service install` and will attempt to restart the systemd unit (`giraffecloud`). This is skipped on macOS and Windows.
+When `--service system` is provided on Linux, the installer:
+
+- Stops any existing `giraffecloud` service (best effort)
+- Installs the binary to `/usr/local/bin`
+- Cleans a broken `/usr/local/bin/giraffecloud` symlink if present
+- Installs/updates the systemd unit with:
+  - `ExecStart=/usr/local/bin/giraffecloud connect`
+  - `Environment=GIRAFFECLOUD_HOME=/home/<user>/.giraffecloud`
+  - `Environment=GIRAFFECLOUD_IS_SERVICE=1`
+- Reloads systemd and restarts the service
 
 ### Install from a specific release
 
@@ -73,12 +96,6 @@ curl -fsSL https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/in
 iex "& { $(iwr -useb https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/install.ps1) } -Url 'https://github.com/osa911/giraffecloud/releases/download/vX.Y.Z/giraffecloud_windows_amd64_vX.Y.Z.zip'"
 ```
 
-Asset naming convention (examples):
-
-- `giraffecloud_linux_amd64_vX.Y.Z.tar.gz`
-- `giraffecloud_darwin_arm64_vX.Y.Z.tar.gz`
-- `giraffecloud_windows_amd64_vX.Y.Z.zip`
-
 ### Uninstall
 
 macOS/Linux (user install):
@@ -91,6 +108,17 @@ rm -f ~/.local/bin/giraffecloud
 macOS/Linux (system install):
 
 ```bash
+sudo rm -f /usr/local/bin/giraffecloud
+```
+
+Linux system service uninstall:
+
+```bash
+sudo systemctl stop giraffecloud || true
+sudo systemctl disable giraffecloud || true
+sudo rm -f /etc/systemd/system/giraffecloud.service
+sudo systemctl daemon-reload
+# Optional: remove binary
 sudo rm -f /usr/local/bin/giraffecloud
 ```
 

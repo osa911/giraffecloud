@@ -34,6 +34,16 @@ type GitHubWebhookPayload struct {
 	Action string `json:"action"`
 }
 
+// extractBranchName returns the short branch name from a Git ref like
+// "refs/heads/feature/foo" -> "feature/foo". If the ref is not a head,
+// the original ref is returned.
+func extractBranchName(ref string) string {
+	if strings.HasPrefix(ref, "refs/heads/") {
+		return strings.TrimPrefix(ref, "refs/heads/")
+	}
+	return ref
+}
+
 func NewWebhookHandler() *WebhookHandler {
 	return &WebhookHandler{
 		logger: logging.GetGlobalLogger(),
@@ -66,8 +76,10 @@ func (h *WebhookHandler) GitHubWebhook(c *gin.Context) {
 		return
 	}
 
-	h.logger.Info("Received webhook for repo: %s, ref: %s, action: %s",
-		payload.Repository.FullName, payload.Ref, payload.Action)
+	branch := extractBranchName(payload.Ref)
+	event := c.GetHeader("X-GitHub-Event")
+	h.logger.Info("Received webhook for repo: %s, branch: %s, event: %s",
+		payload.Repository.FullName, branch, event)
 
 	// Handle different webhook events
 	if strings.Contains(c.GetHeader("X-GitHub-Event"), "push") {
@@ -81,13 +93,14 @@ func (h *WebhookHandler) GitHubWebhook(c *gin.Context) {
 
 // handlePushEvent triggers deployment for pushes to main branch
 func (h *WebhookHandler) handlePushEvent(payload GitHubWebhookPayload) {
+	branch := extractBranchName(payload.Ref)
 	// Only deploy on push to main branch
-	if payload.Ref != "refs/heads/main" && payload.Ref != "refs/heads/master" {
-		h.logger.Info("Ignoring push to branch: %s", payload.Ref)
+	if branch != "main" {
+		h.logger.Info("Ignoring push to branch: %s", branch)
 		return
 	}
 
-	h.logger.Info("🚀 Triggering deployment for push to %s", payload.Ref)
+	h.logger.Info("🚀 Triggering deployment for push to %s", branch)
 
 	// Run deployment script asynchronously
 	go h.runDeploymentScript()

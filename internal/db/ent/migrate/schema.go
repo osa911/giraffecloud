@@ -37,6 +37,22 @@ var (
 			},
 		},
 	}
+	// PlansColumns holds the columns for the "plans" table.
+	PlansColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "name", Type: field.TypeString, Unique: true},
+		{Name: "monthly_limit_bytes", Type: field.TypeInt64, Default: 107374182400},
+		{Name: "overage_per_gb_cents", Type: field.TypeInt, Default: 0},
+		{Name: "active", Type: field.TypeBool, Default: true},
+	}
+	// PlansTable holds the schema information for the "plans" table.
+	PlansTable = &schema.Table{
+		Name:       "plans",
+		Columns:    PlansColumns,
+		PrimaryKey: []*schema.Column{PlansColumns[0]},
+	}
 	// SessionsColumns holds the columns for the "sessions" table.
 	SessionsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeUint32, Increment: true},
@@ -115,6 +131,32 @@ var (
 			},
 		},
 	}
+	// UsagesColumns holds the columns for the "usages" table.
+	UsagesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "period_start", Type: field.TypeTime},
+		{Name: "user_id", Type: field.TypeUint32},
+		{Name: "tunnel_id", Type: field.TypeUint32, Nullable: true},
+		{Name: "domain", Type: field.TypeString, Default: ""},
+		{Name: "bytes_in", Type: field.TypeInt64, Default: 0},
+		{Name: "bytes_out", Type: field.TypeInt64, Default: 0},
+		{Name: "requests", Type: field.TypeInt64, Default: 0},
+	}
+	// UsagesTable holds the schema information for the "usages" table.
+	UsagesTable = &schema.Table{
+		Name:       "usages",
+		Columns:    UsagesColumns,
+		PrimaryKey: []*schema.Column{UsagesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "usage_period_start_user_id_tunnel_id_domain",
+				Unique:  true,
+				Columns: []*schema.Column{UsagesColumns[3], UsagesColumns[4], UsagesColumns[5], UsagesColumns[6]},
+			},
+		},
+	}
 	// UsersColumns holds the columns for the "users" table.
 	UsersColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeUint32, Increment: true},
@@ -128,6 +170,7 @@ var (
 		{Name: "last_login", Type: field.TypeTime, Nullable: true},
 		{Name: "last_login_ip", Type: field.TypeString, Nullable: true},
 		{Name: "last_activity", Type: field.TypeTime, Nullable: true},
+		{Name: "plan_name", Type: field.TypeString, Nullable: true},
 	}
 	// UsersTable holds the schema information for the "users" table.
 	UsersTable = &schema.Table{
@@ -138,9 +181,11 @@ var (
 	// Tables holds all the tables in the schema.
 	Tables = []*schema.Table{
 		ClientVersionsTable,
+		PlansTable,
 		SessionsTable,
 		TokensTable,
 		TunnelsTable,
+		UsagesTable,
 		UsersTable,
 	}
 )

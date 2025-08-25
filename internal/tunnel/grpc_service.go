@@ -1,6 +1,7 @@
 package tunnel
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"giraffecloud/internal/logging"
 	"giraffecloud/internal/repository"
 	"giraffecloud/internal/tunnel/proto"
+	"io"
 	"net"
 	"net/http"
 	"sync"
@@ -57,12 +59,25 @@ type GRPCTunnelServer struct {
 	// Security and rate limiting
 	rateLimiter *RateLimiter
 	security    *SecurityMiddleware
+
+	// Usage aggregation
+	usage UsageRecorder
+	quota QuotaChecker
 }
+
+// SetUsageRecorder wires a usage recorder for accounting.
+func (s *GRPCTunnelServer) SetUsageRecorder(rec UsageRecorder) {
+	s.usage = rec
+}
+
+// SetQuotaChecker wires quota checker
+func (s *GRPCTunnelServer) SetQuotaChecker(q QuotaChecker) { s.quota = q }
 
 // TunnelStream represents an active tunnel connection
 type TunnelStream struct {
 	Domain     string
 	TargetPort int32
+	TunnelID   uint32
 	Stream     proto.TunnelService_EstablishTunnelServer
 	Context    context.Context
 	UserID     uint32
@@ -287,6 +302,7 @@ func (s *GRPCTunnelServer) EstablishTunnel(stream proto.TunnelService_EstablishT
 	tunnelStream := &TunnelStream{
 		Domain:          tunnel.Domain,
 		TargetPort:      chosenPort,
+		TunnelID:        uint32(tunnel.ID),
 		Stream:          stream,
 		Context:         ctx,
 		UserID:          tunnel.UserID,
@@ -397,7 +413,32 @@ func (s *GRPCTunnelServer) ProxyHTTPRequest(domain string, req *http.Request, cl
 		return nil, fmt.Errorf("no active tunnel for domain: %s", domain)
 	}
 
-	// Rate limiting check
+	// Quota/Rate limiting check
+	if s.quota != nil {
+		// Lookup stream to get user ID
+		s.tunnelStreamsMux.RLock()
+		ts, ok := s.tunnelStreams[domain]
+		s.tunnelStreamsMux.RUnlock()
+		if ok {
+			res, _ := s.quota.CheckUser(context.Background(), ts.UserID)
+			switch res.Decision {
+			case QuotaBlock:
+				return &http.Response{
+					StatusCode: http.StatusPaymentRequired,
+					Status:     fmt.Sprintf("%d %s", http.StatusPaymentRequired, http.StatusText(http.StatusPaymentRequired)),
+					Proto:      "HTTP/1.1",
+					ProtoMajor: 1,
+					ProtoMinor: 1,
+					Header:     make(http.Header),
+					Body:       io.NopCloser(bytes.NewReader([]byte("Quota exceeded"))),
+				}, nil
+			case QuotaWarn:
+				// Add header to warn client
+				req.Header.Set("X-Quota-Warn", "true")
+			}
+		}
+	}
+	// Rate limiter check
 	if !s.rateLimiter.Allow(domain) {
 		atomic.AddInt64(&s.totalErrors, 1)
 		return nil, fmt.Errorf("rate limit exceeded for domain: %s", domain)
@@ -420,6 +461,14 @@ func (s *GRPCTunnelServer) ProxyHTTPRequest(domain string, req *http.Request, cl
 		return nil, err
 	}
 
+	// Usage: count request and rough request bytes
+	if s.usage != nil {
+		var reqBytes int64
+		if b := grpcReq.GetHttpRequest().Body; len(b) > 0 {
+			reqBytes = int64(len(b))
+		}
+		s.usage.Increment(tunnelStream.UserID, tunnelStream.TunnelID, domain, reqBytes, 0, 1)
+	}
 	atomic.AddInt64(&s.totalResponses, 1)
 	return response, nil
 }

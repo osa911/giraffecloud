@@ -162,6 +162,8 @@ type DomainConnections struct {
 	httpPool   *TunnelConnectionPool // Pool of HTTP connections for concurrency
 	wsConn     *TunnelConnection     // Single WebSocket connection
 	targetPort int
+	userID     uint32
+	tunnelID   uint32
 	mu         sync.RWMutex
 }
 
@@ -179,7 +181,7 @@ func NewConnectionManager() *ConnectionManager {
 }
 
 // AddConnection adds a new connection for a domain with specified type
-func (m *ConnectionManager) AddConnection(domain string, conn net.Conn, targetPort int, connType ConnectionType) *TunnelConnection {
+func (m *ConnectionManager) AddConnection(domain string, conn net.Conn, targetPort int, connType ConnectionType, userID uint32, tunnelID uint32) *TunnelConnection {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -192,6 +194,13 @@ func (m *ConnectionManager) AddConnection(domain string, conn net.Conn, targetPo
 			httpPool:   NewTunnelConnectionPool(domain, targetPort),
 		}
 		m.connections[domain] = domainConns
+	}
+	// Set owner information if not already set
+	if domainConns.userID == 0 {
+		domainConns.userID = userID
+	}
+	if domainConns.tunnelID == 0 {
+		domainConns.tunnelID = tunnelID
 	}
 
 	// Set the appropriate connection type
@@ -210,6 +219,17 @@ func (m *ConnectionManager) AddConnection(domain string, conn net.Conn, targetPo
 	}
 
 	return nil
+}
+
+// GetDomainOwner returns the userID and tunnelID for a domain if available
+func (m *ConnectionManager) GetDomainOwner(domain string) (uint32, uint32, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	domainConns := m.connections[domain]
+	if domainConns == nil {
+		return 0, 0, false
+	}
+	return domainConns.userID, domainConns.tunnelID, true
 }
 
 // RemoveConnection removes a connection for a domain with specified type

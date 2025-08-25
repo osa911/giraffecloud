@@ -20,12 +20,24 @@ type SingletonManager struct {
 
 // NewSingletonManager creates a new singleton manager
 func NewSingletonManager() (*SingletonManager, error) {
-	homeDir, err := os.UserHomeDir()
+	// Normalize config home and prefer same directory as other client configs
+	EnsureConsistentConfigHome()
+
+	configDir, err := GetConfigDir()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get home directory: %w", err)
+		// Graceful fallback when HOME is missing: use temp dir
+		fallbackDir := filepath.Join(os.TempDir(), "giraffecloud")
+		if mkErr := os.MkdirAll(fallbackDir, 0755); mkErr != nil {
+			return nil, fmt.Errorf("failed to resolve config directory for singleton: %w", err)
+		}
+		pidFile := filepath.Join(fallbackDir, "tunnel.pid")
+		return &SingletonManager{
+			PidFile: pidFile,
+			logger:  logging.GetGlobalLogger(),
+		}, nil
 	}
 
-	pidFile := filepath.Join(homeDir, ".giraffecloud", "tunnel.pid")
+	pidFile := filepath.Join(configDir, "tunnel.pid")
 
 	return &SingletonManager{
 		PidFile: pidFile,
@@ -122,6 +134,14 @@ func (sm *SingletonManager) getPIDFromFile() int {
 
 // CheckServiceConflict checks if there's a conflict with the system service
 func (sm *SingletonManager) CheckServiceConflict() error {
+	// If running under managed service, skip self-conflict detection
+	if os.Getenv("GIRAFFECLOUD_IS_SERVICE") == "1" {
+		if sm.logger != nil {
+			sm.logger.Debug("Running under system service; skipping service conflict check")
+		}
+		return nil
+	}
+
 	serviceManager, err := NewServiceManager()
 	if err != nil {
 		if sm.logger != nil {
