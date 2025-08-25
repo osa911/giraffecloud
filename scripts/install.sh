@@ -157,6 +157,8 @@ if [[ -L "/usr/local/bin/giraffecloud" && ! -e "/usr/local/bin/giraffecloud" ]];
   echo "Removing broken symlink: /usr/local/bin/giraffecloud"
   sudo rm -f /usr/local/bin/giraffecloud || true
 fi
+# Also force-remove any existing file to avoid circular symlink issues
+sudo rm -f /usr/local/bin/giraffecloud || true
 
 # Stop existing service before overwrite (best effort)
 if command -v systemctl >/dev/null 2>&1; then
@@ -223,6 +225,10 @@ if [[ "$SERVICE_MODE" != "none" ]]; then
     fi
     # Always system for now
     sudo "$DEST" service install
+    # After service install, some older binaries may create a self-referential symlink.
+    # Force-replace /usr/local/bin/giraffecloud with the fresh binary to eliminate loops.
+    sudo rm -f /usr/local/bin/giraffecloud || true
+    sudo install -m 0755 "$BIN_PATH" /usr/local/bin/giraffecloud || true
     # Patch unit to ensure correct ExecStart path and required env flags
     UNIT_PATH="/etc/systemd/system/giraffecloud.service"
     if [[ -f "$UNIT_PATH" ]]; then
