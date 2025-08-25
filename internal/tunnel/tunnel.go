@@ -313,24 +313,39 @@ func (t *Tunnel) attemptDualConnections(serverAddr string, tlsConfig *tls.Config
 
 	t.logger.Info("🚀 Starting PRODUCTION-GRADE tunnel establishment...")
 
-	// Step 1: Establish gRPC tunnel for HTTP traffic (unlimited concurrency)
+	// Step 1: Establish or reuse gRPC tunnel for HTTP traffic (unlimited concurrency)
 	t.logger.Info("📡 Establishing gRPC tunnel for HTTP traffic...")
 
 	// Parse server address for gRPC port
 	grpcServerAddr := strings.Replace(serverAddr, ":4443", ":4444", 1) // Use gRPC port
 
-	// Create gRPC tunnel client
-	grpcConfig := DefaultGRPCClientConfig()
-	t.grpcClient = NewGRPCTunnelClient(grpcServerAddr, t.domain, t.token, int32(t.localPort), grpcConfig)
-
-	// Start gRPC tunnel
-	if err := t.grpcClient.Start(); err != nil {
-		t.logger.Error("Failed to establish gRPC tunnel: %v", err)
-		t.logger.Info("Falling back to TCP-only mode...")
-		t.grpcEnabled = false
+	// Reuse existing client if available, otherwise create
+	if t.grpcClient == nil {
+		grpcConfig := DefaultGRPCClientConfig()
+		t.grpcClient = NewGRPCTunnelClient(grpcServerAddr, t.domain, t.token, int32(t.localPort), grpcConfig)
+		if err := t.grpcClient.Start(); err != nil {
+			t.logger.Error("Failed to establish gRPC tunnel: %v", err)
+			t.logger.Info("Falling back to TCP-only mode...")
+			t.grpcEnabled = false
+		} else {
+			t.logger.Info("✅ gRPC tunnel established successfully - unlimited HTTP concurrency enabled! Client ID: %s", t.grpcClient.GetClientID())
+			t.grpcEnabled = true
+		}
 	} else {
-		t.logger.Info("✅ gRPC tunnel established successfully - unlimited HTTP concurrency enabled! Client ID: %s", t.grpcClient.GetClientID())
-		t.grpcEnabled = true
+		if t.grpcClient.IsConnected() {
+			t.logger.Info("Reusing existing gRPC tunnel client (Client ID: %s)", t.grpcClient.GetClientID())
+			t.grpcEnabled = true
+		} else {
+			t.logger.Info("Existing gRPC client not connected; attempting to start (Client ID: %s)", t.grpcClient.GetClientID())
+			if err := t.grpcClient.Start(); err != nil {
+				t.logger.Error("Failed to (re)start existing gRPC client: %v", err)
+				t.logger.Info("Continuing without gRPC (TCP-only) for now...")
+				t.grpcEnabled = false
+			} else {
+				t.logger.Info("✅ gRPC client (re)started successfully (Client ID: %s)", t.grpcClient.GetClientID())
+				t.grpcEnabled = true
+			}
+		}
 	}
 
 	// Step 2: Establish TCP tunnel for WebSocket traffic (existing functionality)
@@ -892,17 +907,12 @@ func (t *Tunnel) coordinatedReconnectWithContext(isIntentional bool) {
 		t.httpConnections = nil
 	}
 
-	// Preserve gRPC client during intentional WebSocket recycling to avoid dropping in-flight uploads/downloads
+	// Preserve gRPC client across reconnects to maintain stable client ID
 	if t.grpcClient != nil {
 		if isIntentional {
 			t.logger.Info("[CLEANUP] Preserving gRPC client during WebSocket recycling")
 		} else {
-			t.logger.Info("[CLEANUP] 🛑 Stopping existing gRPC client to prevent duplicates (Client ID: %s)", t.grpcClient.GetClientID())
-			if err := t.grpcClient.Stop(); err != nil {
-				t.logger.Error("Error stopping gRPC client: %v", err)
-			}
-			t.grpcClient = nil
-			t.grpcEnabled = false
+			t.logger.Info("[CLEANUP] Preserving existing gRPC client across reconnection (Client ID: %s)", t.grpcClient.GetClientID())
 		}
 	}
 
