@@ -23,12 +23,7 @@ interface TunnelDialogProps {
   onSuccess: () => void;
 }
 
-export default function TunnelDialog({
-  open,
-  onClose,
-  tunnel,
-  onSuccess,
-}: TunnelDialogProps) {
+export default function TunnelDialog({ open, onClose, tunnel, onSuccess }: TunnelDialogProps) {
   const [formData, setFormData] = useState<TunnelFormData>(() => ({
     domain: tunnel?.domain || "",
     target_port: tunnel?.target_port || 80,
@@ -62,9 +57,7 @@ export default function TunnelDialog({
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
       <form onSubmit={handleSubmit}>
-        <DialogTitle>
-          {tunnel ? "Edit Tunnel" : "Create New Tunnel"}
-        </DialogTitle>
+        <DialogTitle>{tunnel ? "Edit Tunnel" : "Create New Tunnel"}</DialogTitle>
         <DialogContent>
           <Stack spacing={3} sx={{ mt: 2 }}>
             <TextField
@@ -72,9 +65,7 @@ export default function TunnelDialog({
               fullWidth
               required
               value={formData.domain}
-              onChange={(e) =>
-                setFormData({ ...formData, domain: e.target.value })
-              }
+              onChange={(e) => setFormData({ ...formData, domain: e.target.value })}
               placeholder="example.giraffecloud.dev"
             />
             <TextField

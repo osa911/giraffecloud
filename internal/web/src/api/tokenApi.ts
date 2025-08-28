@@ -20,9 +20,7 @@ export const getTokensList = async (): Promise<Token[]> => {
   return await clientApi().get<Token[]>("/tokens");
 };
 
-export const createToken = async (
-  name: string
-): Promise<CreateTokenResponse> => {
+export const createToken = async (name: string): Promise<CreateTokenResponse> => {
   return await clientApi().post<CreateTokenResponse>("/tokens", {
     name,
   });

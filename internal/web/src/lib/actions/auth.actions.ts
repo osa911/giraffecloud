@@ -16,7 +16,7 @@ const USER_DATA_COOKIE_NAME = "user_data";
 
 export const loginWithTokenAction = async (
   prevState: undefined,
-  newState: LoginWithTokenFormState
+  newState: LoginWithTokenFormState,
 ): Promise<undefined> => {
   const token = newState.token;
   let user: User | null = null;
@@ -33,7 +33,7 @@ export const loginWithTokenAction = async (
 
 export async function registerWithEmailAction(
   prevState: undefined,
-  newState: RegisterRequest
+  newState: RegisterRequest,
 ): Promise<undefined> {
   let user: User | null = null;
   try {
@@ -67,12 +67,8 @@ export async function logout(): Promise<void> {
 
 export async function getAuthUser(): Promise<User>;
 export async function getAuthUser(options: { redirect: true }): Promise<User>;
-export async function getAuthUser(options: {
-  redirect: false;
-}): Promise<User | null>;
-export async function getAuthUser(
-  options = { redirect: true }
-): Promise<User | null> {
+export async function getAuthUser(options: { redirect: false }): Promise<User | null>;
+export async function getAuthUser(options = { redirect: true }): Promise<User | null> {
   let user: User | null = null;
 
   try {
@@ -84,9 +80,7 @@ export async function getAuthUser(
     }
 
     // Fallback to API
-    const data = await serverApi().get<{ valid: boolean; user?: User }>(
-      "/auth/session"
-    );
+    const data = await serverApi().get<{ valid: boolean; user?: User }>("/auth/session");
     if (data.valid && data.user) {
       user = data.user;
       await setUserDataCookie(data.user);
@@ -139,9 +133,7 @@ export async function getUserDataFromCookie(): Promise<User | null> {
 }
 
 // Firebase token handling
-export async function refreshSessionIfNeeded(
-  user: FirebaseUser
-): Promise<boolean> {
+export async function refreshSessionIfNeeded(user: FirebaseUser): Promise<boolean> {
   try {
     const idToken = await user.getIdToken();
     await verifyToken({ id_token: idToken });

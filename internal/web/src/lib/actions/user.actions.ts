@@ -46,9 +46,7 @@ export const deleteProfile: DeleteProfileAction = async () => {
 export const listUsers: ListUsersAction = async (page = 1, pageSize = 10) => {
   try {
     await getAuthUser();
-    return await serverApi().get<ListUsersResponse>(
-      `/users?page=${page}&pageSize=${pageSize}`
-    );
+    return await serverApi().get<ListUsersResponse>(`/users?page=${page}&pageSize=${pageSize}`);
   } catch (error) {
     const apiError = error as ApiError;
     console.error("Error listing users:", apiError);
@@ -89,10 +87,7 @@ export const deleteUser: DeleteUserAction = async (id) => {
   }
 };
 
-export const updateProfileAction: UpdateProfileFormAction = async (
-  prevState,
-  formData
-) => {
+export const updateProfileAction: UpdateProfileFormAction = async (prevState, formData) => {
   const name = (formData.get("name") as string) || "";
   try {
     await serverApi().put<UserResponse>("/user/profile", {
