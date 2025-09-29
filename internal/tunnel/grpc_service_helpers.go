@@ -238,22 +238,40 @@ func (s *GRPCTunnelServer) handleRegularHTTPResponse(tunnelStream *TunnelStream,
 		return
 	}
 
-	// Send response to waiting goroutine
-	select {
-	case responseChan <- msg:
-		// Response delivered
-	case <-time.After(5 * time.Second):
-		s.logger.Warn("Timeout delivering response for request ID: %s", msg.RequestId)
-	}
-
 	// Note: Chunked requests are cleaned up by their goroutines
 	// Only clean up non-chunked requests here
 	httpResponse := msg.GetHttpResponse()
 	if httpResponse == nil || !httpResponse.IsChunked {
 		// Clean up non-chunked requests immediately
 		tunnelStream.requestsMux.Lock()
+
+		// Send response to waiting goroutine (protected by mutex)
+		select {
+		case responseChan <- msg:
+			// Response delivered
+		case <-time.After(5 * time.Second):
+			s.logger.Warn("Timeout delivering response for request ID: %s", msg.RequestId)
+		}
+
 		delete(tunnelStream.pendingRequests, msg.RequestId)
 		close(responseChan)
+		tunnelStream.requestsMux.Unlock()
+	} else {
+		// For chunked requests, send response without cleanup (chunked goroutine will handle cleanup)
+		tunnelStream.requestsMux.Lock()
+
+		// Verify channel still exists before sending
+		if ch, exists := tunnelStream.pendingRequests[msg.RequestId]; exists && ch == responseChan {
+			select {
+			case responseChan <- msg:
+				// Response delivered to chunked handler
+			case <-time.After(5 * time.Second):
+				s.logger.Warn("Timeout delivering chunked response for request ID: %s", msg.RequestId)
+			}
+		} else {
+			s.logger.Debug("Request %s was already cleaned up, skipping response delivery", msg.RequestId)
+		}
+
 		tunnelStream.requestsMux.Unlock()
 	}
 }
