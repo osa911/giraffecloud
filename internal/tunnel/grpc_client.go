@@ -57,6 +57,9 @@ type GRPCTunnelClient struct {
 	responseChannels   map[string]chan *proto.TunnelMessage
 	responseChannelsMu sync.RWMutex
 
+	// Tunnel establishment callback
+	tunnelEstablishHandler func(*proto.TunnelEstablishRequest) error
+
 	// Metrics
 	totalRequests     int64
 	totalResponses    int64
@@ -143,6 +146,11 @@ func NewGRPCTunnelClient(serverAddr, domain, token string, targetPort int32, con
 // SetRequestHandler sets the function to handle incoming HTTP requests
 func (c *GRPCTunnelClient) SetRequestHandler(handler func(*proto.TunnelMessage) error) {
 	c.requestHandler = handler
+}
+
+// SetTunnelEstablishHandler sets the function to handle tunnel establishment requests
+func (c *GRPCTunnelClient) SetTunnelEstablishHandler(handler func(*proto.TunnelEstablishRequest) error) {
+	c.tunnelEstablishHandler = handler
 }
 
 // GetClientID returns the unique client identifier
@@ -925,6 +933,10 @@ func (c *GRPCTunnelClient) handleControlMessage(msg *proto.TunnelMessage) error 
 		c.logger.Info("Received config update: max_concurrent=%d, timeout=%ds",
 			config.MaxConcurrent, config.TimeoutSeconds)
 
+	case *proto.TunnelControl_EstablishRequest:
+		// Tunnel establishment request from server
+		return c.handleTunnelEstablishRequest(msg, controlType.EstablishRequest)
+
 	default:
 		c.logger.Debug("Unknown control message type: %T", controlType)
 	}
@@ -1098,4 +1110,70 @@ func (c *GRPCTunnelClient) GetMetrics() map[string]interface{} {
 		"domain":             c.domain,
 		"target_port":        c.targetPort,
 	}
+}
+
+// handleTunnelEstablishRequest handles tunnel establishment requests from the server
+func (c *GRPCTunnelClient) handleTunnelEstablishRequest(msg *proto.TunnelMessage, establishReq *proto.TunnelEstablishRequest) error {
+	c.logger.Info("[%s] Received tunnel establishment request: %s for domain %s",
+		c.clientID, establishReq.TunnelType.String(), establishReq.Domain)
+
+	// Call the tunnel establishment handler if set
+	if c.tunnelEstablishHandler != nil {
+		if err := c.tunnelEstablishHandler(establishReq); err != nil {
+			c.logger.Error("[%s] Failed to establish %s tunnel: %v",
+				c.clientID, establishReq.TunnelType.String(), err)
+
+			// Send error response back to server
+			return c.sendTunnelEstablishResponse(msg.RequestId, false, err.Error())
+		}
+	} else {
+		c.logger.Warn("[%s] No tunnel establishment handler set, ignoring request", c.clientID)
+		return c.sendTunnelEstablishResponse(msg.RequestId, false, "No tunnel establishment handler available")
+	}
+
+	c.logger.Info("[%s] Successfully established %s tunnel for domain %s",
+		c.clientID, establishReq.TunnelType.String(), establishReq.Domain)
+
+	// Send success response back to server
+	return c.sendTunnelEstablishResponse(msg.RequestId, true, "Tunnel established successfully")
+}
+
+// sendTunnelEstablishResponse sends a response back to the server about tunnel establishment
+func (c *GRPCTunnelClient) sendTunnelEstablishResponse(requestId string, success bool, message string) error {
+	var responseMsg *proto.TunnelMessage
+
+	if success {
+		responseMsg = &proto.TunnelMessage{
+			RequestId: requestId,
+			Timestamp: time.Now().Unix(),
+			MessageType: &proto.TunnelMessage_Control{
+				Control: &proto.TunnelControl{
+					ControlType: &proto.TunnelControl_Status{
+						Status: &proto.TunnelStatus{
+							State:       proto.TunnelState_TUNNEL_STATE_ACTIVE,
+							Domain:      c.domain,
+							ConnectedAt: time.Now().Unix(),
+						},
+					},
+					Message:   message,
+					Timestamp: time.Now().Unix(),
+				},
+			},
+		}
+	} else {
+		responseMsg = &proto.TunnelMessage{
+			RequestId: requestId,
+			Timestamp: time.Now().Unix(),
+			MessageType: &proto.TunnelMessage_Error{
+				Error: &proto.ErrorMessage{
+					Type:      proto.ErrorMessage_SERVICE_UNAVAILABLE,
+					Message:   message,
+					Code:      503,
+					Retryable: true,
+				},
+			},
+		}
+	}
+
+	return c.stream.Send(responseMsg)
 }

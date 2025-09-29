@@ -1,4 +1,4 @@
-.PHONY: help setup-dev setup-prod validate-env db-init db-migrate db-migrate-create db-migrate-revert db-reset db-backup db-restore db-init-prod db-migrate-prod db-recreate-prod db-backup-prod db-restore-prod dev dev-hot prod build build-client test db-gen db-migrate-status db-hash release release-dry-run snapshot caddy-start caddy-stop caddy-reload
+.PHONY: help setup-dev setup-prod validate-env db-init db-migrate db-migrate-create db-migrate-revert db-reset db-backup db-restore db-init-prod db-migrate-prod db-recreate-prod db-backup-prod db-restore-prod dev dev-hot prod build build-client test db-gen db-migrate-status db-hash proto-check proto-gen proto-clean proto-verify release release-dry-run snapshot caddy-start caddy-stop caddy-reload
 
 help:
 	@echo "GiraffeCloud Makefile Commands"
@@ -40,6 +40,12 @@ help:
 	@echo "  build-client - Build CLI client with hybrid tunnel support"
 	@echo "  test         - Run tests"
 	@echo "  test-tunnel  - Run hybrid tunnel tests"
+	@echo ""
+	@echo "Protobuf:"
+	@echo "  proto-check  - Check if protobuf tools are installed"
+	@echo "  proto-gen    - Generate Go code from protobuf files"
+	@echo "  proto-clean  - Remove generated protobuf files"
+	@echo "  proto-verify - Verify protobuf files are up to date"
 	@echo ""
 	@echo "Caddy:"
 	@echo "  caddy-start  - Start Caddy reverse proxy server"

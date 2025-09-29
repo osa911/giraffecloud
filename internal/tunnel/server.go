@@ -43,6 +43,9 @@ type TunnelServer struct {
 	usageRecorder UsageRecorder
 	quotaChecker  QuotaChecker
 
+	// Tunnel establishment callback
+	onTCPTunnelEstablished func(domain string)
+
 	// Performance monitoring
 	requestCount   int64 // Total requests handled
 	concurrentReqs int64 // Current concurrent requests
@@ -94,6 +97,11 @@ func (s *TunnelServer) SetUsageRecorder(rec UsageRecorder) { s.usageRecorder = r
 
 // SetQuotaChecker wires a quota checker for enforcement.
 func (s *TunnelServer) SetQuotaChecker(q QuotaChecker) { s.quotaChecker = q }
+
+// SetTCPTunnelEstablishedCallback sets the callback for when TCP tunnels are established
+func (s *TunnelServer) SetTCPTunnelEstablishedCallback(callback func(domain string)) {
+	s.onTCPTunnelEstablished = callback
+}
 
 // Start starts the tunnel server
 func (s *TunnelServer) Start(addr string) error {
@@ -231,6 +239,12 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 	defer s.connections.RemoveConnection(tunnel.Domain, connType)
 
 	s.logger.Info("Tunnel connection established for domain: %s (type: %s)", tunnel.Domain, connType)
+
+	// Notify if this is a WebSocket tunnel establishment
+	if connType == ConnectionTypeWebSocket && s.onTCPTunnelEstablished != nil {
+		s.logger.Info("🔔 Notifying TCP tunnel establishment for domain: %s", tunnel.Domain)
+		s.onTCPTunnelEstablished(tunnel.Domain)
+	}
 
 	// Keep the connection alive without interfering with HTTP traffic
 	// The connection will be closed when the client disconnects or an error occurs

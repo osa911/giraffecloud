@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package tunnel;
 
-option go_package = "giraffecloud/internal/tunnel/proto";
+option go_package = "./proto";
 
 // TunnelService provides high-performance tunneling with unlimited concurrency
 service TunnelService {
@@ -124,10 +124,29 @@ message TunnelControl {
         TunnelStatus status = 2;
         TunnelConfig config = 3;
         TunnelMetrics metrics = 4;
+        TunnelEstablishRequest establish_request = 5;
     }
 
     string message = 10;
     int64 timestamp = 11;
+}
+
+// TunnelEstablishRequest requests client to establish a specific tunnel type
+message TunnelEstablishRequest {
+    TunnelType tunnel_type = 1;
+    string domain = 2;
+    int32 target_port = 3;
+    string request_id = 4;
+    int64 timeout_ms = 5; // How long server will wait
+    string reason = 6;    // Reason for the request
+}
+
+// TunnelType enum for different tunnel types
+enum TunnelType {
+    TUNNEL_TYPE_UNKNOWN = 0;
+    TUNNEL_TYPE_TCP = 1;     // TCP tunnel for WebSocket traffic
+    TUNNEL_TYPE_GRPC = 2;    // gRPC tunnel for HTTP traffic
+    TUNNEL_TYPE_HYBRID = 3;  // Both tunnels
 }
 
 // TunnelConfig for configuration updates

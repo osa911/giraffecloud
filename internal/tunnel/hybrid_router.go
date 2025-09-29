@@ -6,10 +6,12 @@ import (
 	"giraffecloud/internal/interfaces"
 	"giraffecloud/internal/logging"
 	"giraffecloud/internal/repository"
+	"giraffecloud/internal/tunnel/proto"
 	"io"
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -37,6 +39,24 @@ type HybridTunnelRouter struct {
 	usage UsageRecorder
 	// Quotas
 	quota QuotaChecker
+
+	// Demand-based tunnel establishment
+	pendingConnections     map[string][]*PendingWebSocketConnection
+	pendingConnectionsMu   sync.RWMutex
+	tunnelEstablishTimeout time.Duration
+}
+
+// PendingWebSocketConnection represents a WebSocket connection waiting for TCP tunnel establishment
+type PendingWebSocketConnection struct {
+	Domain      string
+	Conn        net.Conn
+	RequestData []byte
+	RequestBody io.Reader
+	ClientIP    string
+	HTTPReq     *http.Request
+	RequestID   string
+	StartTime   time.Time
+	DoneChan    chan bool
 }
 
 // HybridRouterConfig holds configuration for the hybrid router
@@ -97,8 +117,10 @@ func NewHybridTunnelRouter(
 	}
 
 	router := &HybridTunnelRouter{
-		logger: logging.GetGlobalLogger(),
-		config: config,
+		logger:                 logging.GetGlobalLogger(),
+		config:                 config,
+		pendingConnections:     make(map[string][]*PendingWebSocketConnection),
+		tunnelEstablishTimeout: 30 * time.Second, // 30 second timeout for tunnel establishment
 	}
 
 	// Create gRPC tunnel server (for HTTP traffic)
@@ -107,6 +129,9 @@ func NewHybridTunnelRouter(
 
 	// Create TCP tunnel server (for WebSocket traffic)
 	router.tcpTunnel = NewServer(tokenRepo, tunnelRepo, tunnelService)
+
+	// Set up TCP tunnel establishment callback
+	router.tcpTunnel.SetTCPTunnelEstablishedCallback(router.OnTCPTunnelEstablished)
 
 	return router
 }
@@ -282,21 +307,30 @@ func (r *HybridTunnelRouter) routeToTCPTunnel(domain string, conn net.Conn, requ
 
 	r.logger.Debug("[HYBRID→TCP] Routing WebSocket upgrade")
 
-	// Check if TCP tunnel is available
-	if !r.tcpTunnel.IsTunnelDomain(domain) {
-		r.logger.Error("[HYBRID→TCP] No active TCP tunnel for domain: %s", domain)
-		atomic.AddInt64(&r.routingErrors, 1)
-		r.writeHTTPError(conn, 502, "Bad Gateway - TCP tunnel not available")
-		return
-	}
-
-	// Parse HTTP request for WebSocket upgrade
+	// Parse HTTP request for WebSocket upgrade first (to avoid parsing twice)
 	httpReq, err := r.parseHTTPRequest(requestData, requestBody)
 	if err != nil {
 		r.logger.Error("[HYBRID→TCP] Failed to parse WebSocket request: %v", err)
 		atomic.AddInt64(&r.routingErrors, 1)
 		r.writeHTTPError(conn, 400, "Bad Request - Invalid WebSocket request")
 		return
+	}
+
+	// Check if TCP tunnel is available
+	if !r.tcpTunnel.IsTunnelDomain(domain) {
+		r.logger.Info("[HYBRID→TCP] No active TCP tunnel for domain: %s, requesting establishment...", domain)
+
+		// Instead of returning 502, wait for tunnel establishment
+		if r.waitForTCPTunnelEstablishment(domain, conn, requestData, requestBody, clientIP, httpReq) {
+			// Tunnel was established, continue with WebSocket upgrade
+			r.logger.Info("[HYBRID→TCP] TCP tunnel established successfully for domain: %s", domain)
+		} else {
+			// Timeout or error establishing tunnel
+			r.logger.Error("[HYBRID→TCP] Failed to establish TCP tunnel for domain: %s", domain)
+			atomic.AddInt64(&r.routingErrors, 1)
+			r.writeHTTPError(conn, 502, "Bad Gateway - TCP tunnel establishment timeout")
+			return
+		}
 	}
 
 	// Proxy through TCP tunnel (existing WebSocket handling)
@@ -525,4 +559,115 @@ func (r *HybridTunnelRouter) IsTunnelDomain(domain string) bool {
 // HasWebSocketConnection checks if TCP tunnel has WebSocket capability
 func (r *HybridTunnelRouter) HasWebSocketConnection(domain string) bool {
 	return r.tcpTunnel.HasWebSocketConnection(domain)
+}
+
+// waitForTCPTunnelEstablishment waits for TCP tunnel to be established for WebSocket requests
+func (r *HybridTunnelRouter) waitForTCPTunnelEstablishment(domain string, conn net.Conn, requestData []byte, requestBody io.Reader, clientIP string, httpReq *http.Request) bool {
+	requestID := fmt.Sprintf("ws-req-%d", time.Now().UnixNano())
+
+	// Create pending connection
+	pending := &PendingWebSocketConnection{
+		Domain:      domain,
+		Conn:        conn,
+		RequestData: requestData,
+		RequestBody: requestBody,
+		ClientIP:    clientIP,
+		HTTPReq:     httpReq,
+		RequestID:   requestID,
+		StartTime:   time.Now(),
+		DoneChan:    make(chan bool, 1),
+	}
+
+	// Add to pending connections
+	r.pendingConnectionsMu.Lock()
+	if r.pendingConnections[domain] == nil {
+		r.pendingConnections[domain] = make([]*PendingWebSocketConnection, 0)
+	}
+	r.pendingConnections[domain] = append(r.pendingConnections[domain], pending)
+	r.pendingConnectionsMu.Unlock()
+
+	// Signal client via gRPC to establish TCP tunnel
+	go r.requestTCPTunnelEstablishment(domain, requestID)
+
+	// Wait for tunnel establishment or timeout
+	timeout := time.NewTimer(r.tunnelEstablishTimeout)
+	defer timeout.Stop()
+
+	select {
+	case success := <-pending.DoneChan:
+		// Remove from pending connections
+		r.removePendingConnection(domain, requestID)
+		return success
+	case <-timeout.C:
+		r.logger.Warn("[HYBRID→TCP] Timeout waiting for TCP tunnel establishment for domain: %s", domain)
+		// Remove from pending connections
+		r.removePendingConnection(domain, requestID)
+		return false
+	}
+}
+
+// requestTCPTunnelEstablishment signals the client via gRPC to establish a TCP tunnel
+func (r *HybridTunnelRouter) requestTCPTunnelEstablishment(domain string, requestID string) {
+	r.logger.Info("[HYBRID→TCP] Requesting TCP tunnel establishment for domain: %s (request: %s)", domain, requestID)
+
+	// Create tunnel establishment request
+	establishReq := &proto.TunnelEstablishRequest{
+		TunnelType: proto.TunnelType_TUNNEL_TYPE_TCP,
+		Domain:     domain,
+		RequestId:  requestID,
+		TimeoutMs:  int64(r.tunnelEstablishTimeout.Milliseconds()),
+		Reason:     "WebSocket upgrade request pending",
+	}
+
+	// Send signal via gRPC tunnel
+	if r.grpcTunnel.IsTunnelActive(domain) {
+		err := r.grpcTunnel.SendTunnelEstablishRequest(domain, establishReq)
+		if err != nil {
+			r.logger.Error("[HYBRID→TCP] Failed to send tunnel establishment request: %v", err)
+		} else {
+			r.logger.Info("[HYBRID→TCP] TCP tunnel establishment request sent successfully")
+		}
+	} else {
+		r.logger.Error("[HYBRID→TCP] No active gRPC tunnel to send establishment request for domain: %s", domain)
+	}
+}
+
+// removePendingConnection removes a pending connection from the map
+func (r *HybridTunnelRouter) removePendingConnection(domain string, requestID string) {
+	r.pendingConnectionsMu.Lock()
+	defer r.pendingConnectionsMu.Unlock()
+
+	connections := r.pendingConnections[domain]
+	for i, conn := range connections {
+		if conn.RequestID == requestID {
+			// Remove this connection
+			r.pendingConnections[domain] = append(connections[:i], connections[i+1:]...)
+			break
+		}
+	}
+
+	// Clean up empty domain entries
+	if len(r.pendingConnections[domain]) == 0 {
+		delete(r.pendingConnections, domain)
+	}
+}
+
+// OnTCPTunnelEstablished is called when a TCP tunnel is established to wake up pending connections
+func (r *HybridTunnelRouter) OnTCPTunnelEstablished(domain string) {
+	r.pendingConnectionsMu.Lock()
+	defer r.pendingConnectionsMu.Unlock()
+
+	if connections := r.pendingConnections[domain]; connections != nil {
+		r.logger.Info("[HYBRID→TCP] TCP tunnel established for domain: %s, waking up %d pending connections", domain, len(connections))
+
+		// Wake up all pending connections for this domain
+		for _, conn := range connections {
+			select {
+			case conn.DoneChan <- true:
+				r.logger.Debug("[HYBRID→TCP] Notified pending connection %s", conn.RequestID)
+			default:
+				// Channel might be closed or full, skip
+			}
+		}
+	}
 }
