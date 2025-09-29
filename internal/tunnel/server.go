@@ -1069,10 +1069,69 @@ func (s *TunnelServer) proxyWebSocketConnectionInternal(domain string, clientCon
 
 	s.logger.Debug("[WEBSOCKET DEBUG] Sent WebSocket upgrade request to tunnel")
 
-	// Read the upgrade response from the tunnel
+	// Read the upgrade response from the tunnel with timeout and WebSocket-aware parsing
 	tunnelReader := bufio.NewReader(tunnelConn.GetConn())
+
+	// Set a reasonable timeout for reading the upgrade response
+	tunnelConn.GetConn().SetReadDeadline(time.Now().Add(10 * time.Second))
 	response, err := http.ReadResponse(tunnelReader, nil)
+	tunnelConn.GetConn().SetReadDeadline(time.Time{}) // Clear deadline
+
 	if err != nil {
+		// Check if this might be a WebSocket frame instead of HTTP response
+		if strings.Contains(err.Error(), "malformed HTTP response") {
+			s.logger.Warn("[WEBSOCKET DEBUG] Received WebSocket data instead of HTTP upgrade response - assuming upgrade succeeded")
+			s.logger.Debug("[WEBSOCKET DEBUG] Raw data: %v", err.Error())
+
+			// Assume successful upgrade and proceed with bidirectional forwarding
+			// This handles mobile apps that send WebSocket data immediately after upgrade
+			s.logger.Debug("[WEBSOCKET DEBUG] WebSocket upgrade assumed successful, starting bidirectional forwarding")
+			tunnelConn.Unlock()
+
+			// Start bidirectional copying immediately
+			errChan := make(chan error, 2)
+
+			// Copy from client to tunnel
+			go func() {
+				n, err := io.Copy(tunnelConn.GetConn(), clientConn)
+				if s.usageRecorder != nil {
+					if userID, tunnelID, ok := s.connections.GetDomainOwner(domain); ok && n > 0 {
+						s.usageRecorder.Increment(userID, tunnelID, domain, n, 0, 0)
+					}
+				}
+				errChan <- err
+			}()
+
+			// Copy from tunnel to client (including any buffered WebSocket data)
+			go func() {
+				// First, send any buffered data that was mistakenly read as HTTP
+				if tunnelReader.Buffered() > 0 {
+					buffered := make([]byte, tunnelReader.Buffered())
+					tunnelReader.Read(buffered)
+					clientConn.Write(buffered)
+				}
+
+				n, err := io.Copy(clientConn, tunnelConn.GetConn())
+				if s.usageRecorder != nil {
+					if userID, tunnelID, ok := s.connections.GetDomainOwner(domain); ok && n > 0 {
+						s.usageRecorder.Increment(userID, tunnelID, domain, 0, n, 1)
+					}
+				}
+				errChan <- err
+			}()
+
+			// Wait for either direction to complete/error
+			err := <-errChan
+			if err != nil && !s.isClientDisconnectionError(err) {
+				s.logger.Debug("[WEBSOCKET DEBUG] WebSocket connection closed: %v", err)
+			} else {
+				s.logger.Debug("[WEBSOCKET DEBUG] WebSocket connection closed normally")
+			}
+
+			s.logger.Debug("[WEBSOCKET DEBUG] WebSocket proxy completed")
+			return nil
+		}
+
 		s.logger.Error("[WEBSOCKET DEBUG] Error reading upgrade response from tunnel: %v", err)
 		tunnelConn.Unlock()
 		s.writeHTTPError(clientConn, 502, "Bad Gateway")
