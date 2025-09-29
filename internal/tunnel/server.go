@@ -1060,6 +1060,13 @@ func (s *TunnelServer) proxyWebSocketConnectionInternal(domain string, clientCon
 	if _, err := tunnelConn.GetConn().Write(requestBytes); err != nil {
 		s.logger.Error("[WEBSOCKET DEBUG] Error writing upgrade request to tunnel: %v", err)
 		tunnelConn.Unlock()
+
+		// For broken pipe errors, ALWAYS return the error to trigger re-establishment
+		if strings.Contains(err.Error(), "broken pipe") || strings.Contains(err.Error(), "connection reset") {
+			s.logger.Debug("[WEBSOCKET DEBUG] Broken pipe detected - propagating error for re-establishment")
+			return fmt.Errorf("failed to write upgrade request to tunnel: %w", err)
+		}
+
 		s.writeHTTPError(clientConn, 502, "Bad Gateway")
 		if returnError {
 			return fmt.Errorf("failed to write upgrade request to tunnel: %w", err)
