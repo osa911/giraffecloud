@@ -62,24 +62,13 @@ type TunnelServer struct {
 
 // NewServer creates a new tunnel server instance
 func NewServer(tokenRepo repository.TokenRepository, tunnelRepo repository.TunnelRepository, tunnelService interfaces.TunnelService) *TunnelServer {
-	// Create secure server TLS configuration
+	// Create secure server TLS configuration - PRODUCTION: Fail hard if certificates missing
 	serverTLSConfig, err := CreateSecureServerTLSConfig("/app/certs/tunnel.crt", "/app/certs/tunnel.key", "/app/certs/ca.crt")
 	if err != nil {
-		logging.GetGlobalLogger().Warn("Failed to create secure TLS config, using fallback: %v", err)
-		// Fallback configuration for compatibility
-		serverTLSConfig = &tls.Config{
-			InsecureSkipVerify: true,
-			GetCertificate: func(info *tls.ClientHelloInfo) (*tls.Certificate, error) {
-				cert, err := tls.LoadX509KeyPair("/app/certs/tunnel.crt", "/app/certs/tunnel.key")
-				if err != nil {
-					return nil, fmt.Errorf("failed to load certificate: %w", err)
-				}
-				return &cert, nil
-			},
-		}
-	} else {
-		logging.GetGlobalLogger().Info("🔐 TCP Server using PRODUCTION-GRADE TLS with mutual authentication")
+		logging.GetGlobalLogger().Fatalf("PRODUCTION SECURITY ERROR: Failed to create secure TLS config - certificates required: %v", err)
+		panic("TLS certificates are required for production deployment")
 	}
+	logging.GetGlobalLogger().Info("🔐 TCP Server using PRODUCTION-GRADE TLS with mutual authentication")
 
 	return &TunnelServer{
 		logger:        logging.GetGlobalLogger(),
