@@ -43,6 +43,9 @@ type TunnelServer struct {
 	usageRecorder UsageRecorder
 	quotaChecker  QuotaChecker
 
+	// Tunnel establishment callback
+	onTCPTunnelEstablished func(domain string)
+
 	// Performance monitoring
 	requestCount   int64 // Total requests handled
 	concurrentReqs int64 // Current concurrent requests
@@ -59,24 +62,13 @@ type TunnelServer struct {
 
 // NewServer creates a new tunnel server instance
 func NewServer(tokenRepo repository.TokenRepository, tunnelRepo repository.TunnelRepository, tunnelService interfaces.TunnelService) *TunnelServer {
-	// Create secure server TLS configuration
+	// Create secure server TLS configuration - PRODUCTION: Fail hard if certificates missing
 	serverTLSConfig, err := CreateSecureServerTLSConfig("/app/certs/tunnel.crt", "/app/certs/tunnel.key", "/app/certs/ca.crt")
 	if err != nil {
-		logging.GetGlobalLogger().Warn("Failed to create secure TLS config, using fallback: %v", err)
-		// Fallback configuration for compatibility
-		serverTLSConfig = &tls.Config{
-			InsecureSkipVerify: true,
-			GetCertificate: func(info *tls.ClientHelloInfo) (*tls.Certificate, error) {
-				cert, err := tls.LoadX509KeyPair("/app/certs/tunnel.crt", "/app/certs/tunnel.key")
-				if err != nil {
-					return nil, fmt.Errorf("failed to load certificate: %w", err)
-				}
-				return &cert, nil
-			},
-		}
-	} else {
-		logging.GetGlobalLogger().Info("🔐 TCP Server using PRODUCTION-GRADE TLS with mutual authentication")
+		logging.GetGlobalLogger().Fatalf("PRODUCTION SECURITY ERROR: Failed to create secure TLS config - certificates required: %v", err)
+		panic("TLS certificates are required for production deployment")
 	}
+	logging.GetGlobalLogger().Info("🔐 TCP Server using PRODUCTION-GRADE TLS with mutual authentication")
 
 	return &TunnelServer{
 		logger:        logging.GetGlobalLogger(),
@@ -94,6 +86,11 @@ func (s *TunnelServer) SetUsageRecorder(rec UsageRecorder) { s.usageRecorder = r
 
 // SetQuotaChecker wires a quota checker for enforcement.
 func (s *TunnelServer) SetQuotaChecker(q QuotaChecker) { s.quotaChecker = q }
+
+// SetTCPTunnelEstablishedCallback sets the callback for when TCP tunnels are established
+func (s *TunnelServer) SetTCPTunnelEstablishedCallback(callback func(domain string)) {
+	s.onTCPTunnelEstablished = callback
+}
 
 // Start starts the tunnel server
 func (s *TunnelServer) Start(addr string) error {
@@ -231,6 +228,12 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 	defer s.connections.RemoveConnection(tunnel.Domain, connType)
 
 	s.logger.Info("Tunnel connection established for domain: %s (type: %s)", tunnel.Domain, connType)
+
+	// Notify if this is a WebSocket tunnel establishment
+	if connType == ConnectionTypeWebSocket && s.onTCPTunnelEstablished != nil {
+		s.logger.Info("🔔 Notifying TCP tunnel establishment for domain: %s", tunnel.Domain)
+		s.onTCPTunnelEstablished(tunnel.Domain)
+	}
 
 	// Keep the connection alive without interfering with HTTP traffic
 	// The connection will be closed when the client disconnects or an error occurs

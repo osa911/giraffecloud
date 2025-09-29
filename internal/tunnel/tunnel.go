@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"giraffecloud/internal/logging"
+	"giraffecloud/internal/tunnel/proto"
 	"io"
 	"math/rand"
 	"net"
@@ -327,15 +328,21 @@ func (t *Tunnel) attemptDualConnections(serverAddr string, tlsConfig *tls.Config
 	if t.grpcClient == nil {
 		grpcConfig := DefaultGRPCClientConfig()
 		t.grpcClient = NewGRPCTunnelClient(grpcServerAddr, t.domain, t.token, int32(t.localPort), grpcConfig)
+
+		// Set up tunnel establishment handler for demand-based tunnel creation
+		t.grpcClient.SetTunnelEstablishHandler(t.handleTunnelEstablishRequest)
+
 		if err := t.grpcClient.Start(); err != nil {
 			t.logger.Error("Failed to establish gRPC tunnel: %v", err)
-			t.logger.Info("Falling back to TCP-only mode...")
 			t.grpcEnabled = false
 		} else {
 			t.logger.Info("✅ gRPC tunnel established successfully - unlimited HTTP concurrency enabled! Client ID: %s", t.grpcClient.GetClientID())
 			t.grpcEnabled = true
 		}
 	} else {
+		// Make sure handler is set on existing client
+		t.grpcClient.SetTunnelEstablishHandler(t.handleTunnelEstablishRequest)
+
 		if t.grpcClient.IsConnected() {
 			t.logger.Info("Reusing existing gRPC tunnel client (Client ID: %s)", t.grpcClient.GetClientID())
 			t.grpcEnabled = true
@@ -343,7 +350,6 @@ func (t *Tunnel) attemptDualConnections(serverAddr string, tlsConfig *tls.Config
 			t.logger.Info("Existing gRPC client not connected; attempting to start (Client ID: %s)", t.grpcClient.GetClientID())
 			if err := t.grpcClient.Start(); err != nil {
 				t.logger.Error("Failed to (re)start existing gRPC client: %v", err)
-				t.logger.Info("Continuing without gRPC (TCP-only) for now...")
 				t.grpcEnabled = false
 			} else {
 				t.logger.Info("✅ gRPC client (re)started successfully (Client ID: %s)", t.grpcClient.GetClientID())
@@ -352,97 +358,18 @@ func (t *Tunnel) attemptDualConnections(serverAddr string, tlsConfig *tls.Config
 		}
 	}
 
-	// Step 2: Establish TCP tunnel for WebSocket traffic (existing functionality)
-	t.logger.Info("🔌 Establishing TCP tunnel for WebSocket traffic...")
-
+	// Step 2: TCP tunnel is now DEMAND-BASED (established only when needed)
 	if t.grpcEnabled {
 		// In hybrid mode: gRPC handles ALL HTTP traffic (including large files via chunked streaming)
-		// TCP only handles WebSocket traffic
-		t.logger.Info("Hybrid mode: Establishing TCP connection for WebSocket traffic...")
-
-		// Establish WebSocket tunnel connection
-		wsConn, err := t.establishConnection(serverAddr, tlsConfig, "websocket")
-		if err != nil {
-			t.logger.Error("Failed to establish WebSocket tunnel: %v", err)
-			// If WebSocket fails but gRPC succeeded, continue with gRPC-only and start background retries
-			t.logger.Warn("WebSocket tunnel failed - continuing with gRPC-only mode (HTTP traffic only)")
-			// Start background re-establishment loop for WebSocket while keeping gRPC active
-			t.startWebSocketReconnectLoop(serverAddr, tlsConfig)
-		} else {
-			t.wsConn = wsConn
-			t.logger.Info("✅ WebSocket tunnel established successfully")
-
-			// Start WebSocket handler
-			t.wg.Add(1)
-			go t.handleWebSocketConnection(wsConn)
-		}
-
-		t.logger.Info("🎯 HYBRID MODE ACTIVE: gRPC (ALL HTTP + Chunked Streaming) + TCP (WebSocket Only)")
-		t.logger.Info("🚀 PRODUCTION-GRADE: Unlimited concurrency for files of ANY size!")
+		// TCP tunnel will be established ON-DEMAND when WebSocket requests arrive
+		t.logger.Info("🎯 HYBRID MODE ACTIVE: gRPC (ALL HTTP + Chunked Streaming) + TCP (ON-DEMAND for WebSockets)")
+		t.logger.Info("🚀 PRODUCTION-GRADE: Unlimited concurrency + demand-based tunnel establishment!")
+		t.logger.Info("⚡ TCP tunnel will be established automatically when WebSocket requests arrive")
 		return nil
 	}
 
-	// Fallback: Original TCP-only mode for compatibility
-	t.logger.Info("⚠️  Fallback mode: Using legacy TCP tunnels...")
-
-	// Determine the number of HTTP connections to establish based on pool size
-	poolSize := t.streamConfig.PoolSize
-	if poolSize <= 0 {
-		poolSize = 3 // Default to 3 concurrent HTTP connections
-	}
-
-	t.logger.Info("Establishing %d TCP HTTP tunnel connections for concurrency...", poolSize)
-
-	// Establish multiple HTTP tunnel connections for concurrent request handling
-	httpConnections := make([]net.Conn, 0, poolSize)
-	for i := 0; i < poolSize; i++ {
-		t.logger.Info("Establishing TCP HTTP tunnel %d/%d...", i+1, poolSize)
-		httpConn, err := t.establishConnection(serverAddr, tlsConfig, "http")
-		if err != nil {
-			// Clean up previously established connections
-			for _, conn := range httpConnections {
-				conn.Close()
-			}
-			t.logger.Error("Failed to establish TCP HTTP tunnel %d: %v", i+1, err)
-			return fmt.Errorf("failed to establish TCP HTTP tunnel %d: %w", i+1, err)
-		}
-		httpConnections = append(httpConnections, httpConn)
-		t.logger.Info("TCP HTTP tunnel %d/%d established successfully", i+1, poolSize)
-	}
-
-	// Then, establish the WebSocket tunnel connection
-	t.logger.Info("Establishing WebSocket tunnel...")
-	wsConn, err := t.establishConnection(serverAddr, tlsConfig, "websocket")
-	if err != nil {
-		// Clean up HTTP connections if WebSocket fails
-		for _, conn := range httpConnections {
-			conn.Close()
-		}
-		t.logger.Error("Failed to establish WebSocket tunnel: %v", err)
-		return fmt.Errorf("failed to establish WebSocket tunnel: %w", err)
-	}
-	t.logger.Info("WebSocket tunnel established successfully")
-
-	// Store the first HTTP connection as the main connection (for backward compatibility)
-	t.conn = httpConnections[0]
-	t.wsConn = wsConn // Store WebSocket connection separately
-
-	t.logger.Info("✅ Legacy TCP tunnel connections established. Domain: %s, Local Port: %d, HTTP Connections: %d",
-		t.domain, t.localPort, len(httpConnections))
-
-	// Start handling for all HTTP connections and the WebSocket connection
-	t.wg.Add(len(httpConnections) + 1)
-
-	// Start handlers for all HTTP connections
-	for i, httpConn := range httpConnections {
-		go t.handleHTTPConnection(httpConn, i+1) // Pass connection index for logging
-	}
-
-	// Start handler for WebSocket connection
-	go t.handleWebSocketConnection(wsConn)
-
-	t.logger.Info("All legacy TCP tunnel handlers started (%d HTTP + 1 WebSocket)", len(httpConnections))
-	return nil
+	// gRPC tunnel establishment failed - this is a critical error in demand-based architecture
+	return fmt.Errorf("gRPC tunnel is required for demand-based tunnel establishment - cannot proceed without it")
 }
 
 // startWebSocketReconnectLoop continuously retries establishing the WebSocket tunnel
@@ -1465,4 +1392,72 @@ func (t *Tunnel) ClearStateFile() error {
 
 	t.logger.Debug("Cleared tunnel state file")
 	return nil
+}
+
+// handleTunnelEstablishRequest handles tunnel establishment requests from the server
+func (t *Tunnel) handleTunnelEstablishRequest(establishReq *proto.TunnelEstablishRequest) error {
+	t.logger.Info("🔔 Received tunnel establishment request: %s for domain %s",
+		establishReq.TunnelType.String(), establishReq.Domain)
+
+	switch establishReq.TunnelType {
+	case proto.TunnelType_TUNNEL_TYPE_TCP:
+		return t.establishTCPTunnelOnDemand(establishReq)
+	case proto.TunnelType_TUNNEL_TYPE_GRPC:
+		return fmt.Errorf("gRPC tunnel already established")
+	case proto.TunnelType_TUNNEL_TYPE_HYBRID:
+		// For hybrid, we need both - but gRPC should already be established
+		return t.establishTCPTunnelOnDemand(establishReq)
+	default:
+		return fmt.Errorf("unknown tunnel type: %s", establishReq.TunnelType.String())
+	}
+}
+
+// establishTCPTunnelOnDemand establishes a TCP tunnel when requested by the server
+func (t *Tunnel) establishTCPTunnelOnDemand(establishReq *proto.TunnelEstablishRequest) error {
+	t.logger.Info("⚡ Establishing TCP tunnel on-demand for domain: %s", establishReq.Domain)
+
+	// Check if TCP tunnel already exists
+	if t.wsConn != nil {
+		t.logger.Info("TCP tunnel already exists for domain: %s", establishReq.Domain)
+		return nil
+	}
+
+	// Create TLS config for TCP connection
+	cfg, err := LoadConfig()
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	tlsConfig, err := CreateSecureTLSConfig(cfg.Security.CACert, cfg.Security.ClientCert, cfg.Security.ClientKey)
+	if err != nil {
+		return fmt.Errorf("failed to create TLS config: %w", err)
+	}
+
+	// Determine server address for TCP tunnel (port 4443)
+	serverAddr := strings.Replace(t.grpcClient.serverAddr, ":4444", ":4443", 1)
+
+	// Establish WebSocket tunnel connection
+	wsConn, err := t.establishConnection(serverAddr, tlsConfig, "websocket")
+	if err != nil {
+		return fmt.Errorf("failed to establish TCP tunnel: %w", err)
+	}
+
+	t.wsConn = wsConn
+	t.logger.Info("✅ TCP tunnel established successfully on-demand")
+
+	// Start WebSocket handler
+	t.wg.Add(1)
+	go t.handleWebSocketConnection(wsConn)
+
+	// Notify the hybrid router that TCP tunnel is now available
+	t.notifyTCPTunnelEstablished()
+
+	return nil
+}
+
+// notifyTCPTunnelEstablished notifies that TCP tunnel is ready (this would be wired to hybrid router)
+func (t *Tunnel) notifyTCPTunnelEstablished() {
+	// This will be wired to the hybrid router's OnTCPTunnelEstablished method
+	// For now, just log that it's ready
+	t.logger.Info("🚀 TCP tunnel ready - WebSocket connections can now be handled")
 }

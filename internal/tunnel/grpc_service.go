@@ -510,4 +510,38 @@ func (s *GRPCTunnelServer) cleanupTunnelStreamState(tunnelStream *TunnelStream) 
 	}
 }
 
-// Helper methods continue in next part...
+// SendTunnelEstablishRequest sends a tunnel establishment request to the client
+func (s *GRPCTunnelServer) SendTunnelEstablishRequest(domain string, establishReq *proto.TunnelEstablishRequest) error {
+	// Get tunnel stream for domain
+	s.tunnelStreamsMux.RLock()
+	tunnelStream, exists := s.tunnelStreams[domain]
+	s.tunnelStreamsMux.RUnlock()
+
+	if !exists || !tunnelStream.connected {
+		return fmt.Errorf("no active gRPC tunnel for domain: %s", domain)
+	}
+
+	// Create control message with establishment request
+	controlMsg := &proto.TunnelMessage{
+		RequestId: establishReq.RequestId,
+		Timestamp: time.Now().Unix(),
+		MessageType: &proto.TunnelMessage_Control{
+			Control: &proto.TunnelControl{
+				ControlType: &proto.TunnelControl_EstablishRequest{
+					EstablishRequest: establishReq,
+				},
+				Message:   fmt.Sprintf("Requesting %s tunnel establishment", establishReq.TunnelType.String()),
+				Timestamp: time.Now().Unix(),
+			},
+		},
+	}
+
+	// Send the control message to client
+	if err := tunnelStream.Stream.Send(controlMsg); err != nil {
+		return fmt.Errorf("failed to send tunnel establishment request: %w", err)
+	}
+
+	s.logger.Info("[ESTABLISH] Sent %s tunnel establishment request to client for domain: %s",
+		establishReq.TunnelType.String(), domain)
+	return nil
+}
