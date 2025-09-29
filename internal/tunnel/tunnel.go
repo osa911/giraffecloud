@@ -290,24 +290,37 @@ func (t *Tunnel) connectWithRetry(serverAddr string, tlsConfig *tls.Config) erro
 
 // attemptDualConnections tries to establish both gRPC (HTTP) and TCP (WebSocket) tunnel connections
 func (t *Tunnel) attemptDualConnections(serverAddr string, tlsConfig *tls.Config) error {
-	// PRODUCTION-GRADE: Create secure TLS config with proper certificate validation
+	// Create secure TLS config with proper certificate validation
 	if tlsConfig == nil {
 		// Normalize config home when running elevated
 		EnsureConsistentConfigHome()
-		// PRODUCTION-GRADE: Load configuration and REQUIRE proper certificates
+		// Load configuration for certificates
 		cfg, err := LoadConfig()
 		if err != nil {
-			return fmt.Errorf("SECURITY ERROR: Failed to load config for certificates: %w", err)
+			t.logger.Warn("Failed to load config for certificates: %v", err)
+			t.logger.Info("Using fallback TLS configuration - please run 'giraffecloud login --token YOUR_TOKEN' to set up certificates")
+			// Fallback TLS config
+			tlsConfig = &tls.Config{
+				InsecureSkipVerify: false,
+			}
+			goto skipCertConfig
 		}
 
-		// PRODUCTION-GRADE: Create secure TLS configuration with proper certificates
+		// Try to create secure TLS configuration with proper certificates
 		tlsConfig, err = CreateSecureTLSConfig(cfg.Security.CACert, cfg.Security.ClientCert, cfg.Security.ClientKey)
 		if err != nil {
-			return fmt.Errorf("SECURITY ERROR: Failed to create secure TLS config: %w", err)
+			t.logger.Warn("Failed to create secure TLS config: %v", err)
+			t.logger.Info("Using fallback TLS configuration - please run 'giraffecloud login --token YOUR_TOKEN' to set up certificates")
+			// Fallback TLS config
+			tlsConfig = &tls.Config{
+				InsecureSkipVerify: false,
+			}
+			goto skipCertConfig
 		}
 
 		t.logger.Info("🔐 PRODUCTION-GRADE: Using secure TLS with certificate validation (InsecureSkipVerify: FALSE)")
 
+	skipCertConfig:
 		// CRITICAL: Force fresh TLS state during reconnection to prevent ERR_SSL_PROTOCOL_ERROR
 		tlsConfig = tlsConfig.Clone()
 		tlsConfig.ClientSessionCache = nil                      // Completely disable session cache

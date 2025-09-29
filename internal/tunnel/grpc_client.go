@@ -229,19 +229,34 @@ func (c *GRPCTunnelClient) IsConnected() bool {
 func (c *GRPCTunnelClient) connect() error {
 	// Ensure consistent config home when running under elevated context
 	EnsureConsistentConfigHome()
-	// PRODUCTION-GRADE: Load configuration and REQUIRE proper certificates
+
+	var tlsConfig *tls.Config
+
+	// Load configuration for certificates
 	cfg, err := LoadConfig()
 	if err != nil {
-		return fmt.Errorf("SECURITY ERROR: Failed to load config for certificates: %w", err)
+		c.logger.Warn("Failed to load config for certificates: %v", err)
+		c.logger.Info("Using fallback TLS configuration - please run 'giraffecloud login --token YOUR_TOKEN' to set up certificates")
+		// Fallback TLS config
+		tlsConfig = &tls.Config{
+			ServerName:         strings.Split(c.serverAddr, ":")[0],
+			InsecureSkipVerify: false,
+		}
+	} else {
+		// Try to create secure TLS configuration with proper certificates
+		tlsConfig, err = CreateSecureTLSConfig(cfg.Security.CACert, cfg.Security.ClientCert, cfg.Security.ClientKey)
+		if err != nil {
+			c.logger.Warn("Failed to create secure TLS config: %v", err)
+			c.logger.Info("Using fallback TLS configuration - please run 'giraffecloud login --token YOUR_TOKEN' to set up certificates")
+			// Fallback TLS config
+			tlsConfig = &tls.Config{
+				ServerName:         strings.Split(c.serverAddr, ":")[0],
+				InsecureSkipVerify: false,
+			}
+		} else {
+			c.logger.Info("🔐 PRODUCTION-GRADE: Using secure TLS with certificate validation (InsecureSkipVerify: FALSE)")
+		}
 	}
-
-	// PRODUCTION-GRADE: Create secure TLS configuration with proper certificates
-	tlsConfig, err := CreateSecureTLSConfig(cfg.Security.CACert, cfg.Security.ClientCert, cfg.Security.ClientKey)
-	if err != nil {
-		return fmt.Errorf("SECURITY ERROR: Failed to create secure TLS config: %w", err)
-	}
-
-	c.logger.Info("🔐 PRODUCTION-GRADE: Using secure TLS with certificate validation (InsecureSkipVerify: FALSE)")
 
 	// CRITICAL: Force fresh TLS state by disabling session resumption during reconnection
 	// This prevents ERR_SSL_PROTOCOL_ERROR after server restarts
