@@ -357,6 +357,19 @@ func (m *ConnectionManager) HasWebSocketConnection(domain string) bool {
 	return m.GetConnection(domain, ConnectionTypeWebSocket) != nil
 }
 
+// clearWebSocketConnection removes the WebSocket connection for a domain
+func (m *ConnectionManager) clearWebSocketConnection(domain string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	domainConns := m.connections[domain]
+	if domainConns != nil {
+		domainConns.mu.Lock()
+		domainConns.wsConn = nil
+		domainConns.mu.Unlock()
+	}
+}
+
 // GetHTTPPoolSize returns the number of HTTP connections for a domain
 func (m *ConnectionManager) GetHTTPPoolSize(domain string) int {
 	m.mu.RLock()

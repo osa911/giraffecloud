@@ -256,6 +256,17 @@ func (s *TunnelServer) HasWebSocketConnection(domain string) bool {
 	return s.connections.HasWebSocketConnection(domain)
 }
 
+// RemoveDeadConnection removes a dead connection for the domain
+func (s *TunnelServer) RemoveDeadConnection(domain string) {
+	s.logger.Info("[CONNECTION CLEANUP] Removing dead WebSocket connection for domain: %s", domain)
+	// Remove WebSocket connection if it exists
+	if ws := s.connections.GetWebSocketConnection(domain); ws != nil {
+		ws.Close()
+		// Clear the WebSocket connection
+		s.connections.clearWebSocketConnection(domain)
+	}
+}
+
 // ProxyConnection handles proxying with hybrid approach: hot pool + on-demand creation
 func (s *TunnelServer) ProxyConnection(domain string, conn net.Conn, requestData []byte, requestBody io.Reader) {
 	defer conn.Close()
@@ -978,8 +989,18 @@ func (s *TunnelServer) isClientDisconnectionError(err error) bool {
 
 // These old retry methods have been replaced by retryWithFreshConnection
 
+// ProxyWebSocketConnectionWithRetry handles WebSocket upgrade with connection validation
+func (s *TunnelServer) ProxyWebSocketConnectionWithRetry(domain string, clientConn net.Conn, r *http.Request) error {
+	return s.proxyWebSocketConnectionInternal(domain, clientConn, r, true)
+}
+
 // ProxyWebSocketConnection handles WebSocket upgrade and bidirectional forwarding
 func (s *TunnelServer) ProxyWebSocketConnection(domain string, clientConn net.Conn, r *http.Request) {
+	s.proxyWebSocketConnectionInternal(domain, clientConn, r, false)
+}
+
+// proxyWebSocketConnectionInternal handles WebSocket upgrade implementation
+func (s *TunnelServer) proxyWebSocketConnectionInternal(domain string, clientConn net.Conn, r *http.Request, returnError bool) error {
 	defer clientConn.Close()
 
 	// Quota check: block upgrades if user exceeded quota
@@ -987,7 +1008,10 @@ func (s *TunnelServer) ProxyWebSocketConnection(domain string, clientConn net.Co
 		if userID, _, ok := s.connections.GetDomainOwner(domain); ok {
 			if res, _ := s.quotaChecker.CheckUser(context.Background(), userID); res.Decision == QuotaBlock {
 				s.writeHTTPError(clientConn, http.StatusPaymentRequired, "Quota exceeded")
-				return
+				if returnError {
+					return fmt.Errorf("quota exceeded")
+				}
+				return nil
 			}
 		}
 	}
@@ -996,7 +1020,10 @@ func (s *TunnelServer) ProxyWebSocketConnection(domain string, clientConn net.Co
 	if tunnelConn == nil {
 		s.logger.Error("No WebSocket tunnel connection found for domain: %s", domain)
 		s.writeHTTPError(clientConn, 502, "Bad Gateway - WebSocket tunnel not connected")
-		return
+		if returnError {
+			return fmt.Errorf("no WebSocket tunnel connection found")
+		}
+		return nil
 	}
 
 	s.logger.Debug("[WEBSOCKET DEBUG] Starting WebSocket proxy for domain: %s", domain)
@@ -1034,7 +1061,10 @@ func (s *TunnelServer) ProxyWebSocketConnection(domain string, clientConn net.Co
 		s.logger.Error("[WEBSOCKET DEBUG] Error writing upgrade request to tunnel: %v", err)
 		tunnelConn.Unlock()
 		s.writeHTTPError(clientConn, 502, "Bad Gateway")
-		return
+		if returnError {
+			return fmt.Errorf("failed to write upgrade request to tunnel: %w", err)
+		}
+		return nil
 	}
 
 	s.logger.Debug("[WEBSOCKET DEBUG] Sent WebSocket upgrade request to tunnel")
@@ -1046,7 +1076,10 @@ func (s *TunnelServer) ProxyWebSocketConnection(domain string, clientConn net.Co
 		s.logger.Error("[WEBSOCKET DEBUG] Error reading upgrade response from tunnel: %v", err)
 		tunnelConn.Unlock()
 		s.writeHTTPError(clientConn, 502, "Bad Gateway")
-		return
+		if returnError {
+			return fmt.Errorf("failed to read upgrade response from tunnel: %w", err)
+		}
+		return nil
 	}
 
 	s.logger.Debug("[WEBSOCKET DEBUG] Received upgrade response: %s", response.Status)
@@ -1056,20 +1089,29 @@ func (s *TunnelServer) ProxyWebSocketConnection(domain string, clientConn net.Co
 	if err := response.Write(clientWriter); err != nil {
 		s.logger.Error("[WEBSOCKET DEBUG] Error writing upgrade response to client: %v", err)
 		tunnelConn.Unlock()
-		return
+		if returnError {
+			return fmt.Errorf("failed to write upgrade response to client: %w", err)
+		}
+		return nil
 	}
 
 	if err := clientWriter.Flush(); err != nil {
 		s.logger.Error("[WEBSOCKET DEBUG] Error flushing upgrade response: %v", err)
 		tunnelConn.Unlock()
-		return
+		if returnError {
+			return fmt.Errorf("failed to flush upgrade response: %w", err)
+		}
+		return nil
 	}
 
 	// Check if the upgrade was successful (101 Switching Protocols)
 	if response.StatusCode != 101 {
 		s.logger.Error("[WEBSOCKET DEBUG] WebSocket upgrade failed with status: %d", response.StatusCode)
 		tunnelConn.Unlock()
-		return
+		if returnError {
+			return fmt.Errorf("WebSocket upgrade failed with status: %d", response.StatusCode)
+		}
+		return nil
 	}
 
 	s.logger.Debug("[WEBSOCKET DEBUG] WebSocket upgrade successful, starting bidirectional forwarding")
@@ -1112,6 +1154,7 @@ func (s *TunnelServer) ProxyWebSocketConnection(domain string, clientConn net.Co
 	}
 
 	s.logger.Debug("[WEBSOCKET DEBUG] WebSocket proxy completed")
+	return nil
 }
 
 // getConnectionMemoryOverhead estimates memory overhead per connection

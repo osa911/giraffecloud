@@ -316,7 +316,7 @@ func (r *HybridTunnelRouter) routeToTCPTunnel(domain string, conn net.Conn, requ
 		return
 	}
 
-	// Check if TCP tunnel is available
+	// Check if TCP tunnel is available - with health validation
 	if !r.tcpTunnel.IsTunnelDomain(domain) {
 		r.logger.Info("[HYBRID→TCP] No active TCP tunnel for domain: %s, requesting establishment...", domain)
 
@@ -333,8 +333,30 @@ func (r *HybridTunnelRouter) routeToTCPTunnel(domain string, conn net.Conn, requ
 		}
 	}
 
-	// Proxy through TCP tunnel (existing WebSocket handling)
-	r.tcpTunnel.ProxyWebSocketConnection(domain, conn, httpReq)
+	// Proxy through TCP tunnel with connection health validation
+	if err := r.tcpTunnel.ProxyWebSocketConnectionWithRetry(domain, conn, httpReq); err != nil {
+		// If connection fails (broken pipe), trigger demand-based establishment
+		if strings.Contains(err.Error(), "broken pipe") || strings.Contains(err.Error(), "connection") {
+			r.logger.Warn("[HYBRID→TCP] TCP tunnel connection failed (%v), requesting new establishment...", err)
+
+			// Remove dead connection and request new one
+			r.tcpTunnel.RemoveDeadConnection(domain)
+
+			if r.waitForTCPTunnelEstablishment(domain, conn, requestData, requestBody, clientIP, httpReq) {
+				r.logger.Info("[HYBRID→TCP] TCP tunnel re-established successfully for domain: %s", domain)
+				// Retry the WebSocket connection
+				r.tcpTunnel.ProxyWebSocketConnection(domain, conn, httpReq)
+			} else {
+				r.logger.Error("[HYBRID→TCP] Failed to re-establish TCP tunnel for domain: %s", domain)
+				atomic.AddInt64(&r.routingErrors, 1)
+				r.writeHTTPError(conn, 502, "Bad Gateway - TCP tunnel re-establishment failed")
+			}
+		} else {
+			r.logger.Error("[HYBRID→TCP] WebSocket proxy error: %v", err)
+			atomic.AddInt64(&r.routingErrors, 1)
+			r.writeHTTPError(conn, 500, "Internal Server Error - WebSocket proxy failed")
+		}
+	}
 
 	r.logger.Debug("[HYBRID→TCP] WebSocket proxy completed")
 }
