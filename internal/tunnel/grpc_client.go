@@ -100,9 +100,9 @@ func DefaultGRPCClientConfig() *GRPCClientConfig {
 	return &GRPCClientConfig{
 		ConnectTimeout:       30 * time.Second,
 		RequestTimeout:       30 * time.Second,
-		KeepAliveTime:        30 * time.Second,
-		KeepAliveTimeout:     10 * time.Second,
-		MaxReconnectAttempts: -1, // Infinite retries
+		KeepAliveTime:        60 * time.Second, // Increased from 30s for large file stability
+		KeepAliveTimeout:     20 * time.Second, // Increased from 10s for large file stability
+		MaxReconnectAttempts: -1,               // Infinite retries
 		ReconnectDelay:       1 * time.Second,
 		BackoffMultiplier:    1.5,
 		InsecureSkipVerify:   false,            // PRODUCTION: Use proper certificate validation
@@ -230,33 +230,43 @@ func (c *GRPCTunnelClient) connect() error {
 	// Ensure consistent config home when running under elevated context
 	EnsureConsistentConfigHome()
 
-	var tlsConfig *tls.Config
-
-	// Load configuration for certificates
+	// PRODUCTION-GRADE: Load configuration and validate certificates properly
 	cfg, err := LoadConfig()
 	if err != nil {
-		c.logger.Warn("Failed to load config for certificates: %v", err)
-		c.logger.Info("Using fallback TLS configuration - please run 'giraffecloud login --token YOUR_TOKEN' to set up certificates")
-		// Fallback TLS config
-		tlsConfig = &tls.Config{
-			ServerName:         strings.Split(c.serverAddr, ":")[0],
-			InsecureSkipVerify: false,
-		}
-	} else {
-		// Try to create secure TLS configuration with proper certificates
-		tlsConfig, err = CreateSecureTLSConfig(cfg.Security.CACert, cfg.Security.ClientCert, cfg.Security.ClientKey)
-		if err != nil {
-			c.logger.Warn("Failed to create secure TLS config: %v", err)
-			c.logger.Info("Using fallback TLS configuration - please run 'giraffecloud login --token YOUR_TOKEN' to set up certificates")
-			// Fallback TLS config
-			tlsConfig = &tls.Config{
-				ServerName:         strings.Split(c.serverAddr, ":")[0],
-				InsecureSkipVerify: false,
-			}
-		} else {
-			c.logger.Info("🔐 PRODUCTION-GRADE: Using secure TLS with certificate validation (InsecureSkipVerify: FALSE)")
-		}
+		return fmt.Errorf("CONFIGURATION ERROR: Failed to load config: %w. Please ensure giraffecloud is properly configured", err)
 	}
+
+	// PRODUCTION-GRADE: Validate certificates before attempting to use them
+	validation := ValidateCertificateFiles(cfg.Security.CACert, cfg.Security.ClientCert, cfg.Security.ClientKey)
+	if !validation.Valid {
+		// Provide detailed error information
+		c.logger.Error("Certificate validation failed:")
+		c.logger.Error("  Error: %s", validation.ErrorMessage)
+		c.logger.Error("  Action: %s", validation.SuggestedAction)
+
+		if len(validation.MissingFiles) > 0 {
+			c.logger.Error("  Missing files:")
+			for _, file := range validation.MissingFiles {
+				c.logger.Error("    - %s", file)
+			}
+		}
+		if len(validation.InvalidFiles) > 0 {
+			c.logger.Error("  Invalid files:")
+			for _, file := range validation.InvalidFiles {
+				c.logger.Error("    - %s", file)
+			}
+		}
+
+		return fmt.Errorf("CERTIFICATE ERROR: %s. %s", validation.ErrorMessage, validation.SuggestedAction)
+	}
+
+	// Create secure TLS configuration with validated certificates
+	tlsConfig, err := CreateSecureTLSConfig(cfg.Security.CACert, cfg.Security.ClientCert, cfg.Security.ClientKey)
+	if err != nil {
+		return fmt.Errorf("TLS CONFIGURATION ERROR: %w", err)
+	}
+
+	c.logger.Info("🔐 PRODUCTION-GRADE: Using secure TLS with certificate validation (InsecureSkipVerify: FALSE)")
 
 	// CRITICAL: Force fresh TLS state by disabling session resumption during reconnection
 	// This prevents ERR_SSL_PROTOCOL_ERROR after server restarts
@@ -759,8 +769,8 @@ func (c *GRPCTunnelClient) makeLocalServiceRequest(httpReq *proto.HTTPRequest) (
 
 // streamResponseInChunks streams large responses in chunks for unlimited file size
 func (c *GRPCTunnelClient) streamResponseInChunks(requestID string, response *http.Response) error {
-	const ChunkSize = 4 * 1024 * 1024         // 4MB chunks for faster streaming
-	const MaxStreamingTime = 10 * time.Minute // Maximum time for entire streaming
+	const ChunkSize = 2 * 1024 * 1024         // 2MB chunks for better reliability (reduced from 4MB)
+	const MaxStreamingTime = 30 * time.Minute // Increased timeout for very large files (increased from 10 minutes)
 
 	c.logger.Info("[CHUNKED CLIENT] 📡 Streaming response in %dKB chunks (UNLIMITED SIZE)", ChunkSize/1024)
 

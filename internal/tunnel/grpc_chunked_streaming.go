@@ -504,13 +504,13 @@ func (s *GRPCTunnelServer) collectChunkedResponse(tunnelStream *TunnelStream, re
 		var firstChunk *proto.HTTPResponse
 		chunkCount := 0
 
-		// Set timeout for chunk collection (reasonable timeout - activity tracking prevents tunnel timeout)
-		timeout := time.After(2 * time.Minute) // 2 minutes max - fail fast if broken
+		// Set timeout for chunk collection (generous timeout for large files - activity tracking prevents tunnel timeout)
+		timeout := time.After(10 * time.Minute) // Increased from 2 minutes for large file stability
 
 		for {
 			select {
 			case <-timeout:
-				errorCh <- fmt.Errorf("timeout waiting for chunked response after 2 minutes")
+				errorCh <- fmt.Errorf("timeout waiting for chunked response after 10 minutes")
 				return
 
 			case response, ok := <-responseChan:
@@ -661,12 +661,12 @@ func (s *GRPCTunnelServer) collectChunkedResponseNoSend(tunnelStream *TunnelStre
 
 		var firstChunk *proto.HTTPResponse
 		chunkCount := 0
-		timeout := time.After(2 * time.Minute)
+		timeout := time.After(10 * time.Minute) // Increased from 2 minutes for large file stability
 
 		for {
 			select {
 			case <-timeout:
-				errorCh <- fmt.Errorf("timeout waiting for chunked response after 2 minutes")
+				errorCh <- fmt.Errorf("timeout waiting for chunked response after 10 minutes")
 				return
 			case response, ok := <-responseChan:
 				if !ok {

@@ -290,37 +290,49 @@ func (t *Tunnel) connectWithRetry(serverAddr string, tlsConfig *tls.Config) erro
 
 // attemptDualConnections tries to establish both gRPC (HTTP) and TCP (WebSocket) tunnel connections
 func (t *Tunnel) attemptDualConnections(serverAddr string, tlsConfig *tls.Config) error {
-	// Create secure TLS config with proper certificate validation
+	// PRODUCTION-GRADE: Create secure TLS config with proper certificate validation
 	if tlsConfig == nil {
 		// Normalize config home when running elevated
 		EnsureConsistentConfigHome()
-		// Load configuration for certificates
+
+		// Load configuration and validate certificates properly
 		cfg, err := LoadConfig()
 		if err != nil {
-			t.logger.Warn("Failed to load config for certificates: %v", err)
-			t.logger.Info("Using fallback TLS configuration - please run 'giraffecloud login --token YOUR_TOKEN' to set up certificates")
-			// Fallback TLS config
-			tlsConfig = &tls.Config{
-				InsecureSkipVerify: false,
-			}
-			goto skipCertConfig
+			return fmt.Errorf("CONFIGURATION ERROR: Failed to load config: %w. Please ensure giraffecloud is properly configured", err)
 		}
 
-		// Try to create secure TLS configuration with proper certificates
+		// Validate certificates before attempting to use them
+		validation := ValidateCertificateFiles(cfg.Security.CACert, cfg.Security.ClientCert, cfg.Security.ClientKey)
+		if !validation.Valid {
+			// Provide detailed error information
+			t.logger.Error("Certificate validation failed:")
+			t.logger.Error("  Error: %s", validation.ErrorMessage)
+			t.logger.Error("  Action: %s", validation.SuggestedAction)
+
+			if len(validation.MissingFiles) > 0 {
+				t.logger.Error("  Missing files:")
+				for _, file := range validation.MissingFiles {
+					t.logger.Error("    - %s", file)
+				}
+			}
+			if len(validation.InvalidFiles) > 0 {
+				t.logger.Error("  Invalid files:")
+				for _, file := range validation.InvalidFiles {
+					t.logger.Error("    - %s", file)
+				}
+			}
+
+			return fmt.Errorf("CERTIFICATE ERROR: %s. %s", validation.ErrorMessage, validation.SuggestedAction)
+		}
+
+		// Create secure TLS configuration with validated certificates
 		tlsConfig, err = CreateSecureTLSConfig(cfg.Security.CACert, cfg.Security.ClientCert, cfg.Security.ClientKey)
 		if err != nil {
-			t.logger.Warn("Failed to create secure TLS config: %v", err)
-			t.logger.Info("Using fallback TLS configuration - please run 'giraffecloud login --token YOUR_TOKEN' to set up certificates")
-			// Fallback TLS config
-			tlsConfig = &tls.Config{
-				InsecureSkipVerify: false,
-			}
-			goto skipCertConfig
+			return fmt.Errorf("TLS CONFIGURATION ERROR: %w", err)
 		}
 
 		t.logger.Info("🔐 PRODUCTION-GRADE: Using secure TLS with certificate validation (InsecureSkipVerify: FALSE)")
 
-	skipCertConfig:
 		// CRITICAL: Force fresh TLS state during reconnection to prevent ERR_SSL_PROTOCOL_ERROR
 		tlsConfig = tlsConfig.Clone()
 		tlsConfig.ClientSessionCache = nil                      // Completely disable session cache
@@ -1438,12 +1450,21 @@ func (t *Tunnel) establishTCPTunnelOnDemand(establishReq *proto.TunnelEstablishR
 	// Create TLS config for TCP connection
 	cfg, err := LoadConfig()
 	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
+		return fmt.Errorf("CONFIGURATION ERROR: Failed to load config: %w", err)
+	}
+
+	// Validate certificates before attempting to use them
+	validation := ValidateCertificateFiles(cfg.Security.CACert, cfg.Security.ClientCert, cfg.Security.ClientKey)
+	if !validation.Valid {
+		t.logger.Error("Certificate validation failed for on-demand TCP tunnel:")
+		t.logger.Error("  Error: %s", validation.ErrorMessage)
+		t.logger.Error("  Action: %s", validation.SuggestedAction)
+		return fmt.Errorf("CERTIFICATE ERROR: %s. %s", validation.ErrorMessage, validation.SuggestedAction)
 	}
 
 	tlsConfig, err := CreateSecureTLSConfig(cfg.Security.CACert, cfg.Security.ClientCert, cfg.Security.ClientKey)
 	if err != nil {
-		return fmt.Errorf("failed to create TLS config: %w", err)
+		return fmt.Errorf("TLS CONFIGURATION ERROR: %w", err)
 	}
 
 	// Determine server address for TCP tunnel (port 4443)

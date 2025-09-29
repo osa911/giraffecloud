@@ -27,6 +27,80 @@ func expandTildePath(path string) string {
 	return filepath.Join(homeDir, path[2:]) // Skip "~/"
 }
 
+// CertificateValidationResult holds the result of certificate validation
+type CertificateValidationResult struct {
+	Valid           bool
+	MissingFiles    []string
+	InvalidFiles    []string
+	ErrorMessage    string
+	SuggestedAction string
+}
+
+// ValidateCertificateFiles validates that certificate files exist and are readable
+func ValidateCertificateFiles(caCertPath, clientCertPath, clientKeyPath string) *CertificateValidationResult {
+	result := &CertificateValidationResult{
+		Valid:           true,
+		MissingFiles:    []string{},
+		InvalidFiles:    []string{},
+		SuggestedAction: "Please run 'giraffecloud login --token YOUR_TOKEN' to download certificates",
+	}
+
+	// Check if paths are provided
+	if caCertPath == "" {
+		result.Valid = false
+		result.MissingFiles = append(result.MissingFiles, "CA certificate path")
+	}
+	if clientCertPath == "" {
+		result.Valid = false
+		result.MissingFiles = append(result.MissingFiles, "client certificate path")
+	}
+	if clientKeyPath == "" {
+		result.Valid = false
+		result.MissingFiles = append(result.MissingFiles, "client key path")
+	}
+
+	// If paths missing, don't check files
+	if !result.Valid {
+		result.ErrorMessage = fmt.Sprintf("Missing certificate configuration: %s", strings.Join(result.MissingFiles, ", "))
+		return result
+	}
+
+	// Expand paths
+	caCertPath = expandTildePath(caCertPath)
+	clientCertPath = expandTildePath(clientCertPath)
+	clientKeyPath = expandTildePath(clientKeyPath)
+
+	// Check if files exist and are readable
+	certFiles := map[string]string{
+		"CA certificate":     caCertPath,
+		"client certificate": clientCertPath,
+		"client key":         clientKeyPath,
+	}
+
+	for name, path := range certFiles {
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			result.Valid = false
+			result.MissingFiles = append(result.MissingFiles, fmt.Sprintf("%s (%s)", name, path))
+		} else if err != nil {
+			result.Valid = false
+			result.InvalidFiles = append(result.InvalidFiles, fmt.Sprintf("%s (%s): %v", name, path, err))
+		}
+	}
+
+	if !result.Valid {
+		var issues []string
+		if len(result.MissingFiles) > 0 {
+			issues = append(issues, fmt.Sprintf("Missing files: %s", strings.Join(result.MissingFiles, ", ")))
+		}
+		if len(result.InvalidFiles) > 0 {
+			issues = append(issues, fmt.Sprintf("Invalid files: %s", strings.Join(result.InvalidFiles, ", ")))
+		}
+		result.ErrorMessage = strings.Join(issues, "; ")
+	}
+
+	return result
+}
+
 // CreateSecureTLSConfig creates a production-ready TLS configuration with proper certificate validation
 func CreateSecureTLSConfig(caCertPath, clientCertPath, clientKeyPath string) (*tls.Config, error) {
 	config := &tls.Config{
@@ -40,9 +114,10 @@ func CreateSecureTLSConfig(caCertPath, clientCertPath, clientKeyPath string) (*t
 		InsecureSkipVerify: false, // PRODUCTION: ALWAYS validate certificates
 	}
 
-	// PRODUCTION-GRADE: Require all certificate paths for mutual TLS
-	if caCertPath == "" || clientCertPath == "" || clientKeyPath == "" {
-		return nil, fmt.Errorf("SECURITY ERROR: Missing certificates. Please run 'giraffecloud login --token YOUR_TOKEN' first to download certificates")
+	// PRODUCTION-GRADE: Validate certificates before attempting to load them
+	validation := ValidateCertificateFiles(caCertPath, clientCertPath, clientKeyPath)
+	if !validation.Valid {
+		return nil, fmt.Errorf("CERTIFICATE VALIDATION ERROR: %s. %s", validation.ErrorMessage, validation.SuggestedAction)
 	}
 
 	// Expand tilde paths to absolute paths
