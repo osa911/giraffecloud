@@ -671,9 +671,9 @@ func (t *Tunnel) handleWebSocketConnection(conn net.Conn) {
 			t.handleWebSocketUpgradeOnDedicatedConnection(request, conn)
 
 			// After a WebSocket session completes, the tunnel connection is no longer usable
-			// for HTTP parsing due to the bidirectional copying. We need to reconnect.
-			t.logger.Info("[WEBSOCKET DEBUG] WebSocket session completed, triggering tunnel reconnection")
-			t.coordinatedReconnectWithContext(true) // Mark as intentional
+			// for HTTP parsing due to the bidirectional copying. We need to reconnect ONLY the TCP tunnel.
+			t.logger.Info("[WEBSOCKET DEBUG] WebSocket session completed, triggering TCP-only reconnection")
+			t.reconnectTCPTunnelOnly()
 			return
 		}
 	}
@@ -906,6 +906,33 @@ func (t *Tunnel) startHealthMonitoring() {
 // coordinatedReconnect handles reconnection logic with coordination between HTTP and WebSocket handlers
 func (t *Tunnel) coordinatedReconnect() {
 	t.coordinatedReconnectWithContext(false)
+}
+
+// reconnectTCPTunnelOnly reconnects only the TCP tunnel, preserving gRPC tunnel
+func (t *Tunnel) reconnectTCPTunnelOnly() {
+	t.logger.Info("🔄 Starting TCP-only reconnection (preserving gRPC tunnel)")
+
+	// Close only the WebSocket connection
+	if t.wsConn != nil {
+		t.wsConn.Close()
+		t.wsConn = nil
+		t.logger.Info("🧹 Closed WebSocket connection")
+	}
+
+	// Start WebSocket reconnection loop in background (non-blocking)
+	if t.grpcEnabled && t.grpcClient != nil && t.grpcClient.IsConnected() {
+		// Get server address from gRPC client
+		serverAddr := t.grpcClient.GetServerAddr()
+		// Convert gRPC port (4444) back to TCP port (4443)
+		serverAddr = strings.Replace(serverAddr, ":4444", ":4443", 1)
+
+		// TLS config will be recreated in startWebSocketReconnectLoop if needed
+		go t.startWebSocketReconnectLoop(serverAddr, nil)
+		t.logger.Info("⚡ TCP reconnection initiated - ready for new WebSocket requests")
+	} else {
+		t.logger.Warn("⚠️  gRPC tunnel not available, falling back to full reconnection")
+		t.coordinatedReconnectWithContext(true)
+	}
 }
 
 // coordinatedReconnectWithContext handles reconnection with context about whether it's intentional

@@ -158,6 +158,11 @@ func (c *GRPCTunnelClient) GetClientID() string {
 	return c.clientID
 }
 
+// GetServerAddr returns the server address
+func (c *GRPCTunnelClient) GetServerAddr() string {
+	return c.serverAddr
+}
+
 // Start establishes the gRPC tunnel connection
 func (c *GRPCTunnelClient) Start() error {
 	c.mu.Lock()
