@@ -44,6 +44,10 @@ type HybridTunnelRouter struct {
 	pendingConnections     map[string][]*PendingWebSocketConnection
 	pendingConnectionsMu   sync.RWMutex
 	tunnelEstablishTimeout time.Duration
+
+	// Deduplication for tunnel establishment requests
+	establishmentInProgress map[string]bool
+	establishmentMu         sync.RWMutex
 }
 
 // PendingWebSocketConnection represents a WebSocket connection waiting for TCP tunnel establishment
@@ -117,10 +121,11 @@ func NewHybridTunnelRouter(
 	}
 
 	router := &HybridTunnelRouter{
-		logger:                 logging.GetGlobalLogger(),
-		config:                 config,
-		pendingConnections:     make(map[string][]*PendingWebSocketConnection),
-		tunnelEstablishTimeout: 30 * time.Second, // 30 second timeout for tunnel establishment
+		logger:                  logging.GetGlobalLogger(),
+		config:                  config,
+		pendingConnections:      make(map[string][]*PendingWebSocketConnection),
+		tunnelEstablishTimeout:  30 * time.Second, // 30 second timeout for tunnel establishment
+		establishmentInProgress: make(map[string]bool),
 	}
 
 	// Create gRPC tunnel server (for HTTP traffic)
@@ -608,8 +613,26 @@ func (r *HybridTunnelRouter) waitForTCPTunnelEstablishment(domain string, conn n
 	r.pendingConnections[domain] = append(r.pendingConnections[domain], pending)
 	r.pendingConnectionsMu.Unlock()
 
-	// Signal client via gRPC to establish TCP tunnel
-	go r.requestTCPTunnelEstablishment(domain, requestID)
+	// Check if tunnel establishment is already in progress for this domain
+	r.establishmentMu.Lock()
+	alreadyInProgress := r.establishmentInProgress[domain]
+	if !alreadyInProgress {
+		r.establishmentInProgress[domain] = true
+		r.establishmentMu.Unlock()
+
+		// Signal client via gRPC to establish TCP tunnel (only once per domain)
+		go func() {
+			r.requestTCPTunnelEstablishment(domain, requestID)
+
+			// Clear the in-progress flag after completion
+			r.establishmentMu.Lock()
+			delete(r.establishmentInProgress, domain)
+			r.establishmentMu.Unlock()
+		}()
+	} else {
+		r.establishmentMu.Unlock()
+		r.logger.Debug("[HYBRID→TCP] TCP tunnel establishment already in progress for domain: %s, joining existing request", domain)
+	}
 
 	// Wait for tunnel establishment or timeout
 	timeout := time.NewTimer(r.tunnelEstablishTimeout)
