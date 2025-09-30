@@ -340,7 +340,7 @@ func (r *HybridTunnelRouter) routeToTCPTunnel(domain string, conn net.Conn, requ
 
 	// Proxy through TCP tunnel with connection health validation
 	if err := r.tcpTunnel.ProxyWebSocketConnectionWithRetry(domain, conn, httpReq); err != nil {
-		// If connection fails (broken pipe), trigger demand-based establishment
+		// If connection fails (broken pipe, connection issues), trigger demand-based establishment
 		if strings.Contains(err.Error(), "broken pipe") || strings.Contains(err.Error(), "connection") {
 			r.logger.Warn("[HYBRID→TCP] TCP tunnel connection failed (%v), requesting new establishment...", err)
 

@@ -333,7 +333,21 @@ func (m *ConnectionManager) HasDomain(domain string) bool {
 	domainConns.mu.RLock()
 	defer domainConns.mu.RUnlock()
 
-	return domainConns.httpPool.Size() > 0 || domainConns.wsConn != nil
+	// Check HTTP pool
+	hasHTTP := domainConns.httpPool.Size() > 0
+
+	// Check WebSocket with health validation
+	hasWS := false
+	if domainConns.wsConn != nil {
+		// Release the read lock temporarily to call HasWebSocketConnection
+		domainConns.mu.RUnlock()
+		m.mu.RUnlock()
+		hasWS = m.HasWebSocketConnection(domain)
+		m.mu.RLock()
+		domainConns.mu.RLock()
+	}
+
+	return hasHTTP || hasWS
 }
 
 // HasHTTPConnection returns true if the domain has active HTTP tunnels
@@ -354,7 +368,34 @@ func (m *ConnectionManager) HasHTTPConnection(domain string) bool {
 
 // HasWebSocketConnection returns true if the domain has an active WebSocket tunnel
 func (m *ConnectionManager) HasWebSocketConnection(domain string) bool {
-	return m.GetConnection(domain, ConnectionTypeWebSocket) != nil
+	conn := m.GetConnection(domain, ConnectionTypeWebSocket)
+	if conn == nil {
+		return false
+	}
+
+	// Health check: verify the connection is actually alive
+	if conn.GetConn() == nil {
+		// Connection is dead, clean it up
+		m.clearWebSocketConnection(domain)
+		return false
+	}
+
+	// Quick health check with minimal timeout
+	conn.GetConn().SetReadDeadline(time.Now().Add(1 * time.Millisecond))
+	defer conn.GetConn().SetReadDeadline(time.Time{}) // Clear deadline
+
+	// Try to read one byte (should timeout immediately if connection is alive)
+	one := make([]byte, 1)
+	_, err := conn.GetConn().Read(one)
+
+	// If we get a timeout, the connection is likely alive
+	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+		return true
+	}
+
+	// Connection is dead, clean it up
+	m.clearWebSocketConnection(domain)
+	return false
 }
 
 // clearWebSocketConnection removes the WebSocket connection for a domain
