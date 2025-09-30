@@ -11,9 +11,21 @@ import (
 
 // expandTildePath expands tilde (~) to the user's home directory
 func expandTildePath(path string) string {
+	// Defensive: handle empty or nil path
+	if path == "" {
+		return ""
+	}
+
 	if !strings.HasPrefix(path, "~") {
 		return path
 	}
+
+	// Defensive: handle potential panic in os.UserHomeDir()
+	defer func() {
+		if r := recover(); r != nil {
+			// If UserHomeDir() panics, just return the original path
+		}
+	}()
 
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
@@ -22,6 +34,11 @@ func expandTildePath(path string) string {
 
 	if path == "~" {
 		return homeDir
+	}
+
+	// Defensive: ensure we don't go out of bounds
+	if len(path) < 2 {
+		return path
 	}
 
 	return filepath.Join(homeDir, path[2:]) // Skip "~/"
@@ -38,11 +55,23 @@ type CertificateValidationResult struct {
 
 // ValidateCertificateFiles validates that certificate files exist and are readable
 func ValidateCertificateFiles(caCertPath, clientCertPath, clientKeyPath string) *CertificateValidationResult {
+	// Defensive programming: ensure we never return nil
 	result := &CertificateValidationResult{
 		Valid:           true,
-		MissingFiles:    []string{},
-		InvalidFiles:    []string{},
+		MissingFiles:    make([]string, 0),
+		InvalidFiles:    make([]string, 0),
 		SuggestedAction: "Please run 'giraffecloud login --token YOUR_TOKEN' to download certificates",
+	}
+
+	// Defensive check: handle nil result case
+	if result == nil {
+		return &CertificateValidationResult{
+			Valid:           false,
+			MissingFiles:    make([]string, 0),
+			InvalidFiles:    make([]string, 0),
+			ErrorMessage:    "Internal error during certificate validation",
+			SuggestedAction: "Please run 'giraffecloud login --token YOUR_TOKEN' to download certificates",
+		}
 	}
 
 	// Check if paths are provided

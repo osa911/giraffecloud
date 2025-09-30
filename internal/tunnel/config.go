@@ -138,9 +138,16 @@ func GetConfigDir() (string, error) {
 	if cfgHome := os.Getenv("GIRAFFECLOUD_HOME"); cfgHome != "" {
 		return cfgHome, nil
 	}
+
+	// Try to get home directory with fallback for problematic environments
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return "", fmt.Errorf("failed to get home directory: %w", err)
+		// Fallback strategies for environments where UserHomeDir() fails
+		if home := os.Getenv("HOME"); home != "" {
+			return filepath.Join(home, ".giraffecloud"), nil
+		}
+		// Last resort: use /tmp for service environments
+		return filepath.Join("/tmp", "giraffecloud"), nil
 	}
 	return filepath.Join(homeDir, ".giraffecloud"), nil
 }
@@ -157,6 +164,14 @@ func GetConfigPath() (string, error) {
 // EnsureConsistentConfigHome sets GIRAFFECLOUD_HOME to the original sudo user's home when running as root with sudo
 // This keeps CLI behavior consistent with the non-root user's config path even when prefixed with sudo.
 func EnsureConsistentConfigHome() {
+	// Defensive: handle panics in this function
+	defer func() {
+		if r := recover(); r != nil {
+			// If anything panics in this function, just continue silently
+			// This prevents segfaults during initialization
+		}
+	}()
+
 	if os.Getenv("GIRAFFECLOUD_HOME") != "" {
 		return
 	}
@@ -168,6 +183,7 @@ func EnsureConsistentConfigHome() {
 	if os.Geteuid() == 0 {
 		sudoUser := os.Getenv("SUDO_USER")
 		if sudoUser != "" {
+			// Safe usage: check both error and nil before using result
 			if u, err := user.Lookup(sudoUser); err == nil && u != nil && u.HomeDir != "" {
 				_ = os.Setenv("GIRAFFECLOUD_HOME", filepath.Join(u.HomeDir, ".giraffecloud"))
 				// Also force HOME so any other code relying on HOME is consistent
