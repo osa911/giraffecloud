@@ -1135,6 +1135,10 @@ func (s *TunnelServer) proxyWebSocketConnectionInternal(domain string, clientCon
 				s.logger.Debug("[WEBSOCKET DEBUG] WebSocket connection closed normally")
 			}
 
+			// CRITICAL: Clean up dead WebSocket connection from pool
+			s.logger.Info("[WEBSOCKET DEBUG] Cleaning up WebSocket connection for domain: %s", domain)
+			s.connections.RemoveConnection(domain, ConnectionTypeWebSocket)
+
 			s.logger.Debug("[WEBSOCKET DEBUG] WebSocket proxy completed")
 			return nil
 		}
@@ -1218,6 +1222,10 @@ func (s *TunnelServer) proxyWebSocketConnectionInternal(domain string, clientCon
 	} else {
 		s.logger.Debug("[WEBSOCKET DEBUG] WebSocket connection closed normally")
 	}
+
+	// CRITICAL: Clean up dead WebSocket connection from pool
+	s.logger.Info("[WEBSOCKET DEBUG] Cleaning up WebSocket connection for domain: %s", domain)
+	s.connections.RemoveConnection(domain, ConnectionTypeWebSocket)
 
 	s.logger.Debug("[WEBSOCKET DEBUG] WebSocket proxy completed")
 	return nil
