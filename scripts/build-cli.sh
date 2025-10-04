@@ -1,9 +1,20 @@
 #!/bin/bash
 set -e
 
-VERSION=$(git describe --tags --always --dirty)
-BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+# Generate clean version string
 GIT_COMMIT=$(git rev-parse HEAD)
+COMMIT_SHORT=$(git rev-parse --short HEAD)
+BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+# Try to get semantic version from tags, fallback to commit hash
+if git describe --tags --exact-match >/dev/null 2>&1; then
+    # On a tag - use semantic version (e.g., v1.2.3)
+    VERSION=$(git describe --tags --exact-match)
+else
+    # Not on a tag - use commit hash (e.g., dev-8c0bb52)
+    VERSION="dev-${COMMIT_SHORT}"
+fi
+
 LDFLAGS="-s -w -X giraffecloud/internal/version.Version=${VERSION} -X giraffecloud/internal/version.BuildTime=${BUILD_TIME} -X giraffecloud/internal/version.GitCommit=${GIT_COMMIT}"
 
 # Build for multiple platforms
