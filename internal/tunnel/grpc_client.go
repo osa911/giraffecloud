@@ -232,18 +232,24 @@ func (c *GRPCTunnelClient) IsConnected() bool {
 
 // connect establishes the gRPC connection and stream
 func (c *GRPCTunnelClient) connect() error {
+	c.logger.Info("[%s] [CONNECT] Starting gRPC connection attempt to %s", c.clientID, c.serverAddr)
+
 	// Ensure consistent config home when running under elevated context
 	EnsureConsistentConfigHome()
 
 	// PRODUCTION-GRADE: Load configuration and validate certificates properly
 	cfg, err := LoadConfig()
 	if err != nil {
+		c.logger.Error("[%s] [CONNECT] Failed to load config: %v", c.clientID, err)
 		return fmt.Errorf("CONFIGURATION ERROR: Failed to load config: %w. Please ensure giraffecloud is properly configured", err)
 	}
+
+	c.logger.Debug("[%s] [CONNECT] Config loaded successfully", c.clientID)
 
 	// PRODUCTION-GRADE: Validate certificates before attempting to use them
 	validation := ValidateCertificateFiles(cfg.Security.CACert, cfg.Security.ClientCert, cfg.Security.ClientKey)
 	if !validation.Valid {
+		c.logger.Error("[%s] [CONNECT] Certificate validation failed", c.clientID)
 		// Provide detailed error information
 		c.logger.Error("Certificate validation failed:")
 		c.logger.Error("  Error: %s", validation.ErrorMessage)
@@ -265,9 +271,12 @@ func (c *GRPCTunnelClient) connect() error {
 		return fmt.Errorf("CERTIFICATE ERROR: %s. %s", validation.ErrorMessage, validation.SuggestedAction)
 	}
 
+	c.logger.Debug("[%s] [CONNECT] Certificates validated successfully", c.clientID)
+
 	// Create secure TLS configuration with validated certificates
 	tlsConfig, err := CreateSecureTLSConfig(cfg.Security.CACert, cfg.Security.ClientCert, cfg.Security.ClientKey)
 	if err != nil {
+		c.logger.Error("[%s] [CONNECT] Failed to create TLS config: %v", c.clientID, err)
 		return fmt.Errorf("TLS CONFIGURATION ERROR: %w", err)
 	}
 
@@ -280,6 +289,8 @@ func (c *GRPCTunnelClient) connect() error {
 	tlsConfig.SessionTicketsDisabled = true                 // Disable session tickets
 	tlsConfig.Renegotiation = tls.RenegotiateNever          // Disable renegotiation
 	tlsConfig.Time = func() time.Time { return time.Now() } // Force fresh time for each connection
+
+	c.logger.Debug("[%s] [CONNECT] TLS config prepared", c.clientID)
 
 	// Create gRPC connection
 	dialOpts := []grpc.DialOption{
@@ -299,40 +310,53 @@ func (c *GRPCTunnelClient) connect() error {
 		dialOpts = append(dialOpts, grpc.WithDefaultCallOptions(grpc.UseCompressor("gzip")))
 	}
 
+	c.logger.Debug("[%s] [CONNECT] Starting gRPC dial with %d second timeout", c.clientID, int(c.config.ConnectTimeout.Seconds()))
+
 	connectCtx, connectCancel := context.WithTimeout(c.ctx, c.config.ConnectTimeout)
 	defer connectCancel()
 
 	conn, err := grpc.DialContext(connectCtx, c.serverAddr, dialOpts...)
 	if err != nil {
+		c.logger.Error("[%s] [CONNECT] gRPC dial failed: %v", c.clientID, err)
 		return fmt.Errorf("failed to connect to server: %w", err)
 	}
+
+	c.logger.Debug("[%s] [CONNECT] gRPC connection established", c.clientID)
 
 	c.conn = conn
 	c.client = proto.NewTunnelServiceClient(conn)
 
 	// Establish tunnel stream
+	c.logger.Debug("[%s] [CONNECT] Establishing tunnel stream", c.clientID)
 	stream, err := c.client.EstablishTunnel(c.ctx)
 	if err != nil {
+		c.logger.Error("[%s] [CONNECT] Failed to establish tunnel stream: %v", c.clientID, err)
 		conn.Close()
 		return fmt.Errorf("failed to establish tunnel stream: %w", err)
 	}
 
+	c.logger.Debug("[%s] [CONNECT] Tunnel stream established", c.clientID)
 	c.stream = stream
 
 	// Send handshake
+	c.logger.Debug("[%s] [CONNECT] Sending handshake", c.clientID)
 	if err := c.sendHandshake(); err != nil {
+		c.logger.Error("[%s] [CONNECT] Handshake failed: %v", c.clientID, err)
 		stream.CloseSend()
 		conn.Close()
 		return fmt.Errorf("handshake failed: %w", err)
 	}
 
 	// Wait for handshake response
+	c.logger.Debug("[%s] [CONNECT] Waiting for handshake response", c.clientID)
 	if err := c.waitForHandshakeResponse(); err != nil {
+		c.logger.Error("[%s] [CONNECT] Handshake response failed: %v", c.clientID, err)
 		stream.CloseSend()
 		conn.Close()
 		return fmt.Errorf("handshake response failed: %w", err)
 	}
 
+	c.logger.Info("[%s] [CONNECT] ✅ gRPC connection fully established", c.clientID)
 	return nil
 }
 
@@ -1072,7 +1096,14 @@ func (c *GRPCTunnelClient) reconnect() {
 		if err := c.connect(); err != nil {
 			c.logger.Error("[%s] Reconnection failed: %v", c.clientID, err)
 
-			// Exponential backoff
+			// CRITICAL: If certificate validation fails, stop trying to reconnect
+			if strings.Contains(err.Error(), "CERTIFICATE ERROR") || strings.Contains(err.Error(), "CONFIGURATION ERROR") {
+				c.logger.Error("[%s] FATAL: Certificate or configuration error - stopping reconnection attempts", c.clientID)
+				c.logger.Error("[%s] Please run 'giraffecloud login --token YOUR_TOKEN' to fix certificate issues", c.clientID)
+				return
+			}
+
+			// Exponential backoff with maximum cap
 			time.Sleep(delay)
 			delay = time.Duration(float64(delay) * c.config.BackoffMultiplier)
 			if delay > 30*time.Second {
