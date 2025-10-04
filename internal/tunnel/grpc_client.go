@@ -954,6 +954,12 @@ func (c *GRPCTunnelClient) sendCompleteResponse(requestID string, response *http
 
 // sendErrorResponse sends an error response back to the server
 func (c *GRPCTunnelClient) sendErrorResponse(requestId, errorMsg string) error {
+	// CRITICAL: Check if stream is nil during reconnection
+	if c.stream == nil {
+		c.logger.Warn("[%s] Cannot send error response - stream is nil (likely during reconnection): %s", c.clientID, errorMsg)
+		return fmt.Errorf("stream is nil, cannot send error response")
+	}
+
 	response := &proto.TunnelMessage{
 		RequestId: requestId,
 		Timestamp: time.Now().Unix(),
@@ -1224,6 +1230,12 @@ func (c *GRPCTunnelClient) handleTunnelEstablishRequest(msg *proto.TunnelMessage
 
 // sendTunnelEstablishResponse sends a response back to the server about tunnel establishment
 func (c *GRPCTunnelClient) sendTunnelEstablishResponse(requestId string, success bool, message string) error {
+	// CRITICAL: Check if stream is nil during reconnection
+	if c.stream == nil {
+		c.logger.Warn("[%s] Cannot send tunnel establish response - stream is nil (likely during reconnection): %s", c.clientID, message)
+		return fmt.Errorf("stream is nil, cannot send tunnel establish response")
+	}
+
 	var responseMsg *proto.TunnelMessage
 
 	if success {
