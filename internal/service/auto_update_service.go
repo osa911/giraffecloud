@@ -246,15 +246,22 @@ func (s *AutoUpdateService) performUpdate(updateInfo *UpdateInfo) error {
 func (s *AutoUpdateService) restartServiceGracefully() error {
 	s.logger.Info("Gracefully restarting service...")
 
-	// Issue a single restart command. Avoid stop/start fallback because
-	// when invoked from within the running service process, a stop will
-	// terminate this process before it can execute the subsequent start.
-	if err := s.serviceManager.Restart(); err != nil {
-		s.logger.Error("Service restart command failed: %v", err)
-		return err
-	}
+	// CRITICAL: When running inside the service, we need to detach the restart
+	// to avoid the race condition where the service terminates itself before
+	// the restart command completes.
+	go func() {
+		// Small delay to allow this function to return and logs to flush
+		time.Sleep(1 * time.Second)
 
-	s.logger.Info("Service restart command issued successfully")
+		s.logger.Info("Executing detached service restart...")
+		if err := s.serviceManager.Restart(); err != nil {
+			s.logger.Error("Detached service restart failed: %v", err)
+		} else {
+			s.logger.Info("Detached service restart command issued successfully")
+		}
+	}()
+
+	s.logger.Info("Service restart scheduled - process will terminate shortly")
 	return nil
 }
 
