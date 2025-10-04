@@ -20,13 +20,6 @@ func expandTildePath(path string) string {
 		return path
 	}
 
-	// Defensive: handle potential panic in os.UserHomeDir()
-	defer func() {
-		if r := recover(); r != nil {
-			// If UserHomeDir() panics, just return the original path
-		}
-	}()
-
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return path // Return original path if we can't get home dir
