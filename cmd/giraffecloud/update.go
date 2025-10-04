@@ -190,7 +190,7 @@ Examples:
 
 		logger.Info("✅ Update completed successfully!")
 		logger.Info("🎉 GiraffeCloud has been updated to version %s", updateInfo.Version)
-		logger.Info("💡 You may need to restart any running services")
+		logger.Info("💡 You may need to restart any running services: 'sudo giraffecloud service restart'")
 
 		// Clean up old backups
 		if err := updater.CleanupOldBackups(); err != nil {
