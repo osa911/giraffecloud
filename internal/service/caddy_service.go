@@ -278,14 +278,53 @@ func (s *caddyService) RemoveRoute(domain string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Send DELETE request to Caddy
-	url := fmt.Sprintf("%s/config/apps/http/servers/srv0/routes/@%s", s.baseURL, domain)
-	req, err := http.NewRequest(http.MethodDelete, url, nil)
+	// First, get all routes to find the numeric index of our domain's route
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/config/apps/http/servers/srv0/routes", s.baseURL), nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
 	resp, err := s.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to get routes: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Decode routes array
+	var routes []map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&routes); err != nil {
+		return fmt.Errorf("failed to decode routes: %w", err)
+	}
+
+	// Find the index of the route with matching domain
+	routeIndex := -1
+	for i, route := range routes {
+		if match, ok := route["match"].([]interface{}); ok && len(match) > 0 {
+			if matchMap, ok := match[0].(map[string]interface{}); ok {
+				if hosts, ok := matchMap["host"].([]interface{}); ok && len(hosts) > 0 {
+					if host, ok := hosts[0].(string); ok && host == domain {
+						routeIndex = i
+						break
+					}
+				}
+			}
+		}
+	}
+
+	// If route not found, it might already be removed
+	if routeIndex == -1 {
+		s.logger.Info("Route for domain %s not found (may already be removed)", domain)
+		return nil // Not an error - route is already gone
+	}
+
+	// Send DELETE request to Caddy using numeric index
+	url := fmt.Sprintf("%s/config/apps/http/servers/srv0/routes/%d", s.baseURL, routeIndex)
+	req, err = http.NewRequest(http.MethodDelete, url, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err = s.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -296,7 +335,7 @@ func (s *caddyService) RemoveRoute(domain string) error {
 		return fmt.Errorf("failed to remove route (status %d): %s", resp.StatusCode, string(body))
 	}
 
-	s.logger.Info("Successfully removed route for domain: %s", domain)
+	s.logger.Info("Successfully removed route for domain: %s (index %d)", domain, routeIndex)
 	return nil
 }
 
