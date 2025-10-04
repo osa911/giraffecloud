@@ -389,6 +389,14 @@ func (s *GRPCTunnelServer) reportMetrics() {
 	for range ticker.C {
 		s.tunnelStreamsMux.RLock()
 		activeStreams := len(s.tunnelStreams)
+
+		// MONITORING: Count idle vs active tunnels
+		idleStreams := 0
+		for _, stream := range s.tunnelStreams {
+			if time.Since(stream.lastActivity) > 10*time.Minute {
+				idleStreams++
+			}
+		}
 		s.tunnelStreamsMux.RUnlock()
 
 		totalReqs := atomic.LoadInt64(&s.totalRequests)
@@ -397,8 +405,18 @@ func (s *GRPCTunnelServer) reportMetrics() {
 		totalErrors := atomic.LoadInt64(&s.totalErrors)
 		timeoutErrors := atomic.LoadInt64(&s.timeoutErrors)
 
-		s.logger.Info("[gRPC METRICS] Active Streams: %d, Total Requests: %d, Concurrent: %d, Responses: %d, Errors: %d (Timeout: %d)",
-			activeStreams, totalReqs, concurrentReqs, totalResponses, totalErrors, timeoutErrors)
+		// Estimate memory usage (15KB per tunnel)
+		estimatedMemoryMB := float64(activeStreams) * 15.0 / 1024.0
+
+		s.logger.Info("[gRPC METRICS] Active Streams: %d (idle: %d, active: %d), Estimated Memory: %.2f MB, Total Requests: %d, Concurrent: %d, Responses: %d, Errors: %d (Timeout: %d)",
+			activeStreams, idleStreams, activeStreams-idleStreams, estimatedMemoryMB, totalReqs, concurrentReqs, totalResponses, totalErrors, timeoutErrors)
+
+		// Warn if approaching MaxConcurrentStreams limit
+		maxStreams := s.config.MaxConcurrentStreams
+		if activeStreams > int(maxStreams)*80/100 { // 80% threshold
+			s.logger.Warn("⚠️  Approaching connection limit: %d/%d active streams (%.1f%% capacity)",
+				activeStreams, maxStreams, float64(activeStreams)/float64(maxStreams)*100)
+		}
 	}
 }
 
