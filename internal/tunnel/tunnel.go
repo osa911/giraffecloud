@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -125,6 +126,11 @@ type Tunnel struct {
 
 	// Hook invoked each time a connection is successfully established (including reconnects)
 	onConnectHook func()
+
+	// Connection reuse metrics
+	wsConnectionReuses    int64 // Number of times WebSocket connection was reused
+	wsConnectionRecycles  int64 // Number of times WebSocket connection was recycled
+	tcpEstablishmentSkips int64 // Number of times TCP establishment was skipped (already exists)
 }
 
 // TunnelState represents preserved tunnel state for connection restoration
@@ -670,11 +676,22 @@ func (t *Tunnel) handleWebSocketConnection(conn net.Conn) {
 			// Handle WebSocket upgrade - this will consume the entire connection
 			t.handleWebSocketUpgradeOnDedicatedConnection(request, conn)
 
-			// After a WebSocket session completes, the tunnel connection is no longer usable
-			// for HTTP parsing due to the bidirectional copying. We need to reconnect ONLY the TCP tunnel.
-			t.logger.Info("[WEBSOCKET DEBUG] WebSocket session completed, triggering TCP-only reconnection")
-			t.reconnectTCPTunnelOnly()
-			return
+			// OPTIMIZATION: After a WebSocket session completes, check if connection is still usable
+			// Only reconnect if the connection is actually dead
+			if !t.isConnectionHealthy(conn) {
+				atomic.AddInt64(&t.wsConnectionRecycles, 1)
+				t.logger.Info("[WEBSOCKET DEBUG] WebSocket session completed, connection unhealthy - reconnecting (total recycles: %d)",
+					atomic.LoadInt64(&t.wsConnectionRecycles))
+				t.reconnectTCPTunnelOnly()
+				return
+			}
+
+			// Connection is still healthy - reuse it for next WebSocket session
+			atomic.AddInt64(&t.wsConnectionReuses, 1)
+			t.logger.Info("[WEBSOCKET DEBUG] WebSocket session completed, connection still healthy - reusing (total reuses: %d)",
+				atomic.LoadInt64(&t.wsConnectionReuses))
+			// Continue to next iteration of the loop to handle more WebSocket requests
+			continue
 		}
 	}
 }
@@ -895,6 +912,20 @@ func (t *Tunnel) startHealthMonitoring() {
 
 				// Update last ping time
 				t.lastPing = time.Now()
+
+				// METRICS: Report connection reuse efficiency periodically
+				reuses := atomic.LoadInt64(&t.wsConnectionReuses)
+				recycles := atomic.LoadInt64(&t.wsConnectionRecycles)
+				skips := atomic.LoadInt64(&t.tcpEstablishmentSkips)
+				if reuses > 0 || recycles > 0 || skips > 0 {
+					total := reuses + recycles
+					reuseRate := float64(0)
+					if total > 0 {
+						reuseRate = float64(reuses) / float64(total) * 100
+					}
+					t.logger.Info("📊 Connection Efficiency: Reuses: %d, Recycles: %d (%.1f%% reuse rate), TCP Establishment Skips: %d",
+						reuses, recycles, reuseRate, skips)
+				}
 
 			case <-t.ctx.Done():
 				return
@@ -1468,11 +1499,37 @@ func (t *Tunnel) handleTunnelEstablishRequest(establishReq *proto.TunnelEstablis
 func (t *Tunnel) establishTCPTunnelOnDemand(establishReq *proto.TunnelEstablishRequest) error {
 	t.logger.Info("⚡ Establishing TCP tunnel on-demand for domain: %s", establishReq.Domain)
 
+	// OPTIMIZATION: Prevent concurrent establishment attempts
+	t.wsReconnectMu.Lock()
+
 	// Check if TCP tunnel already exists
 	if t.wsConn != nil {
-		t.logger.Info("TCP tunnel already exists for domain: %s", establishReq.Domain)
+		t.wsReconnectMu.Unlock()
+		atomic.AddInt64(&t.tcpEstablishmentSkips, 1)
+		t.logger.Info("TCP tunnel already exists for domain: %s (skipped establishments: %d)",
+			establishReq.Domain, atomic.LoadInt64(&t.tcpEstablishmentSkips))
 		return nil
 	}
+
+	// Check if establishment is already in progress
+	if t.wsReconnectInProgress {
+		t.wsReconnectMu.Unlock()
+		atomic.AddInt64(&t.tcpEstablishmentSkips, 1)
+		t.logger.Info("TCP tunnel establishment already in progress for domain: %s (skipped establishments: %d)",
+			establishReq.Domain, atomic.LoadInt64(&t.tcpEstablishmentSkips))
+		return nil
+	}
+
+	// Mark establishment as in progress
+	t.wsReconnectInProgress = true
+	t.wsReconnectMu.Unlock()
+
+	// Ensure we clean up the flag when done
+	defer func() {
+		t.wsReconnectMu.Lock()
+		t.wsReconnectInProgress = false
+		t.wsReconnectMu.Unlock()
+	}()
 
 	// Create TLS config for TCP connection
 	cfg, err := LoadConfig()
@@ -1521,4 +1578,27 @@ func (t *Tunnel) notifyTCPTunnelEstablished() {
 	// This will be wired to the hybrid router's OnTCPTunnelEstablished method
 	// For now, just log that it's ready
 	t.logger.Info("🚀 TCP tunnel ready - WebSocket connections can now be handled")
+}
+
+// isConnectionHealthy checks if a network connection is still alive and usable
+func (t *Tunnel) isConnectionHealthy(conn net.Conn) bool {
+	if conn == nil {
+		return false
+	}
+
+	// Set a very short read deadline to test connection
+	conn.SetReadDeadline(time.Now().Add(1 * time.Millisecond))
+	defer conn.SetReadDeadline(time.Time{}) // Clear deadline
+
+	// Try to read one byte (should timeout immediately if connection is alive)
+	one := make([]byte, 1)
+	_, err := conn.Read(one)
+
+	// If we get a timeout, the connection is likely alive and has no data
+	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+		return true
+	}
+
+	// If we get EOF or other error, connection is dead
+	return false
 }

@@ -801,6 +801,20 @@ func (c *GRPCTunnelClient) streamResponseInChunks(requestID string, response *ht
 	const ChunkSize = 2 * 1024 * 1024         // 2MB chunks for better reliability (reduced from 4MB)
 	const MaxStreamingTime = 30 * time.Minute // Increased timeout for very large files (increased from 10 minutes)
 
+	// OPTIMIZATION: Fast-path for empty responses - skip chunked streaming overhead
+	// Peek at the response to see if it's empty or very small
+	if response.ContentLength == 0 {
+		c.logger.Debug("[CHUNKED CLIENT] ⚡ Fast-path: Empty response detected (0 bytes), skipping chunked streaming")
+		// Send empty response immediately
+		headers := make(map[string]string)
+		for key, values := range response.Header {
+			if len(values) > 0 {
+				headers[key] = values[0]
+			}
+		}
+		return c.sendCompleteResponse(requestID, response, []byte{})
+	}
+
 	c.logger.Info("[CHUNKED CLIENT] 📡 Streaming response in %dKB chunks (UNLIMITED SIZE)", ChunkSize/1024)
 
 	// Set overall timeout for chunked streaming

@@ -655,6 +655,14 @@ func (r *HybridTunnelRouter) waitForTCPTunnelEstablishment(domain string, conn n
 func (r *HybridTunnelRouter) requestTCPTunnelEstablishment(domain string, requestID string) {
 	r.logger.Info("[HYBRID→TCP] Requesting TCP tunnel establishment for domain: %s (request: %s)", domain, requestID)
 
+	// OPTIMIZATION: Check if TCP tunnel already exists before sending request
+	if r.tcpTunnel.HasWebSocketConnection(domain) {
+		r.logger.Info("[HYBRID→TCP] TCP tunnel already exists for domain: %s - skipping request", domain)
+		// Still notify pending connections that tunnel is ready
+		r.OnTCPTunnelEstablished(domain)
+		return
+	}
+
 	// Create tunnel establishment request
 	establishReq := &proto.TunnelEstablishRequest{
 		TunnelType: proto.TunnelType_TUNNEL_TYPE_TCP,
