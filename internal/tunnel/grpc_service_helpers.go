@@ -347,14 +347,17 @@ func (s *GRPCTunnelServer) monitorTunnelHealth(tunnelStream *TunnelStream) error
 			return tunnelStream.Context.Err()
 
 		case <-ticker.C:
-			// Check if tunnel is still active (10 minutes - reasonable for photo gallery browsing)
+			// REVERSE PROXY OPTIMIZATION: Don't close on inactivity timeout
+			// Instead, rely on health check failures and gRPC keepalives to detect broken connections
+			// This allows long-lived persistent connections that only close when actually broken
+
+			// Log activity status for monitoring (but don't force close)
 			if time.Since(tunnelStream.lastActivity) > 10*time.Minute {
-				s.logger.Warn("Tunnel %s inactive for %v, closing",
+				s.logger.Debug("Tunnel %s idle for %v (connection still healthy)",
 					tunnelStream.Domain, time.Since(tunnelStream.lastActivity))
-				return fmt.Errorf("tunnel inactive")
 			}
 
-			// Send health check
+			// Send health check - if this fails, connection is actually broken
 			healthCheck := &proto.TunnelMessage{
 				RequestId: fmt.Sprintf("health-%d", time.Now().Unix()),
 				Timestamp: time.Now().Unix(),
