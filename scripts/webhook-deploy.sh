@@ -5,12 +5,14 @@ set -e
 # This script is called by the webhook handler (/webhooks/github)
 # Purpose: Automate deployment when you push to main branch
 
-LOG_FILE="/var/log/giraffecloud-webhook-deploy.log"
 PROJECT_DIR="/app"  # Adjust to your project directory
 CONTAINER_NAME="giraffecloud_api"
 IMAGE_NAME="giraffecloud:latest"
+LOG_FILE="$PROJECT_DIR/logs/webhook-deploy.log"  # Use project logs directory (no sudo needed!)
 
 log() {
+    # Create logs directory if it doesn't exist
+    mkdir -p "$(dirname "$LOG_FILE")"
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] WEBHOOK: $1" | tee -a "$LOG_FILE"
 }
 
@@ -52,8 +54,17 @@ docker rm "$CONTAINER_NAME" 2>/dev/null && log "✅ Container removed" || log "�
 
 # Build new docker image with labels for tracking
 log "🔨 Building Docker image..."
-VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
+
+# Generate clean version string (matching build-cli.sh)
+COMMIT_SHORT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+if git describe --tags --exact-match >/dev/null 2>&1; then
+    VERSION=$(git describe --tags --exact-match)
+else
+    VERSION="dev-${COMMIT_SHORT}"
+fi
+
 BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+log "📦 Version: $VERSION"
 
 docker build \
     --label "git_commit=$COMMIT_HASH" \
