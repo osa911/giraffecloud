@@ -121,7 +121,7 @@ type GRPCTunnelConfig struct {
 // DefaultGRPCTunnelConfig returns production-ready default configuration
 func DefaultGRPCTunnelConfig() *GRPCTunnelConfig {
 	return &GRPCTunnelConfig{
-		MaxConcurrentStreams:  5000, // 5000 concurrent users - conservative and safe (~75 MB memory)
+		MaxConcurrentStreams:  5000,             // 5000 concurrent users - conservative and safe (~75 MB memory)
 		MaxMessageSize:        16 * 1024 * 1024, // 16MB - small files only, large files use chunked streaming
 		KeepAliveTimeout:      30 * time.Second,
 		KeepAliveInterval:     5 * time.Second,
