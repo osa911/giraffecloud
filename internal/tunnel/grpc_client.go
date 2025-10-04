@@ -1075,6 +1075,8 @@ func (c *GRPCTunnelClient) reconnect() {
 	// Retry connection with exponential backoff
 	delay := c.config.ReconnectDelay
 	attempts := 0
+	consecutiveFailures := 0
+	maxConsecutiveFailures := 10 // Circuit breaker threshold
 
 	for {
 		select {
@@ -1094,13 +1096,32 @@ func (c *GRPCTunnelClient) reconnect() {
 		c.logger.Info("[%s] Reconnection attempt #%d for domain: %s", c.clientID, attempts, c.domain)
 
 		if err := c.connect(); err != nil {
-			c.logger.Error("[%s] Reconnection failed: %v", c.clientID, err)
+			consecutiveFailures++
+			c.logger.Error("[%s] Reconnection failed (consecutive failures: %d): %v", c.clientID, consecutiveFailures, err)
 
 			// CRITICAL: If certificate validation fails, stop trying to reconnect
 			if strings.Contains(err.Error(), "CERTIFICATE ERROR") || strings.Contains(err.Error(), "CONFIGURATION ERROR") {
 				c.logger.Error("[%s] FATAL: Certificate or configuration error - stopping reconnection attempts", c.clientID)
 				c.logger.Error("[%s] Please run 'giraffecloud login --token YOUR_TOKEN' to fix certificate issues", c.clientID)
 				return
+			}
+
+			// CIRCUIT BREAKER: If too many consecutive failures, take a longer break
+			if consecutiveFailures >= maxConsecutiveFailures {
+				longDelay := 5 * time.Minute
+				c.logger.Warn("[%s] CIRCUIT BREAKER: %d consecutive failures, backing off for %v", c.clientID, consecutiveFailures, longDelay)
+
+				select {
+				case <-time.After(longDelay):
+				case <-c.stopChan:
+					return
+				case <-c.ctx.Done():
+					return
+				}
+
+				consecutiveFailures = 0         // Reset after long delay
+				delay = c.config.ReconnectDelay // Reset delay
+				continue
 			}
 
 			// Exponential backoff with maximum cap
@@ -1112,6 +1133,8 @@ func (c *GRPCTunnelClient) reconnect() {
 			continue
 		}
 
+		// SUCCESS: Reset failure counter
+		consecutiveFailures = 0
 		c.connected = true
 		c.logger.Info("[%s] Successfully reconnected gRPC tunnel for domain: %s", c.clientID, c.domain)
 
