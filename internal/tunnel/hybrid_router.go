@@ -348,6 +348,15 @@ func (r *HybridTunnelRouter) routeToTCPTunnel(domain string, conn net.Conn, requ
 	// CRITICAL: Check specifically for WebSocket connection, not just any tunnel
 	// IsTunnelDomain() can return false if HTTP pool is empty, even if WS tunnel exists
 	if !r.tcpTunnel.HasWebSocketConnection(domain) {
+		// PRODUCTION-GRADE: Check if main gRPC tunnel is alive BEFORE attempting TCP establishment
+		// This prevents 15s timeouts and log spam when client is offline
+		if !r.grpcTunnel.IsTunnelActive(domain) {
+			r.logger.Info("[HYBRID→TCP] ⚠️  Main gRPC tunnel is offline for domain: %s, cannot establish TCP tunnel", domain)
+			atomic.AddInt64(&r.routingErrors, 1)
+			r.writeHTTPError(conn, 503, "Service Unavailable - Tunnel offline")
+			return
+		}
+
 		r.logger.Info("[HYBRID→TCP] No active WebSocket tunnel for domain: %s, requesting establishment...", domain)
 
 		// Instead of returning 502, wait for tunnel establishment
@@ -371,6 +380,14 @@ func (r *HybridTunnelRouter) routeToTCPTunnel(domain string, conn net.Conn, requ
 
 			// Remove dead connection and request new one
 			r.tcpTunnel.RemoveDeadConnection(domain)
+
+			// Check if gRPC is still alive before attempting re-establishment
+			if !r.grpcTunnel.IsTunnelActive(domain) {
+				r.logger.Info("[HYBRID→TCP] ⚠️  Main gRPC tunnel is offline, cannot re-establish TCP tunnel")
+				atomic.AddInt64(&r.routingErrors, 1)
+				r.writeHTTPError(conn, 503, "Service Unavailable - Tunnel offline")
+				return
+			}
 
 			if r.waitForTCPTunnelEstablishment(domain, conn, requestData, requestBody, clientIP, httpReq) {
 				r.logger.Info("[HYBRID→TCP] TCP tunnel re-established successfully for domain: %s", domain)
