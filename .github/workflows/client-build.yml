@@ -46,6 +46,15 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Clean up monster tags from runner cache
+        run: |
+          # CRITICAL: Remove monster tags BEFORE version generation
+          echo "Cleaning up malformed tags..."
+          git tag | grep -E "test-.*-[0-9]+-g[a-f0-9]+-[0-9]+-g" | xargs -r git tag -d || true
+          echo "Tag cleanup complete"
+          echo "Remaining tags:"
+          git tag | head -20
+
       - name: Determine channel and version
         id: channel
         run: |
@@ -81,10 +90,10 @@ jobs:
           TIMESTAMP=$(date +%Y%m%d)
 
           if [[ "${{ steps.channel.outputs.channel }}" == "stable" ]]; then
-            # For stable, use semantic versioning with git tags
-            VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "v1.0.0")
-            RELEASE_TAG="$VERSION"
-            SHORT_VERSION="$VERSION"
+            # For stable, use clean commit-based versioning (no git describe to avoid tag concatenation)
+            VERSION="v0.0.1-stable.${COMMIT_SHORT}"
+            RELEASE_TAG="stable-${COMMIT_SHORT}"
+            SHORT_VERSION="v0.0.1-stable.${COMMIT_SHORT}"
           else
             # For test, use branch name and commit
             if [[ "${{ github.event_name }}" == "pull_request" ]]; then
