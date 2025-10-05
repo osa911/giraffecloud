@@ -188,17 +188,43 @@ func CompareVersions(v1, v2 string) int {
 		return 0
 	}
 
-	// CRITICAL: Extract commit hashes before treating as "dev"
+	// CRITICAL: Extract commit hashes for dev/test builds
 	// Formats we need to handle:
 	//   - dev-cc38be6 (local build)
-	//   - 0.0.1-stable.cc38be6 (GitHub Actions stable)
-	//   - 0.0.0-test.cc38be6 (GitHub Actions test)
+	//   - X.Y.Z (semantic version for stable releases)
+	//   - 0.0.0-test.branch.timestamp.commit (test builds)
+	//   - OLD FORMAT: 0.0.1-stable.cc38be6 (legacy, being phased out)
 	commitHash1 := extractCommitFromVersion(v1)
 	commitHash2 := extractCommitFromVersion(v2)
-
+	
 	// If both have commit hashes and they match -> SAME VERSION!
 	if commitHash1 != "" && commitHash2 != "" && commitHash1 == commitHash2 {
 		return 0
+	}
+	
+	// Handle legacy stable builds with commit hashes (OLD FORMAT)
+	// These are being phased out in favor of pure semantic versioning
+	isLegacyStable1 := strings.Contains(v1, "-stable.")
+	isLegacyStable2 := strings.Contains(v2, "-stable.")
+	if isLegacyStable1 && isLegacyStable2 {
+		// Extract semantic version (everything before "-stable.")
+		semver1 := strings.Split(v1, "-stable.")[0]
+		semver2 := strings.Split(v2, "-stable.")[0]
+		if semver1 == semver2 {
+			// Same base version -> treat as equal (commit hashes can't be compared chronologically)
+			return 0
+		}
+	}
+	
+	// NEW: Handle semantic versions vs legacy stable builds
+	// Pure semantic version (X.Y.Z) is ALWAYS newer than legacy stable (X.Y.Z-stable.<hash>)
+	if !isLegacyStable1 && isLegacyStable2 && commitHash1 == "" {
+		// v1 is pure semver, v2 is legacy -> v1 is newer
+		return 1
+	}
+	if isLegacyStable1 && !isLegacyStable2 && commitHash2 == "" {
+		// v1 is legacy, v2 is pure semver -> v2 is newer
+		return -1
 	}
 
 	// Handle dev versions (both "dev" and "dev-<hash>" formats)
