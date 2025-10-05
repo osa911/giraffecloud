@@ -897,16 +897,31 @@ func (t *Tunnel) startHealthMonitoring() {
 		for {
 			select {
 			case <-t.healthTicker.C:
-				// Simple health check - try to write to connection
+				// CRITICAL: Check both HTTP connection (legacy) and WebSocket connection
+
+				// Check HTTP connection (legacy, mostly unused now)
 				if t.conn != nil {
 					t.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 					_, err := t.conn.Write([]byte{}) // Empty write as keepalive
 					t.conn.SetWriteDeadline(time.Time{})
 
 					if err != nil {
-						t.logger.Info("Health check failed, triggering reconnection: %v", err)
+						t.logger.Info("HTTP connection health check failed, triggering reconnection: %v", err)
 						t.coordinatedReconnect()
 						return
+					}
+				}
+
+				// Check WebSocket connection (active in hybrid mode)
+				if t.wsConn != nil {
+					// Use isConnectionHealthy to detect dead connections
+					if !t.isConnectionHealthy(t.wsConn) {
+						t.logger.Warn("WebSocket connection health check failed, connection is dead")
+						t.logger.Info("Cleaning up dead WebSocket connection and notifying server")
+						// Close the dead connection
+						t.wsConn.Close()
+						t.wsConn = nil
+						// Server will request re-establishment when needed
 					}
 				}
 
