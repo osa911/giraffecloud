@@ -1,6 +1,7 @@
 package tunnel
 
 import (
+	"context"
 	"fmt"
 	"giraffecloud/internal/tunnel/proto"
 	"io"
@@ -547,6 +548,42 @@ func (s *GRPCTunnelServer) collectChunkedResponse(tunnelStream *TunnelStream, re
 						if len(chunk.Body) > 0 {
 							// MEMORY EFFICIENT: Write chunk directly to pipe (no buffering)
 							if _, writeErr := pipeWriter.Write(chunk.Body); writeErr != nil {
+								// Client disconnected (broken pipe) - this is NORMAL for video seek/pause
+								s.logger.Info("[CHUNKED] 🛑 Client disconnected, sending stop signal to client")
+
+								// CRITICAL: Send error message to client to stop chunk streaming immediately
+								stopMsg := &proto.TunnelMessage{
+									RequestId: response.RequestId,
+									Timestamp: time.Now().Unix(),
+									MessageType: &proto.TunnelMessage_Error{
+										Error: &proto.ErrorMessage{
+											Code:    499, // Client Closed Request
+											Message: "downstream_disconnected",
+											Type:    proto.ErrorMessage_STREAMING_ERROR,
+										},
+									},
+								}
+
+								// Send stop signal (best effort - don't block on failure)
+								sendCtx, cancelSend := context.WithTimeout(context.Background(), 100*time.Millisecond)
+								defer cancelSend()
+
+								sendDone := make(chan error, 1)
+								go func() {
+									sendDone <- tunnelStream.Stream.Send(stopMsg)
+								}()
+
+								select {
+								case sendErr := <-sendDone:
+									if sendErr != nil {
+										s.logger.Debug("[CHUNKED] Could not send stop signal: %v", sendErr)
+									} else {
+										s.logger.Debug("[CHUNKED] ✅ Stop signal sent - client will halt on next Send()")
+									}
+								case <-sendCtx.Done():
+									s.logger.Debug("[CHUNKED] Stop signal send timeout")
+								}
+
 								errorCh <- fmt.Errorf("failed to write chunk to pipe: %w", writeErr)
 								return
 							}

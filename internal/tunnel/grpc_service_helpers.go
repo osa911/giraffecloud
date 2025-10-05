@@ -231,7 +231,9 @@ func (s *GRPCTunnelServer) handleRegularHTTPResponse(tunnelStream *TunnelStream,
 	if !exists {
 		// Suppress noisy warnings for late chunks after a client disconnect/cleanup
 		if httpResp := msg.GetHttpResponse(); httpResp != nil && httpResp.IsChunked {
-			s.logger.Debug("Late chunk for cleaned-up request ID: %s (dropping)", msg.RequestId)
+			// Don't log each late chunk - they're expected after client disconnection
+			// Client is in blocking read loop and can't stop immediately
+			// Silently drop late chunks (this is correct behavior)
 			return
 		}
 		s.logger.Warn("Received response for unknown request ID: %s", msg.RequestId)
