@@ -179,8 +179,6 @@ Example:
 		if autoUpdateSvc != nil {
 			if startErr := autoUpdateSvc.Start(ctx, apiServerURL); startErr != nil {
 				logger.Warn("Failed to start auto-update service: %v", startErr)
-			} else if cfg.AutoUpdate.Enabled {
-				autoUpdateSvc.CheckNow(apiServerURL)
 			}
 		}
 
