@@ -220,7 +220,7 @@ jobs:
           # Generate checksums for all archives
           echo "Generating checksums..."
           sha256sum *.tar.gz *.zip > checksums.txt
-          
+
           # Verify checksums file
           echo "Checksums file contents:"
           cat checksums.txt

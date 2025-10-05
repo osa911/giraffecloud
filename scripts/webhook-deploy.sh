@@ -57,10 +57,17 @@ log "🔨 Building Docker image..."
 
 # Generate clean version string (matching build-cli.sh)
 COMMIT_SHORT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
-if git describe --tags --exact-match >/dev/null 2>&1; then
-    VERSION=$(git describe --tags --exact-match)
+
+# Use VERSION from environment if provided, otherwise generate from git
+if [ -z "$VERSION" ]; then
+    if git describe --tags --exact-match >/dev/null 2>&1; then
+        VERSION=$(git describe --tags --exact-match)
+    else
+        VERSION="dev-${COMMIT_SHORT}"
+    fi
+    log "Generated VERSION from git: $VERSION"
 else
-    VERSION="dev-${COMMIT_SHORT}"
+    log "Using VERSION from environment: $VERSION"
 fi
 
 BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)

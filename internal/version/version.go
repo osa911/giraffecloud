@@ -187,6 +187,20 @@ func CompareVersions(v1, v2 string) int {
 	if v1 == v2 {
 		return 0
 	}
+
+	// CRITICAL: Extract commit hashes before treating as "dev"
+	// Formats we need to handle:
+	//   - dev-cc38be6 (local build)
+	//   - 0.0.1-stable.cc38be6 (GitHub Actions stable)
+	//   - 0.0.0-test.cc38be6 (GitHub Actions test)
+	commitHash1 := extractCommitFromVersion(v1)
+	commitHash2 := extractCommitFromVersion(v2)
+
+	// If both have commit hashes and they match -> SAME VERSION!
+	if commitHash1 != "" && commitHash2 != "" && commitHash1 == commitHash2 {
+		return 0
+	}
+
 	// Handle dev versions (both "dev" and "dev-<hash>" formats)
 	if v1 == "dev" || v1 == "unknown" || strings.HasPrefix(v1, "dev-") {
 		return -1 // Development versions are considered older
@@ -260,6 +274,33 @@ func CompareVersions(v1, v2 string) int {
 	}
 
 	return 0
+}
+
+// extractCommitFromVersion extracts the commit hash from various version formats
+// Handles: dev-<hash>, 0.0.1-stable.<hash>, 0.0.0-test.<hash>
+func extractCommitFromVersion(version string) string {
+	// Format 1: dev-<hash>
+	if strings.HasPrefix(version, "dev-") {
+		return strings.TrimPrefix(version, "dev-")
+	}
+
+	// Format 2: X.Y.Z-stable.<hash>
+	if strings.Contains(version, "-stable.") {
+		parts := strings.Split(version, ".")
+		if len(parts) > 0 {
+			return parts[len(parts)-1]
+		}
+	}
+
+	// Format 3: X.Y.Z-test.<hash> or X.Y.Z-test.<branch>.<timestamp>.<hash>
+	if strings.Contains(version, "-test.") {
+		parts := strings.Split(version, ".")
+		if len(parts) > 0 {
+			return parts[len(parts)-1]
+		}
+	}
+
+	return ""
 }
 
 // extractCommitHash extracts commit hash from test version string
