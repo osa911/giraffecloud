@@ -307,12 +307,21 @@ func (r *HybridTunnelRouter) routeToGRPCTunnel(domain string, conn net.Conn, req
 	// Write response back to client
 	writer := bufio.NewWriter(conn)
 	if err := response.Write(writer); err != nil {
-		r.logger.Error("[HYBRID→gRPC] Error writing response: %v", err)
+		// Client disconnection is normal (user navigated away, etc.)
+		if r.isClientDisconnectionError(err) {
+			r.logger.Debug("[HYBRID→gRPC] Client disconnected during response write: %v", err)
+		} else {
+			r.logger.Error("[HYBRID→gRPC] Error writing response: %v", err)
+		}
 		return
 	}
 
 	if err := writer.Flush(); err != nil {
-		r.logger.Error("[HYBRID→gRPC] Error flushing response: %v", err)
+		if r.isClientDisconnectionError(err) {
+			r.logger.Debug("[HYBRID→gRPC] Client disconnected during flush: %v", err)
+		} else {
+			r.logger.Error("[HYBRID→gRPC] Error flushing response: %v", err)
+		}
 		return
 	}
 
@@ -498,12 +507,21 @@ func (r *HybridTunnelRouter) routeToGRPCChunkedStreaming(domain string, conn net
 	// Write response back to client
 	writer := bufio.NewWriter(conn)
 	if err := response.Write(writer); err != nil {
-		r.logger.Error("[HYBRID→gRPC-CHUNKED] Error writing response: %v", err)
+		// Broken pipe is NORMAL - client stopped downloading (seek, cancel, etc.)
+		if r.isClientDisconnectionError(err) {
+			r.logger.Info("[HYBRID→gRPC-CHUNKED] Client disconnected during streaming (normal for video seek/cancel): %v", err)
+		} else {
+			r.logger.Error("[HYBRID→gRPC-CHUNKED] Error writing response: %v", err)
+		}
 		return
 	}
 
 	if err := writer.Flush(); err != nil {
-		r.logger.Error("[HYBRID→gRPC-CHUNKED] Error flushing response: %v", err)
+		if r.isClientDisconnectionError(err) {
+			r.logger.Debug("[HYBRID→gRPC-CHUNKED] Client disconnected during flush: %v", err)
+		} else {
+			r.logger.Error("[HYBRID→gRPC-CHUNKED] Error flushing response: %v", err)
+		}
 		return
 	}
 
@@ -554,6 +572,37 @@ func (r *HybridTunnelRouter) writeHTTPError(conn net.Conn, statusCode int, messa
 		statusCode, statusText, len(message), message)
 
 	conn.Write([]byte(response))
+}
+
+// isClientDisconnectionError checks if an error indicates normal client disconnection
+func (r *HybridTunnelRouter) isClientDisconnectionError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errStr := strings.ToLower(err.Error())
+
+	// Common client disconnection patterns (NORMAL behavior during streaming)
+	// These happen when users:
+	// - Navigate away from page
+	// - Stop/pause media playback
+	// - Seek to different position in video
+	// - Close browser tab
+	disconnectionErrors := []string{
+		"broken pipe",                      // Most common: write to closed socket
+		"connection reset by peer",         // Client forcibly closed connection
+		"write: connection reset",          // Write-specific reset
+		"use of closed network connection", // Connection already closed
+		"connection closed",                // Generic close
+	}
+
+	for _, disconnectionErr := range disconnectionErrors {
+		if strings.Contains(errStr, disconnectionErr) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // reportMetrics reports performance metrics
