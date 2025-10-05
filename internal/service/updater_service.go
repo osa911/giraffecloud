@@ -625,7 +625,24 @@ func (u *UpdaterService) copyFile(src, dst string) error {
 // restoreBackup restores a backup file
 func (u *UpdaterService) restoreBackup(backupPath string) error {
 	u.logger.Info("Restoring backup from: %s", backupPath)
-	return u.copyFile(backupPath, u.currentExePath)
+	err := u.copyFile(backupPath, u.currentExePath)
+	
+	// If regular copy fails due to permissions, try with sudo
+	if err != nil && u.shouldAttemptSudo(err) {
+		u.logger.Warn("Permission issue during backup restoration, attempting with sudo...")
+		// Use sudo install to restore the backup
+		cmd := exec.Command("sudo", "install", "-m", "0755", backupPath, u.currentExePath)
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if sudoErr := cmd.Run(); sudoErr != nil {
+			return fmt.Errorf("failed to restore backup (even with sudo): original error: %w, sudo error: %v", err, sudoErr)
+		}
+		u.logger.Info("Backup restored successfully via sudo")
+		return nil
+	}
+	
+	return err
 }
 
 // verifyNewBinary verifies the new binary is valid before installation
