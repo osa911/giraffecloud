@@ -409,9 +409,17 @@ func (s *Server) Start(cfg *Config) error {
 
 	// Start HTTP server on :8081 for Caddy to forward tunnel domain requests
 	go func() {
-		logger.Info("Starting HTTP hijack server on :8081 for tunnel domains")
+
+		// Get hijack port with default fallback
+		hijackPort := os.Getenv("HIJACK_PORT")
+		if hijackPort == "" {
+			hijackPort = "8081"
+		}
+
+		logger.Info("Starting HTTP hijack server on :%s for tunnel domains", hijackPort)
+
 		server := &http.Server{
-			Addr:    ":8081",
+			Addr:    ":" + hijackPort,
 			Handler: httpHandler,
 			// Add timeouts to prevent hanging connections
 			ReadTimeout:  30 * time.Second,
