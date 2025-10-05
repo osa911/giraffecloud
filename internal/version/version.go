@@ -20,6 +20,8 @@ var (
 	GitCommit = "unknown" // Set via: -ldflags "-X giraffecloud/internal/version.GitCommit=$(git rev-parse HEAD)"
 )
 
+// Version comparison improvements: dev-<hash> format is now properly recognized
+
 // BuildInfo contains comprehensive build information
 type BuildInfo struct {
 	Version   string `json:"version"`
