@@ -36,6 +36,9 @@ type GRPCTunnelServer struct {
 	tunnelRepo    repository.TunnelRepository
 	tunnelService interfaces.TunnelService
 
+	// Callback for TCP tunnel establishment responses
+	onTCPEstablishmentResponse func(domain string, requestId string, success bool)
+
 	// gRPC server
 	grpcServer *grpc.Server
 	listener   net.Listener
@@ -72,6 +75,11 @@ func (s *GRPCTunnelServer) SetUsageRecorder(rec UsageRecorder) {
 
 // SetQuotaChecker wires quota checker
 func (s *GRPCTunnelServer) SetQuotaChecker(q QuotaChecker) { s.quota = q }
+
+// SetTCPEstablishmentResponseCallback sets a callback for TCP tunnel establishment responses
+func (s *GRPCTunnelServer) SetTCPEstablishmentResponseCallback(callback func(domain string, requestId string, success bool)) {
+	s.onTCPEstablishmentResponse = callback
+}
 
 // TunnelStream represents an active tunnel connection
 type TunnelStream struct {

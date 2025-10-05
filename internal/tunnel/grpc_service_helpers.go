@@ -293,6 +293,15 @@ func (s *GRPCTunnelServer) handleControlMessage(tunnelStream *TunnelStream, msg 
 		status := controlType.Status
 		s.logger.Debug("Tunnel %s status: %s, active connections: %d",
 			tunnelStream.Domain, status.State, status.ActiveConnections)
+		
+		// CRITICAL: Check if this is a response to a TCP tunnel establishment request
+		if msg.RequestId != "" && s.onTCPEstablishmentResponse != nil {
+			// This is a response to an establishment request
+			success := (status.State == proto.TunnelState_TUNNEL_STATE_ACTIVE)
+			s.logger.Info("📨 Received TCP tunnel establishment response for domain %s: success=%v, requestId=%s",
+				tunnelStream.Domain, success, msg.RequestId)
+			s.onTCPEstablishmentResponse(tunnelStream.Domain, msg.RequestId, success)
+		}
 	case *proto.TunnelControl_Metrics:
 		metrics := controlType.Metrics
 		s.logger.Debug("Tunnel %s metrics: %d requests, %.2f avg response time",

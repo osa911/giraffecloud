@@ -138,6 +138,20 @@ func NewHybridTunnelRouter(
 	// Set up TCP tunnel establishment callback
 	router.tcpTunnel.SetTCPTunnelEstablishedCallback(router.OnTCPTunnelEstablished)
 
+	// Set up gRPC tunnel establishment response callback
+	router.grpcTunnel.SetTCPEstablishmentResponseCallback(func(domain string, requestId string, success bool) {
+		if success {
+			router.logger.Info("✅ Received TCP tunnel establishment confirmation from client for domain: %s (requestId: %s)", domain, requestId)
+			router.OnTCPTunnelEstablished(domain)
+		} else {
+			router.logger.Warn("❌ TCP tunnel establishment failed for domain: %s (requestId: %s)", domain, requestId)
+			// Clean up in-progress flag on failure
+			router.establishmentMu.Lock()
+			delete(router.establishmentInProgress, domain)
+			router.establishmentMu.Unlock()
+		}
+	})
+
 	return router
 }
 
@@ -321,9 +335,10 @@ func (r *HybridTunnelRouter) routeToTCPTunnel(domain string, conn net.Conn, requ
 		return
 	}
 
-	// Check if TCP tunnel is available - with health validation
-	if !r.tcpTunnel.IsTunnelDomain(domain) {
-		r.logger.Info("[HYBRID→TCP] No active TCP tunnel for domain: %s, requesting establishment...", domain)
+	// CRITICAL: Check specifically for WebSocket connection, not just any tunnel
+	// IsTunnelDomain() can return false if HTTP pool is empty, even if WS tunnel exists
+	if !r.tcpTunnel.HasWebSocketConnection(domain) {
+		r.logger.Info("[HYBRID→TCP] No active WebSocket tunnel for domain: %s, requesting establishment...", domain)
 
 		// Instead of returning 502, wait for tunnel establishment
 		if r.waitForTCPTunnelEstablishment(domain, conn, requestData, requestBody, clientIP, httpReq) {
