@@ -512,19 +512,23 @@ func (s *GRPCTunnelServer) sendRequestAndWaitResponse(tunnelStream *TunnelStream
 		return s.grpcToHTTP(responseMsg)
 
 	case <-time.After(timeout):
-		// Clean up on timeout
+		// Clean up on timeout - safe close (only if we still own the channel)
 		tunnelStream.requestsMux.Lock()
-		delete(tunnelStream.pendingRequests, grpcMsg.RequestId)
+		if ch, exists := tunnelStream.pendingRequests[grpcMsg.RequestId]; exists && ch == responseChan {
+			delete(tunnelStream.pendingRequests, grpcMsg.RequestId)
+			close(responseChan)
+		}
 		tunnelStream.requestsMux.Unlock()
-		close(responseChan)
 		return nil, fmt.Errorf("request timeout after %v", timeout)
 
 	case <-tunnelStream.Context.Done():
-		// Clean up on context cancellation
+		// Clean up on context cancellation - safe close (only if we still own the channel)
 		tunnelStream.requestsMux.Lock()
-		delete(tunnelStream.pendingRequests, grpcMsg.RequestId)
+		if ch, exists := tunnelStream.pendingRequests[grpcMsg.RequestId]; exists && ch == responseChan {
+			delete(tunnelStream.pendingRequests, grpcMsg.RequestId)
+			close(responseChan)
+		}
 		tunnelStream.requestsMux.Unlock()
-		close(responseChan)
 		return nil, fmt.Errorf("tunnel disconnected")
 	}
 }
