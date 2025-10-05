@@ -57,6 +57,10 @@ type GRPCTunnelClient struct {
 	responseChannels   map[string]chan *proto.TunnelMessage
 	responseChannelsMu sync.RWMutex
 
+	// Active streaming requests with cancellation support
+	activeStreams   map[string]context.CancelFunc
+	activeStreamsMu sync.RWMutex
+
 	// Tunnel establishment callback
 	tunnelEstablishHandler func(*proto.TunnelEstablishRequest) error
 
@@ -136,6 +140,7 @@ func NewGRPCTunnelClient(serverAddr, domain, token string, targetPort int32, con
 		cancel:           cancel,
 		stopping:         false, // Initialize stopping flag
 		responseChannels: make(map[string]chan *proto.TunnelMessage),
+		activeStreams:    make(map[string]context.CancelFunc),
 		config:           config,
 		logger:           logging.GetGlobalLogger(),
 	}
@@ -602,16 +607,33 @@ func (c *GRPCTunnelClient) handleUploadStart(msg *proto.TunnelMessage) error {
 	uploadSessions[msg.RequestId] = &uploadSession{pipeWriter: pw}
 	uploadSessionsMu.Unlock()
 
-	// Send to local service asynchronously; stream response back
+	// Send to local service asynchronously; stream response back with cancellation support
 	go func(requestID string) {
 		defer pr.Close()
+
+		// Create cancellable context for this request
+		streamCtx, streamCancel := context.WithCancel(context.Background())
+		defer streamCancel()
+
+		// Register cancel function for server-initiated cancellation
+		c.activeStreamsMu.Lock()
+		c.activeStreams[requestID] = streamCancel
+		c.activeStreamsMu.Unlock()
+
+		// Clean up on completion
+		defer func() {
+			c.activeStreamsMu.Lock()
+			delete(c.activeStreams, requestID)
+			c.activeStreamsMu.Unlock()
+		}()
+
 		resp, err := (&http.Client{Timeout: 10 * time.Minute}).Do(req)
 		if err != nil {
 			c.sendErrorResponse(requestID, fmt.Sprintf("Local service request failed: %v", err))
 			return
 		}
 		defer resp.Body.Close()
-		c.streamResponseInChunks(requestID, resp)
+		c.streamResponseInChunksWithContext(streamCtx, requestID, resp)
 	}(msg.RequestId)
 
 	return nil
@@ -729,6 +751,22 @@ func (c *GRPCTunnelClient) shouldUseChunkedStreaming(httpReq *proto.HTTPRequest)
 func (c *GRPCTunnelClient) forwardLargeFileWithChunking(msg *proto.TunnelMessage, httpReq *proto.HTTPRequest) error {
 	c.logger.Info("[CHUNKED CLIENT] 📦 Implementing chunked response streaming for unlimited file size")
 
+	// Create cancellable context for this request
+	streamCtx, streamCancel := context.WithCancel(context.Background())
+	defer streamCancel()
+
+	// Register cancel function for server-initiated cancellation
+	c.activeStreamsMu.Lock()
+	c.activeStreams[msg.RequestId] = streamCancel
+	c.activeStreamsMu.Unlock()
+
+	// Clean up on completion
+	defer func() {
+		c.activeStreamsMu.Lock()
+		delete(c.activeStreams, msg.RequestId)
+		c.activeStreamsMu.Unlock()
+	}()
+
 	// Make request to local service
 	response, err := c.makeLocalServiceRequest(httpReq)
 	if err != nil {
@@ -737,7 +775,7 @@ func (c *GRPCTunnelClient) forwardLargeFileWithChunking(msg *proto.TunnelMessage
 	defer response.Body.Close()
 
 	// Stream the response back in chunks for unlimited file size support
-	return c.streamResponseInChunks(msg.RequestId, response)
+	return c.streamResponseInChunksWithContext(streamCtx, msg.RequestId, response)
 }
 
 // forwardRegularRequest handles regular (small file) requests
@@ -796,8 +834,8 @@ func (c *GRPCTunnelClient) makeLocalServiceRequest(httpReq *proto.HTTPRequest) (
 	return resp, nil
 }
 
-// streamResponseInChunks streams large responses in chunks for unlimited file size
-func (c *GRPCTunnelClient) streamResponseInChunks(requestID string, response *http.Response) error {
+// streamResponseInChunksWithContext streams large responses with cancellation support
+func (c *GRPCTunnelClient) streamResponseInChunksWithContext(ctx context.Context, requestID string, response *http.Response) error {
 	const ChunkSize = 2 * 1024 * 1024         // 2MB chunks for better reliability (reduced from 4MB)
 	const MaxStreamingTime = 30 * time.Minute // Increased timeout for very large files (increased from 10 minutes)
 
@@ -832,6 +870,16 @@ func (c *GRPCTunnelClient) streamResponseInChunks(requestID string, response *ht
 	buffer := make([]byte, ChunkSize)
 
 	for {
+		// CRITICAL: Check for server-initiated cancellation FIRST
+		select {
+		case <-ctx.Done():
+			c.logger.Info("[CHUNKED CLIENT] ⏹️  Request %s cancelled by server - stopping immediately", requestID)
+			// Close response body to stop reading from local service
+			response.Body.Close()
+			return nil // Silent exit - server already knows about cancellation
+		default:
+		}
+
 		// Check for overall timeout
 		if time.Since(startTime) > MaxStreamingTime {
 			c.logger.Error("[CHUNKED CLIENT] ⏰ Streaming timeout after %v, stopping", MaxStreamingTime)
@@ -1011,9 +1059,35 @@ func (c *GRPCTunnelClient) handleControlMessage(msg *proto.TunnelMessage) error 
 		// Tunnel establishment request from server
 		return c.handleTunnelEstablishRequest(msg, controlType.EstablishRequest)
 
+	case *proto.TunnelControl_CancelRequest:
+		// Request cancellation from server
+		return c.handleCancelRequest(controlType.CancelRequest)
+
 	default:
 		c.logger.Debug("Unknown control message type: %T", controlType)
 	}
+
+	return nil
+}
+
+// handleCancelRequest processes cancellation requests from the server
+func (c *GRPCTunnelClient) handleCancelRequest(cancel *proto.CancelRequest) error {
+	if cancel == nil || cancel.RequestId == "" {
+		return nil
+	}
+
+	c.logger.Info("[CANCEL] Received cancellation for request %s (reason: %s)", cancel.RequestId, cancel.Reason)
+
+	// Find and cancel the active stream for this request
+	c.activeStreamsMu.Lock()
+	if cancelFunc, exists := c.activeStreams[cancel.RequestId]; exists {
+		c.logger.Info("[CANCEL] ✅ Cancelling active stream for request %s", cancel.RequestId)
+		cancelFunc()
+		delete(c.activeStreams, cancel.RequestId)
+	} else {
+		c.logger.Debug("[CANCEL] Request %s not found in active streams (already completed)", cancel.RequestId)
+	}
+	c.activeStreamsMu.Unlock()
 
 	return nil
 }

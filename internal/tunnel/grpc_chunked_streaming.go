@@ -547,9 +547,35 @@ func (s *GRPCTunnelServer) collectChunkedResponse(tunnelStream *TunnelStream, re
 						if len(chunk.Body) > 0 {
 							// MEMORY EFFICIENT: Write chunk directly to pipe (no buffering)
 							if _, writeErr := pipeWriter.Write(chunk.Body); writeErr != nil {
-								// Client disconnected (broken pipe) - this is NORMAL for video seek/pause
-								// Client will naturally stop when next stream.Send() fails (1-2 more chunks)
-								s.logger.Info("[CHUNKED] 🛑 Client disconnected during streaming (normal behavior)")
+								// Client disconnected (broken pipe) - SEND CANCEL SIGNAL to stop client immediately
+								s.logger.Info("[CHUNKED] 🛑 Client disconnected, sending cancel signal to stop streaming")
+
+								// Send CONTROL message (not ERROR) to cancel this specific request
+								cancelMsg := &proto.TunnelMessage{
+									RequestId: response.RequestId,
+									Timestamp: time.Now().Unix(),
+									MessageType: &proto.TunnelMessage_Control{
+										Control: &proto.TunnelControl{
+											ControlType: &proto.TunnelControl_CancelRequest{
+												CancelRequest: &proto.CancelRequest{
+													RequestId: response.RequestId,
+													Reason:    "downstream_disconnected",
+													Timestamp: time.Now().Unix(),
+												},
+											},
+										},
+									},
+								}
+
+								// Send cancel signal (best effort - non-blocking)
+								go func() {
+									if sendErr := tunnelStream.Stream.Send(cancelMsg); sendErr != nil {
+										s.logger.Debug("[CHUNKED] Could not send cancel signal: %v", sendErr)
+									} else {
+										s.logger.Debug("[CHUNKED] ✅ Cancel signal sent - client will stop immediately")
+									}
+								}()
+
 								errorCh <- fmt.Errorf("failed to write chunk to pipe: %w", writeErr)
 								return
 							}

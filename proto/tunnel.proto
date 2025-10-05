@@ -125,10 +125,18 @@ message TunnelControl {
         TunnelConfig config = 3;
         TunnelMetrics metrics = 4;
         TunnelEstablishRequest establish_request = 5;
+        CancelRequest cancel_request = 6;  // NEW: Request cancellation
     }
 
     string message = 10;
     int64 timestamp = 11;
+}
+
+// CancelRequest signals the client to stop processing a specific request
+message CancelRequest {
+    string request_id = 1;     // Request ID to cancel
+    string reason = 2;          // Why: "downstream_disconnected", "timeout", etc.
+    int64 timestamp = 3;        // When cancellation was triggered
 }
 
 // TunnelEstablishRequest requests client to establish a specific tunnel type
