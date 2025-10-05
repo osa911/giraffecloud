@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"os/exec"
 )
 
@@ -33,8 +34,10 @@ func (m *SystemdServiceManager) IsRunning() (bool, error) {
 }
 
 func (m *SystemdServiceManager) Restart() error {
-	cmd := exec.Command("systemctl", "restart", m.unitName)
+	cmd := exec.Command("sudo", "systemctl", "restart", m.unitName)
 	var stderr bytes.Buffer
+	cmd.Stdin = os.Stdin   // Allow sudo password prompt
+	cmd.Stdout = os.Stdout // Show sudo output
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
@@ -51,8 +54,10 @@ func (m *SystemdServiceManager) Restart() error {
 }
 
 func (m *SystemdServiceManager) Stop() error {
-	cmd := exec.Command("systemctl", "stop", m.unitName)
+	cmd := exec.Command("sudo", "systemctl", "stop", m.unitName)
 	var stderr bytes.Buffer
+	cmd.Stdin = os.Stdin   // Allow sudo password prompt
+	cmd.Stdout = os.Stdout // Show sudo output
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
@@ -69,8 +74,10 @@ func (m *SystemdServiceManager) Stop() error {
 }
 
 func (m *SystemdServiceManager) Start() error {
-	cmd := exec.Command("systemctl", "start", m.unitName)
+	cmd := exec.Command("sudo", "systemctl", "start", m.unitName)
 	var stderr bytes.Buffer
+	cmd.Stdin = os.Stdin   // Allow sudo password prompt
+	cmd.Stdout = os.Stdout // Show sudo output
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
