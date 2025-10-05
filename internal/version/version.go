@@ -185,10 +185,11 @@ func CompareVersions(v1, v2 string) int {
 	if v1 == v2 {
 		return 0
 	}
-	if v1 == "dev" || v1 == "unknown" {
+	// Handle dev versions (both "dev" and "dev-<hash>" formats)
+	if v1 == "dev" || v1 == "unknown" || strings.HasPrefix(v1, "dev-") {
 		return -1 // Development versions are considered older
 	}
-	if v2 == "dev" || v2 == "unknown" {
+	if v2 == "dev" || v2 == "unknown" || strings.HasPrefix(v2, "dev-") {
 		return 1
 	}
 
