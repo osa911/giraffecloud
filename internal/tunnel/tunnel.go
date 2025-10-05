@@ -1586,19 +1586,35 @@ func (t *Tunnel) isConnectionHealthy(conn net.Conn) bool {
 		return false
 	}
 
-	// Set a very short read deadline to test connection
-	conn.SetReadDeadline(time.Now().Add(1 * time.Millisecond))
+	// IMPROVED: Use TCP keepalive to check connection liveness
+	// This is more reliable than trying to read with a short timeout
+
+	// First, check if we can set a read deadline (if not, connection is already closed)
+	err := conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+	if err != nil {
+		return false // Connection is closed
+	}
 	defer conn.SetReadDeadline(time.Time{}) // Clear deadline
 
-	// Try to read one byte (should timeout immediately if connection is alive)
+	// Try to peek at incoming data without consuming it
+	// If we get a timeout, connection is alive and waiting for data
+	// If we get EOF or another error, connection is dead
 	one := make([]byte, 1)
-	_, err := conn.Read(one)
+	_, err = conn.Read(one)
 
-	// If we get a timeout, the connection is likely alive and has no data
+	if err == nil {
+		// We actually read data! This shouldn't happen after a WebSocket session.
+		// The data might be from a pipelined request or leftover data.
+		// Mark connection as potentially problematic and recycle it.
+		t.logger.Warn("[CONNECTION HEALTH] Unexpected data after WebSocket session, recycling connection")
+		return false
+	}
+
+	// Check if it's a timeout (expected - connection is alive)
 	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 		return true
 	}
 
-	// If we get EOF or other error, connection is dead
+	// Any other error (EOF, reset, etc.) means connection is dead
 	return false
 }

@@ -621,14 +621,10 @@ func (r *HybridTunnelRouter) waitForTCPTunnelEstablishment(domain string, conn n
 		r.establishmentMu.Unlock()
 
 		// Signal client via gRPC to establish TCP tunnel (only once per domain)
-		go func() {
-			r.requestTCPTunnelEstablishment(domain, requestID)
-
-			// Clear the in-progress flag after completion
-			r.establishmentMu.Lock()
-			delete(r.establishmentInProgress, domain)
-			r.establishmentMu.Unlock()
-		}()
+		// DO NOT clear the in-progress flag here - it will be cleared when:
+		// 1. OnTCPTunnelEstablished is called (success), OR
+		// 2. This request times out (failure)
+		go r.requestTCPTunnelEstablishment(domain, requestID)
 	} else {
 		r.establishmentMu.Unlock()
 		r.logger.Debug("[HYBRID→TCP] TCP tunnel establishment already in progress for domain: %s, joining existing request", domain)
@@ -645,6 +641,10 @@ func (r *HybridTunnelRouter) waitForTCPTunnelEstablishment(domain string, conn n
 		return success
 	case <-timeout.C:
 		r.logger.Warn("[HYBRID→TCP] Timeout waiting for TCP tunnel establishment for domain: %s", domain)
+		// Clear the in-progress flag on timeout so next request can try again
+		r.establishmentMu.Lock()
+		delete(r.establishmentInProgress, domain)
+		r.establishmentMu.Unlock()
 		// Remove from pending connections
 		r.removePendingConnection(domain, requestID)
 		return false
@@ -707,6 +707,11 @@ func (r *HybridTunnelRouter) removePendingConnection(domain string, requestID st
 
 // OnTCPTunnelEstablished is called when a TCP tunnel is established to wake up pending connections
 func (r *HybridTunnelRouter) OnTCPTunnelEstablished(domain string) {
+	// Clear the in-progress flag first (establishment complete!)
+	r.establishmentMu.Lock()
+	delete(r.establishmentInProgress, domain)
+	r.establishmentMu.Unlock()
+
 	r.pendingConnectionsMu.Lock()
 	defer r.pendingConnectionsMu.Unlock()
 
@@ -722,5 +727,7 @@ func (r *HybridTunnelRouter) OnTCPTunnelEstablished(domain string) {
 				// Channel might be closed or full, skip
 			}
 		}
+	} else {
+		r.logger.Debug("[HYBRID→TCP] TCP tunnel established for domain: %s, but no pending connections", domain)
 	}
 }

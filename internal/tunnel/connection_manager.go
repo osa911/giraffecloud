@@ -380,20 +380,27 @@ func (m *ConnectionManager) HasWebSocketConnection(domain string) bool {
 		return false
 	}
 
-	// Quick health check with minimal timeout
-	conn.GetConn().SetReadDeadline(time.Now().Add(1 * time.Millisecond))
+	// IMPROVED: Use longer timeout and proper error handling
+	conn.GetConn().SetReadDeadline(time.Now().Add(100 * time.Millisecond))
 	defer conn.GetConn().SetReadDeadline(time.Time{}) // Clear deadline
 
 	// Try to read one byte (should timeout immediately if connection is alive)
 	one := make([]byte, 1)
 	_, err := conn.GetConn().Read(one)
 
-	// If we get a timeout, the connection is likely alive
+	if err == nil {
+		// We read data! This means there's buffered data, which is unexpected.
+		// The connection might be in a bad state, so clean it up.
+		m.clearWebSocketConnection(domain)
+		return false
+	}
+
+	// If we get a timeout, the connection is alive and healthy
 	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 		return true
 	}
 
-	// Connection is dead, clean it up
+	// Connection is dead (EOF or other error), clean it up
 	m.clearWebSocketConnection(domain)
 	return false
 }
