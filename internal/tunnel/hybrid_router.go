@@ -138,11 +138,12 @@ func NewHybridTunnelRouter(
 	// Set up TCP tunnel establishment callback
 	router.tcpTunnel.SetTCPTunnelEstablishedCallback(router.OnTCPTunnelEstablished)
 
-	// Set up gRPC tunnel establishment response callback
+	// Set up gRPC tunnel establishment response callback (for logging and failure handling only)
+	// CRITICAL: Do NOT wake connections here - wait for actual TCP server callback
 	router.grpcTunnel.SetTCPEstablishmentResponseCallback(func(domain string, requestId string, success bool) {
 		if success {
 			router.logger.Info("✅ Received TCP tunnel establishment confirmation from client for domain: %s (requestId: %s)", domain, requestId)
-			router.OnTCPTunnelEstablished(domain)
+			// NOTE: OnTCPTunnelEstablished will be called by TCP server callback when connection is fully registered
 		} else {
 			router.logger.Warn("❌ TCP tunnel establishment failed for domain: %s (requestId: %s)", domain, requestId)
 			// Clean up in-progress flag on failure
