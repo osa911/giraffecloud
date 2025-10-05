@@ -3,6 +3,7 @@ package service
 import (
 	"archive/tar"
 	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -228,13 +229,30 @@ func (u *UpdaterService) InstallUpdate(downloadPath string) error {
 	}
 
 	if err := u.extractArchive(downloadPath, extractPath); err != nil {
+		// Restore backup on extraction failure
+		if restoreErr := u.restoreBackup(backupPath); restoreErr != nil {
+			u.logger.Error("Failed to restore backup after extraction failure: %v", restoreErr)
+		}
 		return fmt.Errorf("failed to extract update: %w", err)
 	}
 
 	// Find the new executable
 	newExePath, err := u.findExecutable(extractPath)
 	if err != nil {
+		// Restore backup if we can't find the executable
+		if restoreErr := u.restoreBackup(backupPath); restoreErr != nil {
+			u.logger.Error("Failed to restore backup after missing executable: %v", restoreErr)
+		}
 		return fmt.Errorf("failed to find new executable: %w", err)
+	}
+
+	// CRITICAL: Verify the new binary is valid before replacing
+	if err := u.verifyNewBinary(newExePath); err != nil {
+		// Restore backup if binary verification fails
+		if restoreErr := u.restoreBackup(backupPath); restoreErr != nil {
+			u.logger.Error("Failed to restore backup after binary verification failure: %v", restoreErr)
+		}
+		return fmt.Errorf("new binary verification failed: %w", err)
 	}
 
 	// Replace current executable (attempt graceful stop if running as a service or in-place)
@@ -606,7 +624,44 @@ func (u *UpdaterService) copyFile(src, dst string) error {
 
 // restoreBackup restores a backup file
 func (u *UpdaterService) restoreBackup(backupPath string) error {
+	u.logger.Info("Restoring backup from: %s", backupPath)
 	return u.copyFile(backupPath, u.currentExePath)
+}
+
+// verifyNewBinary verifies the new binary is valid before installation
+func (u *UpdaterService) verifyNewBinary(binaryPath string) error {
+	// Check if file exists
+	info, err := os.Stat(binaryPath)
+	if err != nil {
+		return fmt.Errorf("binary file not found: %w", err)
+	}
+
+	// Check if it's a regular file
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("binary is not a regular file")
+	}
+
+	// Check if it has execute permissions
+	if info.Mode()&0111 == 0 {
+		return fmt.Errorf("binary is not executable")
+	}
+
+	// Try to execute with --version flag (quick sanity check)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, binaryPath, "version")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		// Check if it's a context timeout
+		if ctx.Err() == context.DeadlineExceeded {
+			return fmt.Errorf("binary verification timed out (might be hung or corrupted)")
+		}
+		return fmt.Errorf("binary verification failed (exit code or crash): %w\nOutput: %s", err, string(output))
+	}
+
+	u.logger.Debug("Binary verification passed: %s", binaryPath)
+	return nil
 }
 
 // CleanupOldBackups removes old backup files (keeps last 5)
