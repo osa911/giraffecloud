@@ -893,10 +893,11 @@ func (t *Tunnel) startHealthMonitoring() {
 
 	t.healthTicker = time.NewTicker(t.retryConfig.HealthCheckInterval)
 	go func() {
-		defer t.healthTicker.Stop()
+		ticker := t.healthTicker // Capture ticker locally to avoid nil pointer during cleanup
+		defer ticker.Stop()
 		for {
 			select {
-			case <-t.healthTicker.C:
+			case <-ticker.C:
 				// CRITICAL: Check both HTTP connection (legacy) and WebSocket connection
 
 				// Check HTTP connection (legacy, mostly unused now)

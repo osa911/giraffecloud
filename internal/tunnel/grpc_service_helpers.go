@@ -496,11 +496,13 @@ func (s *GRPCTunnelServer) sendRequestAndWaitResponse(tunnelStream *TunnelStream
 
 	// Send request to client
 	if err := tunnelStream.Stream.Send(grpcMsg); err != nil {
-		// Clean up on send failure
+		// Clean up on send failure - safe close (only if we still own the channel)
 		tunnelStream.requestsMux.Lock()
-		delete(tunnelStream.pendingRequests, grpcMsg.RequestId)
+		if ch, exists := tunnelStream.pendingRequests[grpcMsg.RequestId]; exists && ch == responseChan {
+			delete(tunnelStream.pendingRequests, grpcMsg.RequestId)
+			close(responseChan)
+		}
 		tunnelStream.requestsMux.Unlock()
-		close(responseChan)
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
 
