@@ -228,32 +228,55 @@ func (u *UpdaterService) InstallUpdate(downloadPath string) error {
 		return fmt.Errorf("failed to create extract directory: %w", err)
 	}
 
+	// Extract the downloaded archive
+	u.logger.Info("Extracting update archive...")
 	if err := u.extractArchive(downloadPath, extractPath); err != nil {
+		u.logger.Error("❌ Extraction failed: %v", err)
+		u.logger.Info("🔄 Attempting to restore backup to recover...")
+		
 		// Restore backup on extraction failure
 		if restoreErr := u.restoreBackup(backupPath); restoreErr != nil {
-			u.logger.Error("Failed to restore backup after extraction failure: %v", restoreErr)
+			u.logger.Error("❌ Failed to restore backup after extraction failure: %v", restoreErr)
+			u.logger.Error("⚠️  CRITICAL: System may be in inconsistent state!")
+		} else {
+			u.logger.Info("✅ Backup restored successfully - system recovered")
 		}
 		return fmt.Errorf("failed to extract update: %w", err)
 	}
+	u.logger.Info("✅ Archive extracted successfully")
 
 	// Find the new executable
+	u.logger.Info("Looking for executable in extracted files...")
 	newExePath, err := u.findExecutable(extractPath)
 	if err != nil {
+		u.logger.Error("❌ Could not find executable in archive: %v", err)
+		u.logger.Info("🔄 Attempting to restore backup...")
+		
 		// Restore backup if we can't find the executable
 		if restoreErr := u.restoreBackup(backupPath); restoreErr != nil {
-			u.logger.Error("Failed to restore backup after missing executable: %v", restoreErr)
+			u.logger.Error("❌ Failed to restore backup after missing executable: %v", restoreErr)
+		} else {
+			u.logger.Info("✅ Backup restored successfully")
 		}
 		return fmt.Errorf("failed to find new executable: %w", err)
 	}
+	u.logger.Info("✅ Found new executable: %s", newExePath)
 
 	// CRITICAL: Verify the new binary is valid before replacing
+	u.logger.Info("Verifying new binary integrity...")
 	if err := u.verifyNewBinary(newExePath); err != nil {
+		u.logger.Error("❌ Binary verification failed: %v", err)
+		u.logger.Info("🔄 Attempting to restore backup...")
+		
 		// Restore backup if binary verification fails
 		if restoreErr := u.restoreBackup(backupPath); restoreErr != nil {
-			u.logger.Error("Failed to restore backup after binary verification failure: %v", restoreErr)
+			u.logger.Error("❌ Failed to restore backup after binary verification failure: %v", restoreErr)
+		} else {
+			u.logger.Info("✅ Backup restored successfully")
 		}
 		return fmt.Errorf("new binary verification failed: %w", err)
 	}
+	u.logger.Info("✅ Binary verification passed")
 
 	// Replace current executable (attempt graceful stop if running as a service or in-place)
 	if err := u.prepareForReplacement(); err != nil {
@@ -626,7 +649,7 @@ func (u *UpdaterService) copyFile(src, dst string) error {
 func (u *UpdaterService) restoreBackup(backupPath string) error {
 	u.logger.Info("Restoring backup from: %s", backupPath)
 	err := u.copyFile(backupPath, u.currentExePath)
-	
+
 	// If regular copy fails due to permissions, try with sudo
 	if err != nil && u.shouldAttemptSudo(err) {
 		u.logger.Warn("Permission issue during backup restoration, attempting with sudo...")
@@ -641,7 +664,7 @@ func (u *UpdaterService) restoreBackup(backupPath string) error {
 		u.logger.Info("Backup restored successfully via sudo")
 		return nil
 	}
-	
+
 	return err
 }
 
