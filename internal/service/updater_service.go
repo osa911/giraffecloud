@@ -233,7 +233,7 @@ func (u *UpdaterService) InstallUpdate(downloadPath string) error {
 	if err := u.extractArchive(downloadPath, extractPath); err != nil {
 		u.logger.Error("❌ Extraction failed: %v", err)
 		u.logger.Info("🔄 Attempting to restore backup to recover...")
-		
+
 		// Restore backup on extraction failure
 		if restoreErr := u.restoreBackup(backupPath); restoreErr != nil {
 			u.logger.Error("❌ Failed to restore backup after extraction failure: %v", restoreErr)
@@ -251,7 +251,7 @@ func (u *UpdaterService) InstallUpdate(downloadPath string) error {
 	if err != nil {
 		u.logger.Error("❌ Could not find executable in archive: %v", err)
 		u.logger.Info("🔄 Attempting to restore backup...")
-		
+
 		// Restore backup if we can't find the executable
 		if restoreErr := u.restoreBackup(backupPath); restoreErr != nil {
 			u.logger.Error("❌ Failed to restore backup after missing executable: %v", restoreErr)
@@ -267,7 +267,7 @@ func (u *UpdaterService) InstallUpdate(downloadPath string) error {
 	if err := u.verifyNewBinary(newExePath); err != nil {
 		u.logger.Error("❌ Binary verification failed: %v", err)
 		u.logger.Info("🔄 Attempting to restore backup...")
-		
+
 		// Restore backup if binary verification fails
 		if restoreErr := u.restoreBackup(backupPath); restoreErr != nil {
 			u.logger.Error("❌ Failed to restore backup after binary verification failure: %v", restoreErr)
