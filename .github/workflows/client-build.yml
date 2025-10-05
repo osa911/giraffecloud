@@ -90,32 +90,16 @@ jobs:
           TIMESTAMP=$(date +%Y%m%d)
 
           if [[ "${{ steps.channel.outputs.channel }}" == "stable" ]]; then
-            # For stable: Use semantic versioning from VERSION file
-            if [[ -f VERSION ]]; then
-              BASE_VERSION=$(cat VERSION | tr -d '[:space:]')
-              
-              # Auto-increment patch version for each build
-              # Parse version: X.Y.Z
-              IFS='.' read -r MAJOR MINOR PATCH <<< "$BASE_VERSION"
-              PATCH=$((PATCH + 1))
-              NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
-              
-              # Update VERSION file for next build (will be committed later)
-              echo "$NEW_VERSION" > VERSION
-              
-              VERSION="v${NEW_VERSION}"
-              RELEASE_TAG="v${NEW_VERSION}"
-              SHORT_VERSION="v${NEW_VERSION}"
-              
-              echo "📦 Stable Release: $VERSION (auto-incremented from $BASE_VERSION)"
-            else
-              # Fallback if VERSION file doesn't exist
-              echo "⚠️  WARNING: VERSION file not found, using v1.0.0"
-              VERSION="v1.0.0"
-              RELEASE_TAG="v1.0.0"
-              SHORT_VERSION="v1.0.0"
-              echo "1.0.0" > VERSION
-            fi
+            # For stable: Use git commit count for automatic incrementing
+            # This gives us v1.0.0, v1.0.1, v1.0.2 etc. automatically!
+            COMMIT_COUNT=$(git rev-list --count HEAD)
+
+            # Version format: v1.0.<commit_count>
+            VERSION="v1.0.${COMMIT_COUNT}"
+            RELEASE_TAG="v1.0.${COMMIT_COUNT}"
+            SHORT_VERSION="v1.0.${COMMIT_COUNT}"
+
+            echo "📦 Stable Release: $VERSION (based on commit count: $COMMIT_COUNT)"
           else
             # For test: Keep test builds with commit hash for easy identification
             if [[ "${{ github.event_name }}" == "pull_request" ]]; then
@@ -140,29 +124,19 @@ jobs:
           echo "Release tag: $RELEASE_TAG"
           echo "Short version: $SHORT_VERSION"
 
-      - name: Commit VERSION file (stable only)
-        if: steps.channel.outputs.channel == 'stable'
-        run: |
-          # Configure git
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          
-          # Commit updated VERSION file
-          if [[ -f VERSION ]]; then
-            git add VERSION
-            git commit -m "chore: bump version to $(cat VERSION)" || echo "No changes to commit"
-            git push origin main || echo "Failed to push VERSION file"
-          fi
-
       - name: Create git tag (stable only)
         if: steps.channel.outputs.channel == 'stable'
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          
+
+          # Configure git for tagging
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
           # Create and push tag
           git tag "$VERSION" -m "Release $VERSION" || echo "Tag already exists"
           git push origin "$VERSION" || echo "Failed to push tag"
-          
+
           echo "✅ Created git tag: $VERSION"
 
   # Build client binaries

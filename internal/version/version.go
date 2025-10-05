@@ -196,12 +196,12 @@ func CompareVersions(v1, v2 string) int {
 	//   - OLD FORMAT: 0.0.1-stable.cc38be6 (legacy, being phased out)
 	commitHash1 := extractCommitFromVersion(v1)
 	commitHash2 := extractCommitFromVersion(v2)
-	
+
 	// If both have commit hashes and they match -> SAME VERSION!
 	if commitHash1 != "" && commitHash2 != "" && commitHash1 == commitHash2 {
 		return 0
 	}
-	
+
 	// Handle legacy stable builds with commit hashes (OLD FORMAT)
 	// These are being phased out in favor of pure semantic versioning
 	isLegacyStable1 := strings.Contains(v1, "-stable.")
@@ -215,7 +215,7 @@ func CompareVersions(v1, v2 string) int {
 			return 0
 		}
 	}
-	
+
 	// NEW: Handle semantic versions vs legacy stable builds
 	// Pure semantic version (X.Y.Z) is ALWAYS newer than legacy stable (X.Y.Z-stable.<hash>)
 	if !isLegacyStable1 && isLegacyStable2 && commitHash1 == "" {

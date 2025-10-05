@@ -1,6 +1,6 @@
 {
   "minimum_versions": {
-    "stable": "v1.0.0",
+    "stable": "v0.0.0",
     "beta": "v0.0.0",
     "test": "v0.0.0"
   },
