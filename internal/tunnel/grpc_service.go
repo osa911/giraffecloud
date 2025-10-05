@@ -325,9 +325,11 @@ func (s *GRPCTunnelServer) EstablishTunnel(stream proto.TunnelService_EstablishT
 		s.cleanupTunnelStreamState(tunnelStream)
 
 		// CRITICAL: Remove Caddy route when tunnel disconnects (RESTORED FROM OLD HANDSHAKE)
+		// NOTE: Use background context for cleanup since the tunnel context is already cancelled
 		if s.tunnelService != nil {
 			s.logger.Info("🔧 Removing Caddy route for disconnected tunnel: %s", tunnel.Domain)
-			if err := s.tunnelService.UpdateClientIP(ctx, uint32(tunnel.ID), ""); err != nil {
+			cleanupCtx := context.Background()
+			if err := s.tunnelService.UpdateClientIP(cleanupCtx, uint32(tunnel.ID), ""); err != nil {
 				s.logger.Error("Failed to remove Caddy route: %v", err)
 			} else {
 				s.logger.Info("✅ Successfully removed Caddy route for domain: %s", tunnel.Domain)
