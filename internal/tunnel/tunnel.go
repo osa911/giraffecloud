@@ -1502,13 +1502,22 @@ func (t *Tunnel) establishTCPTunnelOnDemand(establishReq *proto.TunnelEstablishR
 	// OPTIMIZATION: Prevent concurrent establishment attempts
 	t.wsReconnectMu.Lock()
 
-	// Check if TCP tunnel already exists
+	// Check if TCP tunnel already exists and is still healthy
 	if t.wsConn != nil {
-		t.wsReconnectMu.Unlock()
-		atomic.AddInt64(&t.tcpEstablishmentSkips, 1)
-		t.logger.Info("TCP tunnel already exists for domain: %s (skipped establishments: %d)",
-			establishReq.Domain, atomic.LoadInt64(&t.tcpEstablishmentSkips))
-		return nil
+		// CRITICAL: Verify the connection is still alive before claiming success
+		if t.isConnectionHealthy(t.wsConn) {
+			t.wsReconnectMu.Unlock()
+			atomic.AddInt64(&t.tcpEstablishmentSkips, 1)
+			t.logger.Info("TCP tunnel already exists and is healthy for domain: %s (skipped establishments: %d)",
+				establishReq.Domain, atomic.LoadInt64(&t.tcpEstablishmentSkips))
+			return nil
+		}
+
+		// Connection is dead - close it and establish a new one
+		t.logger.Warn("Existing TCP tunnel is dead, re-establishing for domain: %s", establishReq.Domain)
+		t.wsConn.Close()
+		t.wsConn = nil
+		// Fall through to establish new connection
 	}
 
 	// Check if establishment is already in progress
