@@ -83,7 +83,7 @@ export const AuthProvider = ({ children, initialUser }: AuthProviderProps) => {
       startTransition(() => {
         void registerWithEmail(registerData);
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error signing up:", error);
       throw error;
     }

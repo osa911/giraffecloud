@@ -19,7 +19,7 @@ export default function LoginPage() {
     setError("");
     try {
       await signIn(email, password);
-    } catch (error) {
+    } catch {
       setError("Failed to sign in. Please check your credentials.");
     } finally {
       setLoading(false);
@@ -31,8 +31,8 @@ export default function LoginPage() {
     setError("");
     try {
       await signInWithGoogle();
-    } catch (error: any) {
-      if (error.message === "popup-closed") {
+    } catch (error: unknown) {
+      if (error instanceof Error && error.message === "popup-closed") {
         setError("Sign in was cancelled.");
       } else {
         setError("Failed to sign in with Google.");
@@ -107,7 +107,7 @@ export default function LoginPage() {
           </Button>
           <Box sx={{ textAlign: "center" }}>
             <Link href="/auth/register" variant="body2">
-              Don't have an account? Sign Up
+              Don&apos;t have an account? Sign Up
             </Link>
           </Box>
         </Box>

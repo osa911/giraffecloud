@@ -15,7 +15,7 @@ export default function PrivacyPolicyPage() {
             Privacy Policy
           </Typography>
           <Typography paragraph color="text.secondary">
-            This Privacy Policy describes how GiraffeCloud ("we", "us") collects and uses personal
+            This Privacy Policy describes how GiraffeCloud (&quot;we&quot;, &quot;us&quot;) collects and uses personal
             information in connection with our services.
           </Typography>
 

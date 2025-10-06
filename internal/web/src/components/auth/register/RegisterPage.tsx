@@ -25,7 +25,7 @@ export default function RegisterPage() {
     setError("");
     try {
       await signUp(email, password, name);
-    } catch (error) {
+    } catch {
       setError("Failed to create an account.");
     } finally {
       setLoading(false);
@@ -37,7 +37,7 @@ export default function RegisterPage() {
     setError("");
     try {
       await signInWithGoogle();
-    } catch (error) {
+    } catch {
       setError("Failed to sign up with Google.");
     } finally {
       setLoading(false);

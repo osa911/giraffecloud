@@ -15,8 +15,9 @@ export default function TermsPage() {
             Terms of Service
           </Typography>
           <Typography color="text.secondary">
-            These Terms of Service ("Terms") govern your access to and use of the GiraffeCloud
-            services (the "Service"). By using the Service, you agree to be bound by these Terms.
+            These Terms of Service (&quot;Terms&quot;) govern your access to and use of the
+            GiraffeCloud services (the &quot;Service&quot;). By using the Service, you agree to be
+            bound by these Terms.
           </Typography>
 
           <Typography variant="h5" gutterBottom sx={{ mt: 4 }}>
@@ -64,8 +65,8 @@ export default function TermsPage() {
             6. Disclaimers and Limitation of Liability
           </Typography>
           <Typography>
-            The Service is provided "as is" without warranties of any kind. To the maximum extent
-            permitted by law, GiraffeCloud shall not be liable for indirect or consequential
+            The Service is provided &quot;as is&quot; without warranties of any kind. To the maximum
+            extent permitted by law, GiraffeCloud shall not be liable for indirect or consequential
             damages.
           </Typography>
 

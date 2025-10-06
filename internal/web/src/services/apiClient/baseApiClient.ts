@@ -12,13 +12,13 @@ const UNSAFE_METHODS = ["post", "put", "patch", "delete"] as const;
 const AUTH_ENDPOINTS = ["/auth/login", "/auth/register"] as const;
 
 // Define the standard API response structure
-interface APIResponse<T> {
+export interface APIResponse<T> {
   success: boolean;
   data?: T;
   error?: {
     code: string;
     message: string;
-    details?: any;
+    details?: unknown;
   };
 }
 
@@ -83,7 +83,11 @@ const baseApiClient = (httpClient: HttpClient, params?: BaseApiClientParams) => 
       return response.data.data as T;
     },
 
-    post: async <T>(endpoint: string, data?: any, config: AxiosRequestConfig = {}): Promise<T> => {
+    post: async <T>(
+      endpoint: string,
+      data?: unknown,
+      config: AxiosRequestConfig = {},
+    ): Promise<T> => {
       const url = `${baseURL}${endpoint}`;
       config.method = "post";
       config.url = url;
@@ -91,7 +95,11 @@ const baseApiClient = (httpClient: HttpClient, params?: BaseApiClientParams) => 
       return response.data.data as T;
     },
 
-    put: async <T>(endpoint: string, data?: any, config: AxiosRequestConfig = {}): Promise<T> => {
+    put: async <T>(
+      endpoint: string,
+      data?: unknown,
+      config: AxiosRequestConfig = {},
+    ): Promise<T> => {
       const url = `${baseURL}${endpoint}`;
       config.method = "put";
       config.url = url;

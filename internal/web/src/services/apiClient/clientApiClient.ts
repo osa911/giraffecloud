@@ -1,6 +1,6 @@
-import axios, { AxiosInstance, InternalAxiosRequestConfig, AxiosResponse } from "axios";
+import axios, { AxiosInstance, AxiosResponse, AxiosError } from "axios";
 import toast from "react-hot-toast";
-import baseApiClient, { BaseApiClientParams, CSRF_COOKIE_NAME } from "./baseApiClient";
+import baseApiClient, { BaseApiClientParams, CSRF_COOKIE_NAME, APIResponse } from "./baseApiClient";
 
 const baseURL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
@@ -29,14 +29,20 @@ axiosClient.interceptors.response.use(
     }
     return response;
   },
-  (error: any) => {
+  (error: AxiosError<APIResponse<unknown>>) => {
     // Log the error in development only
     if (process.env.NODE_ENV === "development") {
       console.error("API Error:", error.response?.status, error.response?.data, error.config?.url);
     }
 
     // Handle CSRF errors
-    if (error.response?.status === 403 && error.response?.data?.error?.message?.includes("CSRF")) {
+    const csrfErrorMessage = error.response?.data?.error?.message || "";
+
+    if (
+      error.response?.status === 403 &&
+      typeof csrfErrorMessage === "string" &&
+      csrfErrorMessage.includes("CSRF")
+    ) {
       toast.error("Security token expired. Please refresh the page.");
       return Promise.reject(new Error("CSRF token invalid"));
     }
@@ -56,9 +62,8 @@ axiosClient.interceptors.response.use(
       }
     }
 
-    // Show error toast - adapted for new error format
-    const errorMessage =
-      error.response?.data?.error?.message || error.response?.data?.message || "An error occurred";
+    // Show error toast
+    const errorMessage = error.response?.data?.error?.message || "An error occurred";
     toast.error(errorMessage);
 
     return Promise.reject(error);

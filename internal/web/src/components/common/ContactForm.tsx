@@ -23,7 +23,7 @@ export default function ContactForm() {
       setName("");
       setEmail("");
       setMessage("");
-    } catch (err) {
+    } catch {
       toast.error("Failed to send. Please try again.");
     } finally {
       setLoading(false);

@@ -37,7 +37,7 @@ serverAxios.interceptors.response.use(async (response) => {
       const [nameValue, ...options] = cookieStr.split("; ");
       const [name, value] = nameValue.split("=");
 
-      const cookieOptions: any = {};
+      const cookieOptions: Record<string, unknown> = {};
       options.forEach((opt) => {
         const [key, val = true] = opt.toLowerCase().split("=");
         switch (key) {

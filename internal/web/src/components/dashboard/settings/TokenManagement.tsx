@@ -149,7 +149,7 @@ const TokenManagement: React.FC = () => {
           {newTokenValue ? (
             <Box sx={{ mt: 2 }}>
               <Typography variant="body2" color="error" gutterBottom>
-                Make sure to copy your token now. You won't be able to see it again!
+                Make sure to copy your token now. You won&apos;t be able to see it again!
               </Typography>
               <TextField
                 fullWidth

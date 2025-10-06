@@ -18,7 +18,6 @@ import {
 } from "@mui/material";
 import { Edit as EditIcon, Delete as DeleteIcon } from "@mui/icons-material";
 import { format } from "date-fns";
-import toast from "react-hot-toast";
 import TunnelDialog from "./TunnelDialog";
 import { useTunnels } from "@/hooks/useTunnels";
 import type { Tunnel } from "@/types/tunnel";

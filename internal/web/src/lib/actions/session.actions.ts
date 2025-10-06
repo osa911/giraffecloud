@@ -2,13 +2,7 @@
 
 import serverApi from "@/services/apiClient/serverApiClient";
 import { getAuthUser } from "./auth.actions";
-import {
-  SessionResponse,
-  ListSessionsResponse,
-  GetSessionsAction,
-  RevokeSessionAction,
-  RevokeAllSessionsAction,
-} from "./session.types";
+import { GetSessionsAction, RevokeSessionAction, RevokeAllSessionsAction } from "./session.types";
 
 // Session Management Actions
 export const getSessions: GetSessionsAction = async () => {
