@@ -33,18 +33,38 @@ async function callAuthEndpointWithCookies<T>(
     const cookieStore = await cookies();
 
     setCookieHeaders.forEach((cookieStr) => {
-      const [nameValue, ...options] = cookieStr.split("; ");
-      const [name, value] = nameValue.split("=");
+      const parts = cookieStr.split("; ");
+      const nameValue = parts[0];
+      if (!nameValue) return;
 
-      const cookieOptions: Record<string, any> = {};
+      const nameValueParts = nameValue.split("=");
+      const name = nameValueParts[0];
+      const value = nameValueParts[1];
+      if (!name || !value) return;
+
+      const options = parts.slice(1);
+
+      const cookieOptions: {
+        path?: string;
+        maxAge?: number;
+        secure?: boolean;
+        httpOnly?: boolean;
+        sameSite?: "lax" | "strict" | "none" | boolean;
+      } = {};
       options.forEach((opt) => {
         const [key, val = true] = opt.toLowerCase().split("=");
+        if (!key) return;
+
         switch (key) {
           case "path":
-            cookieOptions.path = val;
+            if (typeof val === "string") {
+              cookieOptions.path = val;
+            }
             break;
           case "max-age":
-            cookieOptions.maxAge = parseInt(val as string);
+            if (typeof val === "string") {
+              cookieOptions.maxAge = parseInt(val);
+            }
             break;
           case "secure":
             cookieOptions.secure = true;
@@ -53,7 +73,15 @@ async function callAuthEndpointWithCookies<T>(
             cookieOptions.httpOnly = true;
             break;
           case "samesite":
-            cookieOptions.sameSite = val;
+            // Type guard for sameSite values
+            if (typeof val === "string") {
+              const lowerVal = val.toLowerCase();
+              if (lowerVal === "lax" || lowerVal === "strict" || lowerVal === "none") {
+                cookieOptions.sameSite = lowerVal;
+              }
+            } else {
+              cookieOptions.sameSite = val;
+            }
             break;
         }
       });
