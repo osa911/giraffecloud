@@ -25,74 +25,15 @@ serverAxios.interceptors.request.use(async (config) => {
   return config;
 });
 
-// Add response interceptor to forward Set-Cookie headers from Go backend
-serverAxios.interceptors.response.use(
-  async (response) => {
-    // Get Set-Cookie headers from Go backend
-    const setCookieHeaders = response.headers["set-cookie"];
-    if (!setCookieHeaders) {
-      return response;
-    }
-
-    // Try to set cookies - this only works in Server Actions, not SSR
-    try {
-      const cookieStore = await cookies();
-
-      // Parse and set each cookie
-      setCookieHeaders.forEach((cookieStr) => {
-        const [nameValue, ...options] = cookieStr.split("; ");
-        const [name, value] = nameValue.split("=");
-
-        const cookieOptions: Record<string, unknown> = {};
-        options.forEach((opt) => {
-          const [key, val = true] = opt.toLowerCase().split("=");
-          switch (key) {
-            case "path":
-              cookieOptions.path = val;
-              break;
-            case "domain":
-              cookieOptions.domain = val;
-              break;
-            case "max-age":
-              cookieOptions.maxAge = parseInt(val as string);
-              break;
-            case "secure":
-              cookieOptions.secure = true;
-              break;
-            case "httponly":
-              cookieOptions.httpOnly = true;
-              break;
-            case "samesite":
-              cookieOptions.sameSite = val;
-              break;
-          }
-        });
-
-        // Set the cookie (forwarding from Go backend to browser)
-        cookieStore.set(name, value, cookieOptions);
-      });
-    } catch (error) {
-      // Cookie modification failed - likely called during SSR/page rendering
-      // This is expected and safe to ignore (SSR shouldn't be setting cookies anyway)
-      // Important: We still return the response successfully - the data is what matters
-      if (process.env.NODE_ENV === "development") {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        // Only warn about unexpected errors, not the expected SSR case
-        if (!errorMessage.includes("Server Action or Route Handler")) {
-          console.warn("Failed to set cookies from backend:", errorMessage);
-        }
-      }
-    }
-
-    // Always return response, even if cookie setting failed
-    return response;
-  },
-  async (error) => {
-    // Don't try to clear cookies here - it will fail during SSR
-    // Cookie cleanup happens in Server Actions (getAuthUser, logout)
-    return Promise.reject(error);
-  },
-);
+// NOTE: No response interceptor for cookie handling
+//
+// Cookie forwarding is handled explicitly in Server Actions (login, register)
+// where we have direct access to response headers and can properly set cookies.
+//
+// The interceptor approach doesn't work because:
+// - Server Action responses don't automatically forward Set-Cookie headers to browser
+// - We need to manually extract headers and set cookies using Next.js cookies() API
+// - This must be done in the Server Action itself, not in an interceptor
 
 // Create and export the server API client
 const serverApi = (params?: BaseApiClientParams) => {

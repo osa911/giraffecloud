@@ -15,6 +15,57 @@ import {
 
 const USER_DATA_COOKIE_NAME = "user_data";
 
+/**
+ * Helper to make auth API calls that set cookies
+ * Uses serverApi().postRaw() to access Set-Cookie headers from backend
+ */
+async function callAuthEndpointWithCookies<T>(
+  method: "post",
+  endpoint: string,
+  data?: unknown,
+): Promise<T> {
+  // Use serverApi().postRaw() to get full response with headers
+  const response = await serverApi().postRaw<T>(endpoint, data);
+
+  // Forward Set-Cookie headers from Go backend to browser
+  const setCookieHeaders = response.headers["set-cookie"];
+  if (setCookieHeaders) {
+    const cookieStore = await cookies();
+
+    setCookieHeaders.forEach((cookieStr) => {
+      const [nameValue, ...options] = cookieStr.split("; ");
+      const [name, value] = nameValue.split("=");
+
+      const cookieOptions: Record<string, any> = {};
+      options.forEach((opt) => {
+        const [key, val = true] = opt.toLowerCase().split("=");
+        switch (key) {
+          case "path":
+            cookieOptions.path = val;
+            break;
+          case "max-age":
+            cookieOptions.maxAge = parseInt(val as string);
+            break;
+          case "secure":
+            cookieOptions.secure = true;
+            break;
+          case "httponly":
+            cookieOptions.httpOnly = true;
+            break;
+          case "samesite":
+            cookieOptions.sameSite = val;
+            break;
+        }
+      });
+
+      cookieStore.set(name, value, cookieOptions);
+    });
+  }
+
+  // Return data in the same format as serverApi()
+  return response.data.data as T;
+}
+
 export const loginWithTokenAction = async (
   prevState: undefined,
   newState: LoginWithTokenFormState,
@@ -49,13 +100,13 @@ export async function registerWithEmailAction(
 }
 
 export async function login(data: LoginRequest): Promise<User> {
-  const { user } = await serverApi().post<UserResponse>("/auth/login", data);
+  const { user } = await callAuthEndpointWithCookies<UserResponse>("post", "/auth/login", data);
   await setUserDataCookie(user);
   return user;
 }
 
 export async function register(data: RegisterRequest): Promise<User> {
-  const { user } = await serverApi().post<UserResponse>("/auth/register", data);
+  const { user } = await callAuthEndpointWithCookies<UserResponse>("post", "/auth/register", data);
   await setUserDataCookie(user);
   return user;
 }

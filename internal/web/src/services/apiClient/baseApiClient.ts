@@ -1,4 +1,4 @@
-import { AxiosInstance, AxiosRequestConfig } from "axios";
+import { AxiosResponse, AxiosInstance, AxiosRequestConfig } from "axios";
 
 // Constants for CSRF handling
 export const CSRF_COOKIE_NAME = "csrf_token";
@@ -74,12 +74,22 @@ const baseApiClient = (httpClient: HttpClient, params?: BaseApiClientParams) => 
     return config;
   };
 
+  // Helper to prepare URL and config
+  const prepareRequest = async (
+    endpoint: string,
+    method: string,
+    config: AxiosRequestConfig = {},
+  ): Promise<{ url: string; config: AxiosRequestConfig }> => {
+    const url = `${baseURL}${endpoint}`;
+    config.method = method;
+    config.url = url;
+    return { url, config: await addCsrfToken(config) };
+  };
+
   return {
     get: async <T>(endpoint: string, config: AxiosRequestConfig = {}): Promise<T> => {
-      const url = `${baseURL}${endpoint}`;
-      config.method = "get";
-      config.url = url;
-      const response = await httpClient.get<APIResponse<T>>(url, await addCsrfToken(config));
+      const { url, config: finalConfig } = await prepareRequest(endpoint, "get", config);
+      const response = await httpClient.get<APIResponse<T>>(url, finalConfig);
       return response.data.data as T;
     },
 
@@ -88,11 +98,22 @@ const baseApiClient = (httpClient: HttpClient, params?: BaseApiClientParams) => 
       data?: unknown,
       config: AxiosRequestConfig = {},
     ): Promise<T> => {
-      const url = `${baseURL}${endpoint}`;
-      config.method = "post";
-      config.url = url;
-      const response = await httpClient.post<APIResponse<T>>(url, data, await addCsrfToken(config));
+      const { url, config: finalConfig } = await prepareRequest(endpoint, "post", config);
+      const response = await httpClient.post<APIResponse<T>>(url, data, finalConfig);
       return response.data.data as T;
+    },
+
+    /**
+     * Post with full response (includes headers)
+     * Useful when you need access to Set-Cookie or other response headers
+     */
+    postRaw: async <T>(
+      endpoint: string,
+      data?: unknown,
+      config: AxiosRequestConfig = {},
+    ): Promise<AxiosResponse<APIResponse<T>>> => {
+      const { url, config: finalConfig } = await prepareRequest(endpoint, "post", config);
+      return await httpClient.post<APIResponse<T>>(url, data, finalConfig);
     },
 
     put: async <T>(
@@ -100,18 +121,14 @@ const baseApiClient = (httpClient: HttpClient, params?: BaseApiClientParams) => 
       data?: unknown,
       config: AxiosRequestConfig = {},
     ): Promise<T> => {
-      const url = `${baseURL}${endpoint}`;
-      config.method = "put";
-      config.url = url;
-      const response = await httpClient.put<APIResponse<T>>(url, data, await addCsrfToken(config));
+      const { url, config: finalConfig } = await prepareRequest(endpoint, "put", config);
+      const response = await httpClient.put<APIResponse<T>>(url, data, finalConfig);
       return response.data.data as T;
     },
 
     delete: async <T>(endpoint: string, config: AxiosRequestConfig = {}): Promise<T> => {
-      const url = `${baseURL}${endpoint}`;
-      config.method = "delete";
-      config.url = url;
-      const response = await httpClient.delete<APIResponse<T>>(url, await addCsrfToken(config));
+      const { url, config: finalConfig } = await prepareRequest(endpoint, "delete", config);
+      const response = await httpClient.delete<APIResponse<T>>(url, finalConfig);
       return response.data.data as T;
     },
   };
