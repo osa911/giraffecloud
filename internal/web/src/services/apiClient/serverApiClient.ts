@@ -6,6 +6,7 @@ import baseApiClient, {
   BaseApiClientParams,
   CSRF_COOKIE_NAME,
 } from "@/services/apiClient/baseApiClient";
+import { clearAllAuthCookies } from "@/lib/actions/auth.actions";
 
 const serverAxios = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080",
@@ -26,49 +27,64 @@ serverAxios.interceptors.request.use(async (config) => {
 });
 
 // Add response interceptor to handle cookies
-serverAxios.interceptors.response.use(async (response) => {
-  const cookieStore = await cookies();
+serverAxios.interceptors.response.use(
+  async (response) => {
+    const cookieStore = await cookies();
 
-  // Get Set-Cookie headers from Go backend
-  const setCookieHeaders = response.headers["set-cookie"];
-  if (setCookieHeaders) {
-    // Parse and set each cookie
-    setCookieHeaders.forEach((cookieStr) => {
-      const [nameValue, ...options] = cookieStr.split("; ");
-      const [name, value] = nameValue.split("=");
+    // Get Set-Cookie headers from Go backend
+    const setCookieHeaders = response.headers["set-cookie"];
+    if (setCookieHeaders) {
+      // Parse and set each cookie
+      setCookieHeaders.forEach((cookieStr) => {
+        const [nameValue, ...options] = cookieStr.split("; ");
+        const [name, value] = nameValue.split("=");
 
-      const cookieOptions: Record<string, unknown> = {};
-      options.forEach((opt) => {
-        const [key, val = true] = opt.toLowerCase().split("=");
-        switch (key) {
-          case "path":
-            cookieOptions.path = val;
-            break;
-          case "domain":
-            cookieOptions.domain = val;
-            break;
-          case "max-age":
-            cookieOptions.maxAge = parseInt(val as string);
-            break;
-          case "secure":
-            cookieOptions.secure = true;
-            break;
-          case "httponly":
-            cookieOptions.httpOnly = true;
-            break;
-          case "samesite":
-            cookieOptions.sameSite = val;
-            break;
-        }
+        const cookieOptions: Record<string, unknown> = {};
+        options.forEach((opt) => {
+          const [key, val = true] = opt.toLowerCase().split("=");
+          switch (key) {
+            case "path":
+              cookieOptions.path = val;
+              break;
+            case "domain":
+              cookieOptions.domain = val;
+              break;
+            case "max-age":
+              cookieOptions.maxAge = parseInt(val as string);
+              break;
+            case "secure":
+              cookieOptions.secure = true;
+              break;
+            case "httponly":
+              cookieOptions.httpOnly = true;
+              break;
+            case "samesite":
+              cookieOptions.sameSite = val;
+              break;
+          }
+        });
+
+        // Set the cookie in the browser
+        cookieStore.set(name, value, cookieOptions);
       });
+    }
 
-      // Set the cookie in the browser
-      cookieStore.set(name, value, cookieOptions);
-    });
-  }
+    return response;
+  },
+  async (error) => {
+    // Handle 401/403 errors by clearing auth cookies
+    if (error.response?.status === 401 || error.response?.status === 403) {
+      // Reuse the centralized cookie cleanup logic
+      await clearAllAuthCookies();
 
-  return response;
-});
+      if (process.env.NODE_ENV === "development") {
+        console.log("Cleared stale auth cookies due to", error.response?.status);
+      }
+    }
+
+    return Promise.reject(error);
+  },
+);
 
 // Create and export the server API client
 const serverApi = (params?: BaseApiClientParams) => {

@@ -29,14 +29,15 @@ import {
 import { useAuth } from "@/contexts/AuthProvider";
 import Link from "@/components/common/Link";
 import { User } from "@/lib/actions/user.types";
+import { ROUTES } from "@/constants/routes";
 // import Image from "next/image";
 const drawerWidth = 240;
 
 const menuItems = [
-  { text: "Dashboard", icon: <DashboardIcon />, path: "/dashboard" },
-  { text: "Tunnels", icon: <TunnelIcon />, path: "/dashboard/tunnels" },
-  { text: "Profile", icon: <ProfileIcon />, path: "/dashboard/profile" },
-  { text: "Settings", icon: <SettingsIcon />, path: "/dashboard/settings" },
+  { text: "Dashboard", icon: <DashboardIcon />, path: ROUTES.DASHBOARD.HOME },
+  { text: "Tunnels", icon: <TunnelIcon />, path: ROUTES.DASHBOARD.TUNNELS },
+  { text: "Profile", icon: <ProfileIcon />, path: ROUTES.DASHBOARD.PROFILE },
+  { text: "Settings", icon: <SettingsIcon />, path: ROUTES.DASHBOARD.SETTINGS },
 ];
 
 interface DashboardLayoutClientProps {

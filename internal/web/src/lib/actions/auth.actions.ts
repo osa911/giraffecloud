@@ -3,6 +3,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import serverApi from "@/services/apiClient/serverApiClient";
+import { ROUTES } from "@/constants/routes";
 import { User as FirebaseUser } from "firebase/auth";
 import { UserResponse, User } from "./user.types";
 import {
@@ -26,7 +27,7 @@ export const loginWithTokenAction = async (
     console.error("Error logging in:", error);
   } finally {
     if (user) {
-      redirect("/dashboard");
+      redirect(ROUTES.DASHBOARD.HOME);
     }
   }
 };
@@ -42,7 +43,7 @@ export async function registerWithEmailAction(
     console.error("Error registering:", error);
   } finally {
     if (user) {
-      redirect("/dashboard");
+      redirect(ROUTES.DASHBOARD.HOME);
     }
   }
 }
@@ -61,8 +62,32 @@ export async function register(data: RegisterRequest): Promise<User> {
 
 export async function logout(): Promise<void> {
   await serverApi().post("/auth/logout");
-  await setUserDataCookie(null);
-  redirect("/auth/login");
+  await clearAllAuthCookies();
+  redirect(ROUTES.AUTH.LOGIN);
+}
+
+/**
+ * Helper to clear all authentication cookies (SERVER-SIDE ONLY)
+ *
+ * This is the centralized server-side implementation used by:
+ * - logout()
+ * - getAuthUser() on errors
+ * - serverApiClient error interceptor
+ *
+ * NOTE: There's a similar clearAuthCookies() in clientApiClient.ts for client-side.
+ * They can't be shared because:
+ * - This uses Next.js cookies() API (server-side)
+ * - Client uses document.cookie (browser API)
+ * - Server actions ("use server") can't be imported in client code
+ *
+ * If you add/remove cookies, update BOTH implementations!
+ */
+export async function clearAllAuthCookies(): Promise<void> {
+  const cookieStore = await cookies();
+  cookieStore.delete("session");
+  cookieStore.delete("auth_token");
+  cookieStore.delete("csrf_token");
+  cookieStore.delete(USER_DATA_COOKIE_NAME);
 }
 
 export async function getAuthUser(): Promise<User>;
@@ -88,9 +113,11 @@ export async function getAuthUser(options = { redirect: true }): Promise<User | 
     }
   } catch (error) {
     console.error("Error verifying session:", error);
+    // Clear cookies if API call failed (likely 401/403)
+    await clearAllAuthCookies();
   } finally {
     if (options.redirect && !user) {
-      redirect("/auth/login");
+      redirect(ROUTES.AUTH.LOGIN);
     }
   }
 
