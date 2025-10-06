@@ -116,8 +116,20 @@ export async function getAuthUser(options = { redirect: true }): Promise<User | 
     }
   } catch (error) {
     console.error("Error verifying session:", error);
-    // Clear cookies if API call failed (likely 401/403)
-    await clearAllAuthCookies();
+    // Try to clear cookies if API call failed (likely 401/403)
+    // This may fail if called during SSR, which is okay
+    try {
+      await clearAllAuthCookies();
+    } catch (cookieError) {
+      // Cookie clearing failed - likely during SSR, safe to ignore
+      if (process.env.NODE_ENV === "development") {
+        const errorMessage =
+          cookieError instanceof Error ? cookieError.message : String(cookieError);
+        if (!errorMessage.includes("Server Action or Route Handler")) {
+          console.warn("Failed to clear auth cookies:", errorMessage);
+        }
+      }
+    }
   } finally {
     if (options.redirect && !user) {
       redirect(ROUTES.AUTH.LOGIN);

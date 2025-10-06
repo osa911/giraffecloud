@@ -74,15 +74,17 @@ serverAxios.interceptors.response.use(
     } catch (error) {
       // Cookie modification failed - likely called during SSR/page rendering
       // This is expected and safe to ignore (SSR shouldn't be setting cookies anyway)
+      // Important: We still return the response successfully - the data is what matters
       if (process.env.NODE_ENV === "development") {
-        // Only log in development, and only if it's not the expected SSR case
         const errorMessage = error instanceof Error ? error.message : String(error);
+        // Only warn about unexpected errors, not the expected SSR case
         if (!errorMessage.includes("Server Action or Route Handler")) {
           console.warn("Failed to set cookies from backend:", errorMessage);
         }
       }
     }
 
+    // Always return response, even if cookie setting failed
     return response;
   },
   async (error) => {
