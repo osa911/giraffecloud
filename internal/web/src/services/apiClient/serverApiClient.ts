@@ -25,14 +25,19 @@ serverAxios.interceptors.request.use(async (config) => {
   return config;
 });
 
-// Add response interceptor to handle cookies
+// Add response interceptor to forward Set-Cookie headers from Go backend
 serverAxios.interceptors.response.use(
   async (response) => {
-    const cookieStore = await cookies();
-
     // Get Set-Cookie headers from Go backend
     const setCookieHeaders = response.headers["set-cookie"];
-    if (setCookieHeaders) {
+    if (!setCookieHeaders) {
+      return response;
+    }
+
+    // Try to set cookies - this only works in Server Actions, not SSR
+    try {
+      const cookieStore = await cookies();
+
       // Parse and set each cookie
       setCookieHeaders.forEach((cookieStr) => {
         const [nameValue, ...options] = cookieStr.split("; ");
@@ -63,33 +68,26 @@ serverAxios.interceptors.response.use(
           }
         });
 
-        // Set the cookie in the browser
+        // Set the cookie (forwarding from Go backend to browser)
         cookieStore.set(name, value, cookieOptions);
       });
+    } catch (error) {
+      // Cookie modification failed - likely called during SSR/page rendering
+      // This is expected and safe to ignore (SSR shouldn't be setting cookies anyway)
+      if (process.env.NODE_ENV === "development") {
+        // Only log in development, and only if it's not the expected SSR case
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        if (!errorMessage.includes("Server Action or Route Handler")) {
+          console.warn("Failed to set cookies from backend:", errorMessage);
+        }
+      }
     }
 
     return response;
   },
   async (error) => {
-    // DON'T clear cookies here - this interceptor runs during SSR/page rendering
-    // where cookie modifications aren't allowed by Next.js
-    //
-    // Cookie cleanup happens in Server Actions instead:
-    // - getAuthUser() clears cookies when API returns 401/403
-    // - logout() clears all auth cookies
-    // - Client-side: clientApiClient interceptor clears browser cookies
-
-    if (
-      process.env.NODE_ENV === "development" &&
-      (error.response?.status === 401 || error.response?.status === 403)
-    ) {
-      console.log(
-        "Server API error:",
-        error.response?.status,
-        "- cookies will be cleared by auth action",
-      );
-    }
-
+    // Don't try to clear cookies here - it will fail during SSR
+    // Cookie cleanup happens in Server Actions (getAuthUser, logout)
     return Promise.reject(error);
   },
 );
