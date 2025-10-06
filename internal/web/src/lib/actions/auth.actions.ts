@@ -71,14 +71,17 @@ export async function logout(): Promise<void> {
  *
  * This is the centralized server-side implementation used by:
  * - logout()
- * - getAuthUser() on errors
- * - serverApiClient error interceptor
+ * - getAuthUser() on errors (catches 401/403 from API)
  *
  * NOTE: There's a similar clearAuthCookies() in clientApiClient.ts for client-side.
  * They can't be shared because:
  * - This uses Next.js cookies() API (server-side)
  * - Client uses document.cookie (browser API)
  * - Server actions ("use server") can't be imported in client code
+ * - This can ONLY be called from Server Actions, not from axios interceptors
+ *
+ * IMPORTANT: Don't call this from serverApiClient interceptor - it runs during
+ * SSR where cookie modifications aren't allowed by Next.js.
  *
  * If you add/remove cookies, update BOTH implementations!
  */

@@ -70,3 +70,4 @@ export function isDashboardRoute(path: string): boolean {
 export function isAuthRoute(path: string): boolean {
   return path === ROUTES.AUTH.LOGIN || path === ROUTES.AUTH.REGISTER;
 }
+

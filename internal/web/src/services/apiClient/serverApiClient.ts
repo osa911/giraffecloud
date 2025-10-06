@@ -6,7 +6,6 @@ import baseApiClient, {
   BaseApiClientParams,
   CSRF_COOKIE_NAME,
 } from "@/services/apiClient/baseApiClient";
-import { clearAllAuthCookies } from "@/lib/actions/auth.actions";
 
 const serverAxios = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080",
@@ -72,14 +71,23 @@ serverAxios.interceptors.response.use(
     return response;
   },
   async (error) => {
-    // Handle 401/403 errors by clearing auth cookies
-    if (error.response?.status === 401 || error.response?.status === 403) {
-      // Reuse the centralized cookie cleanup logic
-      await clearAllAuthCookies();
+    // DON'T clear cookies here - this interceptor runs during SSR/page rendering
+    // where cookie modifications aren't allowed by Next.js
+    //
+    // Cookie cleanup happens in Server Actions instead:
+    // - getAuthUser() clears cookies when API returns 401/403
+    // - logout() clears all auth cookies
+    // - Client-side: clientApiClient interceptor clears browser cookies
 
-      if (process.env.NODE_ENV === "development") {
-        console.log("Cleared stale auth cookies due to", error.response?.status);
-      }
+    if (
+      process.env.NODE_ENV === "development" &&
+      (error.response?.status === 401 || error.response?.status === 403)
+    ) {
+      console.log(
+        "Server API error:",
+        error.response?.status,
+        "- cookies will be cleared by auth action",
+      );
     }
 
     return Promise.reject(error);
