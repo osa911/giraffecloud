@@ -13,6 +13,13 @@ interface DashboardPageProps {
   initialStats: DashboardStats;
 }
 
+function formatBytes(bytes: number): string {
+  if (bytes <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
+}
+
 export default function DashboardPage({ initialStats }: DashboardPageProps) {
   return (
     <Box>
@@ -40,7 +47,7 @@ export default function DashboardPage({ initialStats }: DashboardPageProps) {
           <Card>
             <CardHeader title="Total Traffic" />
             <CardContent>
-              <Typography variant="h3">{initialStats.totalTraffic} GB</Typography>
+              <Typography variant="h3">{formatBytes(initialStats.totalTraffic)}</Typography>
             </CardContent>
           </Card>
         </Grid>
