@@ -24,11 +24,20 @@ func NewUsageHandler(db *ent.Client, quota service.QuotaService) *UsageHandler {
 
 // GetSummary returns current cycle usage summary for the authenticated user
 func (h *UsageHandler) GetSummary(c *gin.Context) {
-	userID := uint32(c.GetUint(constants.ContextKeyUserID))
-	if userID == 0 {
-		utils.HandleAPIError(c, nil, common.ErrCodeUnauthorized, "Unauthorized")
+	// Get user from context (set by auth middleware)
+	userModel, exists := c.Get(constants.ContextKeyUser)
+	if !exists {
+		utils.HandleAPIError(c, nil, common.ErrCodeUnauthorized, "User not found in context")
 		return
 	}
+
+	currentUser, ok := userModel.(*ent.User)
+	if !ok {
+		utils.HandleAPIError(c, nil, common.ErrCodeInternalServer, "Invalid user type in context")
+		return
+	}
+
+	userID := currentUser.ID
 
 	// Today summary (daily aggregation)
 	dayStart := time.Now().UTC().Truncate(24 * time.Hour)
