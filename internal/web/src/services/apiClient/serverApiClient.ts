@@ -1,10 +1,13 @@
 "use server";
 
 import { cookies } from "next/headers";
-import axios from "axios";
+import axios, { AxiosError } from "axios";
 import baseApiClient, {
   BaseApiClientParams,
   CSRF_COOKIE_NAME,
+  SESSION_COOKIE_NAME,
+  AUTH_TOKEN_COOKIE_NAME,
+  USER_DATA_COOKIE_NAME,
 } from "@/services/apiClient/baseApiClient";
 
 const serverAxios = axios.create({
@@ -25,15 +28,37 @@ serverAxios.interceptors.request.use(async (config) => {
   return config;
 });
 
-// NOTE: No response interceptor for cookie handling
-//
-// Cookie forwarding is handled explicitly in Server Actions (login, register)
+// Add response interceptor for error handling
+serverAxios.interceptors.response.use(
+  (response) => response,
+  async (error: AxiosError) => {
+    // Handle 401 Unauthorized - clear stale cookies
+    if (error.response?.status === 401) {
+      try {
+        const cookieStore = await cookies();
+        cookieStore.delete(SESSION_COOKIE_NAME);
+        cookieStore.delete(AUTH_TOKEN_COOKIE_NAME);
+        cookieStore.delete(CSRF_COOKIE_NAME);
+        cookieStore.delete(USER_DATA_COOKIE_NAME);
+      } catch (cookieError) {
+        // Cookie clearing failed - likely during SSR/static generation
+        // This is expected and safe to ignore - the client-side will handle it
+        if (process.env.NODE_ENV === "development") {
+          const errorMessage =
+            cookieError instanceof Error ? cookieError.message : String(cookieError);
+          if (!errorMessage.includes("Server Action or Route Handler")) {
+            console.warn("Failed to clear cookies on 401:", errorMessage);
+          }
+        }
+      }
+    }
+    return Promise.reject(error);
+  },
+);
+
+// NOTE: Set-Cookie header forwarding is handled explicitly in Server Actions (login, register)
 // where we have direct access to response headers and can properly set cookies.
-//
-// The interceptor approach doesn't work because:
-// - Server Action responses don't automatically forward Set-Cookie headers to browser
-// - We need to manually extract headers and set cookies using Next.js cookies() API
-// - This must be done in the Server Action itself, not in an interceptor
+// This must be done in the Server Action itself, not in an interceptor.
 
 // Create and export the server API client
 const serverApi = (params?: BaseApiClientParams) => {

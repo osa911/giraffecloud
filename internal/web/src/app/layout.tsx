@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { AppRouterCacheProvider } from "@mui/material-nextjs/v15-appRouter";
 import { AuthProvider } from "@/contexts/AuthProvider";
+import CookieValidator from "@/components/auth/CookieValidator";
 import { ThemeProvider } from "@mui/material/styles";
 import CssBaseline from "@mui/material/CssBaseline";
 import theme from "@/styles/theme";
@@ -36,6 +37,7 @@ export default async function RootServerLayout({ children }: RootServerLayoutPro
         <AppRouterCacheProvider>
           <ThemeProvider theme={theme}>
             <CssBaseline />
+            <CookieValidator hasServerAuth={!!initialUser} />
             <AuthProvider initialUser={initialUser}>{children}</AuthProvider>
             <Toaster />
           </ThemeProvider>
