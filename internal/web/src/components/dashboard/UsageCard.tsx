@@ -4,10 +4,17 @@ import useSWR from "swr";
 import clientApi from "@/services/apiClient/clientApiClient";
 
 type UsageSummary = {
-  period_start: string;
-  bytes_in: number;
-  bytes_out: number;
-  requests: number;
+  day: {
+    period_start: string;
+    bytes_in: number;
+    bytes_out: number;
+    requests: number;
+  };
+  month: {
+    used_bytes: number;
+    limit_bytes: number;
+    decision: string;
+  };
 };
 
 const fetcher = (endpoint: string) => {
@@ -15,18 +22,14 @@ const fetcher = (endpoint: string) => {
 };
 
 export default function UsageCard({ monthlyLimitBytes }: { monthlyLimitBytes?: number }) {
-  // const { data } = useSWR<UsageSummary>("/usage/summary", fetcher, {
-  //   refreshInterval: 15000,
-  //   revalidateOnFocus: false,
-  //   dedupingInterval: 5000,
-  //   errorRetryInterval: 30000,
-  //   errorRetryCount: 3,
-  // });
-  const data = {
-    bytes_in: 0,
-    bytes_out: 0,
-  };
-  const used = (data?.bytes_in ?? 0) + (data?.bytes_out ?? 0);
+  const { data } = useSWR<UsageSummary>("/usage/summary", fetcher, {
+    refreshInterval: 15000,
+    revalidateOnFocus: false,
+    dedupingInterval: 5000,
+    errorRetryInterval: 30000,
+    errorRetryCount: 3,
+  });
+  const used = (data?.day?.bytes_in ?? 0) + (data?.day?.bytes_out ?? 0);
   const hasLimit = typeof monthlyLimitBytes === "number" && monthlyLimitBytes > 0;
   const pct = hasLimit
     ? Math.min(100, Math.round((used / (monthlyLimitBytes as number)) * 100))
