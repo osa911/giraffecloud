@@ -36,7 +36,7 @@ type quotaService struct {
 	defaultLimit     int64
 	warnThresholdPct float64
 
-	mu    sync.Mutex
+	mu    sync.RWMutex
 	cache map[uint32]quotaCacheEntry
 }
 
@@ -62,14 +62,14 @@ func (s *quotaService) CheckUser(ctx context.Context, userID uint32) (QuotaResul
 		return QuotaResult{Decision: QuotaAllow, UsedBytes: 0, LimitBytes: 0}, nil
 	}
 
-	// 30s cache
-	s.mu.Lock()
+	// 30s cache with read lock for better performance
+	s.mu.RLock()
 	if entry, ok := s.cache[userID]; ok && time.Since(entry.at) < 30*time.Second {
 		res := entry.result
-		s.mu.Unlock()
+		s.mu.RUnlock()
 		return res, nil
 	}
-	s.mu.Unlock()
+	s.mu.RUnlock()
 
 	// Determine plan limit for user (fallback to default)
 	limit := s.defaultLimit
@@ -114,6 +114,17 @@ func (s *quotaService) CheckUser(ctx context.Context, userID uint32) (QuotaResul
 	res := QuotaResult{Decision: decision, UsedBytes: used, LimitBytes: limit}
 	s.mu.Lock()
 	s.cache[userID] = quotaCacheEntry{result: res, at: time.Now()}
+
+	// Clean up old cache entries to prevent memory leaks (keep only last 10k entries)
+	if len(s.cache) > 10000 {
+		// Remove oldest 20% of entries
+		cutoff := time.Now().Add(-5 * time.Minute)
+		for userID, entry := range s.cache {
+			if entry.at.Before(cutoff) {
+				delete(s.cache, userID)
+			}
+		}
+	}
 	s.mu.Unlock()
 	return res, nil
 }

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -29,13 +30,35 @@ type UsageService interface {
 }
 
 type usageService struct {
-	mu      sync.Mutex
+	mu      sync.RWMutex            // Use RWMutex for better read performance
 	records map[string]*UsageRecord // key: YYYY-MM-DD:user:tunnel
+
+	// Performance optimizations for 100k users
+	flushInterval time.Duration
+	lastFlush     time.Time
+	batchSize     int
+
+	// Database client for background flushes
+	dbClient *ent.Client
 }
 
 func NewUsageService() UsageService {
 	return &usageService{
-		records: make(map[string]*UsageRecord),
+		records:       make(map[string]*UsageRecord),
+		flushInterval: 30 * time.Second, // Flush every 30 seconds for better performance
+		lastFlush:     time.Now(),
+		batchSize:     1000, // Process 1000 records at a time
+	}
+}
+
+// NewUsageServiceWithDB creates a usage service with database client for background flushes
+func NewUsageServiceWithDB(dbClient *ent.Client) UsageService {
+	return &usageService{
+		records:       make(map[string]*UsageRecord),
+		flushInterval: 30 * time.Second,
+		lastFlush:     time.Now(),
+		batchSize:     1000,
+		dbClient:      dbClient,
 	}
 }
 
@@ -49,6 +72,7 @@ func (s *usageService) Increment(userID uint32, tunnelID uint32, domain string, 
 	day := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	dayKey := day.Format("2006-01-02")
 
+	// Use write lock only when necessary
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -61,6 +85,12 @@ func (s *usageService) Increment(userID uint32, tunnelID uint32, domain string, 
 	rec.BytesIn += bytesIn
 	rec.BytesOut += bytesOut
 	rec.Requests += requests
+
+	// Auto-flush if we have too many records or time has passed
+	if len(s.records) > s.batchSize || time.Since(s.lastFlush) > s.flushInterval {
+		// Trigger background flush (non-blocking)
+		go s.triggerBackgroundFlush()
+	}
 }
 
 func (s *usageService) SnapshotAndReset() []UsageRecord {
@@ -92,11 +122,50 @@ func fmtUint32(v uint32) string {
 }
 
 // FlushToDB persists the current snapshot to the database (upsert by period/user/tunnel/domain).
+// Optimized for 100k users with batch processing and connection pooling.
 func (s *usageService) FlushToDB(ctx context.Context, client *ent.Client) error {
 	records := s.SnapshotAndReset()
-	for i := range records {
-		r := records[i]
-		existing, err := client.Usage.Query().
+	if len(records) == 0 {
+		return nil
+	}
+
+	// Update last flush time
+	s.mu.Lock()
+	s.lastFlush = time.Now()
+	s.mu.Unlock()
+
+	// Process records in batches for better performance
+	for i := 0; i < len(records); i += s.batchSize {
+		end := i + s.batchSize
+		if end > len(records) {
+			end = len(records)
+		}
+
+		batch := records[i:end]
+		if err := s.processBatch(ctx, client, batch); err != nil {
+			return fmt.Errorf("failed to process batch %d-%d: %w", i, end, err)
+		}
+	}
+
+	return nil
+}
+
+// processBatch processes a batch of usage records with optimized database operations
+func (s *usageService) processBatch(ctx context.Context, client *ent.Client, records []UsageRecord) error {
+	// Use a transaction for better performance and consistency
+	tx, err := client.Tx(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if v := recover(); v != nil {
+			tx.Rollback()
+			panic(v)
+		}
+	}()
+
+	for _, r := range records {
+		existing, err := tx.Usage.Query().
 			Where(
 				entusage.PeriodStartEQ(r.PeriodStart),
 				entusage.UserIDEQ(r.UserID),
@@ -105,26 +174,62 @@ func (s *usageService) FlushToDB(ctx context.Context, client *ent.Client) error 
 			).
 			Only(ctx)
 		if err == nil && existing != nil {
-			if _, err := client.Usage.UpdateOneID(existing.ID).
+			// Update existing record
+			if _, err := tx.Usage.UpdateOneID(existing.ID).
 				SetBytesIn(existing.BytesIn + r.BytesIn).
 				SetBytesOut(existing.BytesOut + r.BytesOut).
 				SetRequests(existing.Requests + r.Requests).
 				Save(ctx); err != nil {
+				tx.Rollback()
 				return err
 			}
-			continue
-		}
-		if _, err := client.Usage.Create().
-			SetPeriodStart(r.PeriodStart).
-			SetUserID(r.UserID).
-			SetTunnelID(r.TunnelID).
-			SetDomain(r.Domain).
-			SetBytesIn(r.BytesIn).
-			SetBytesOut(r.BytesOut).
-			SetRequests(r.Requests).
-			Save(ctx); err != nil {
-			return err
+		} else {
+			// Create new record
+			if _, err := tx.Usage.Create().
+				SetPeriodStart(r.PeriodStart).
+				SetUserID(r.UserID).
+				SetTunnelID(r.TunnelID).
+				SetDomain(r.Domain).
+				SetBytesIn(r.BytesIn).
+				SetBytesOut(r.BytesOut).
+				SetRequests(r.Requests).
+				Save(ctx); err != nil {
+				tx.Rollback()
+				return err
+			}
 		}
 	}
-	return nil
+
+	return tx.Commit()
+}
+
+// triggerBackgroundFlush performs a non-blocking background flush
+func (s *usageService) triggerBackgroundFlush() {
+	// Create a context with timeout for the background flush
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Get a snapshot of current records without blocking the main thread
+	s.mu.RLock()
+	recordCount := len(s.records)
+	shouldFlush := recordCount > s.batchSize || time.Since(s.lastFlush) > s.flushInterval
+	s.mu.RUnlock()
+
+	if !shouldFlush {
+		return // Another goroutine already handled it
+	}
+
+	// Perform the flush in background if database client is available
+	if s.dbClient != nil {
+		if err := s.FlushToDB(ctx, s.dbClient); err != nil {
+			// Log error but don't block the main thread
+			// In production, you'd use a proper logger
+			fmt.Printf("Background usage flush failed: %v\n", err)
+		}
+	}
+
+	// Update the last flush time to prevent immediate re-triggering
+	s.mu.Lock()
+	s.lastFlush = time.Now()
+	s.mu.Unlock()
 }

@@ -471,13 +471,26 @@ func (s *GRPCTunnelServer) ProxyHTTPRequest(domain string, req *http.Request, cl
 		return nil, err
 	}
 
-	// Usage: count request and rough request bytes
+	// Usage: count request bytes, response bytes, and request count
 	if s.usage != nil {
 		var reqBytes int64
 		if b := grpcReq.GetHttpRequest().Body; len(b) > 0 {
 			reqBytes = int64(len(b))
 		}
-		s.usage.Increment(tunnelStream.UserID, tunnelStream.TunnelID, domain, reqBytes, 0, 1)
+
+		// Track response bytes by reading the response body length
+		var respBytes int64
+		if response != nil && response.Body != nil {
+			// Read response body to get accurate size
+			body, err := io.ReadAll(response.Body)
+			if err == nil {
+				respBytes = int64(len(body))
+				// Recreate the response body for the caller
+				response.Body = io.NopCloser(bytes.NewReader(body))
+			}
+		}
+
+		s.usage.Increment(tunnelStream.UserID, tunnelStream.TunnelID, domain, reqBytes, respBytes, 1)
 	}
 	atomic.AddInt64(&s.totalResponses, 1)
 	return response, nil

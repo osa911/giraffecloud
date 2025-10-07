@@ -161,7 +161,7 @@ func (s *Server) Init() error {
 	csrfService := service.NewCSRFService()
 	versionService := service.NewVersionService(s.db.DB)
 	planService := service.NewPlanService(s.db.DB)
-	usageService := service.NewUsageService()
+	usageService := service.NewUsageServiceWithDB(s.db.DB)
 	quotaService := service.NewQuotaService(s.db.DB)
 	logger.Info("Core services initialized")
 
