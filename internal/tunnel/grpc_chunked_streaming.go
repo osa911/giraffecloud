@@ -369,6 +369,12 @@ func (s *GRPCTunnelServer) handleLargeFileUploadWithStreaming(domain string, htt
 			if n > 0 {
 				data := make([]byte, n)
 				copy(data, buf[:n])
+
+				// Track request bytes for this chunk
+				if s.usage != nil && tunnelStream != nil {
+					s.usage.Increment(tunnelStream.UserID, tunnelStream.TunnelID, tunnelStream.Domain, int64(n), 0, 0)
+				}
+
 				chunkMsg := &proto.TunnelMessage{
 					RequestId: requestID,
 					Timestamp: time.Now().Unix(),
@@ -545,6 +551,11 @@ func (s *GRPCTunnelServer) collectChunkedResponse(tunnelStream *TunnelStream, re
 						chunkCount++
 
 						if len(chunk.Body) > 0 {
+							// Track traffic for this chunk
+							if s.usage != nil && tunnelStream != nil {
+								s.usage.Increment(tunnelStream.UserID, tunnelStream.TunnelID, tunnelStream.Domain, 0, int64(len(chunk.Body)), 0)
+							}
+
 							// MEMORY EFFICIENT: Write chunk directly to pipe (no buffering)
 							if _, writeErr := pipeWriter.Write(chunk.Body); writeErr != nil {
 								// Client disconnected (broken pipe) - SEND CANCEL SIGNAL to stop client immediately
@@ -596,6 +607,11 @@ func (s *GRPCTunnelServer) collectChunkedResponse(tunnelStream *TunnelStream, re
 						}
 					} else {
 						// Non-chunked response - write entire body and finish
+						// Track traffic for non-chunked response
+						if s.usage != nil && tunnelStream != nil && len(chunk.Body) > 0 {
+							s.usage.Increment(tunnelStream.UserID, tunnelStream.TunnelID, tunnelStream.Domain, 0, int64(len(chunk.Body)), 0)
+						}
+
 						if _, writeErr := pipeWriter.Write(chunk.Body); writeErr != nil {
 							errorCh <- fmt.Errorf("failed to write non-chunked response: %w", writeErr)
 							return
@@ -718,6 +734,11 @@ func (s *GRPCTunnelServer) collectChunkedResponseNoSend(tunnelStream *TunnelStre
 					if chunk.IsChunked {
 						chunkCount++
 						if len(chunk.Body) > 0 {
+							// Track traffic for this chunk
+							if s.usage != nil && tunnelStream != nil {
+								s.usage.Increment(tunnelStream.UserID, tunnelStream.TunnelID, tunnelStream.Domain, 0, int64(len(chunk.Body)), 0)
+							}
+
 							if _, err := pipeWriter.Write(chunk.Body); err != nil {
 								errorCh <- fmt.Errorf("failed to write chunk to pipe: %w", err)
 								return
@@ -727,6 +748,11 @@ func (s *GRPCTunnelServer) collectChunkedResponseNoSend(tunnelStream *TunnelStre
 							return
 						}
 					} else {
+						// Track traffic for non-chunked response
+						if s.usage != nil && tunnelStream != nil && len(chunk.Body) > 0 {
+							s.usage.Increment(tunnelStream.UserID, tunnelStream.TunnelID, tunnelStream.Domain, 0, int64(len(chunk.Body)), 0)
+						}
+
 						if _, err := pipeWriter.Write(chunk.Body); err != nil {
 							errorCh <- fmt.Errorf("failed to write non-chunked response: %w", err)
 							return
