@@ -8,7 +8,8 @@ const CONSENT_COOKIE_NAME = "gc_cookie_consent";
 function readConsent(): "accepted" | "rejected" | null {
   if (typeof document === "undefined") return null;
   const match = document.cookie.match(new RegExp(`${CONSENT_COOKIE_NAME}=([^;]+)`));
-  return match ? (decodeURIComponent(match[1]) as "accepted" | "rejected") : null;
+  if (!match || !match[1]) return null;
+  return decodeURIComponent(match[1]) as "accepted" | "rejected";
 }
 
 function writeConsent(value: "accepted" | "rejected") {
