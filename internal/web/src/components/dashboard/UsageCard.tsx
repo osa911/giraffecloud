@@ -15,13 +15,17 @@ const fetcher = (endpoint: string) => {
 };
 
 export default function UsageCard({ monthlyLimitBytes }: { monthlyLimitBytes?: number }) {
-  const { data } = useSWR<UsageSummary>("/usage/summary", fetcher, {
-    refreshInterval: 15000,
-    revalidateOnFocus: false,
-    dedupingInterval: 5000,
-    errorRetryInterval: 30000,
-    errorRetryCount: 3,
-  });
+  // const { data } = useSWR<UsageSummary>("/usage/summary", fetcher, {
+  //   refreshInterval: 15000,
+  //   revalidateOnFocus: false,
+  //   dedupingInterval: 5000,
+  //   errorRetryInterval: 30000,
+  //   errorRetryCount: 3,
+  // });
+  const data = {
+    bytes_in: 0,
+    bytes_out: 0,
+  };
   const used = (data?.bytes_in ?? 0) + (data?.bytes_out ?? 0);
   const hasLimit = typeof monthlyLimitBytes === "number" && monthlyLimitBytes > 0;
   const pct = hasLimit
