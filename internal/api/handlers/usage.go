@@ -24,7 +24,7 @@ func NewUsageHandler(db *ent.Client, quota service.QuotaService) *UsageHandler {
 
 // GetSummary returns current cycle usage summary for the authenticated user
 func (h *UsageHandler) GetSummary(c *gin.Context) {
-	userID := c.GetUint(constants.ContextKeyUserID)
+	userID := uint32(c.GetUint(constants.ContextKeyUserID))
 	if userID == 0 {
 		utils.HandleAPIError(c, nil, common.ErrCodeUnauthorized, "Unauthorized")
 		return
