@@ -226,7 +226,7 @@ export async function getAuthUser(options = { redirect: true }): Promise<User | 
             await clearAllAuthCookies();
             return null;
           }
-        } catch (apiError) {
+        } catch {
           // API call failed (likely 401) - clear stale cookies
           await clearAllAuthCookies();
           return null;
