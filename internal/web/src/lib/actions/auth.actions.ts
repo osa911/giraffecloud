@@ -3,6 +3,13 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import serverApi from "@/services/apiClient/serverApiClient";
+import {
+  SESSION_COOKIE_NAME,
+  AUTH_TOKEN_COOKIE_NAME,
+  USER_DATA_COOKIE_NAME,
+  USER_DATA_CACHE_TTL,
+  CSRF_COOKIE_NAME,
+} from "@/services/apiClient/baseApiClient";
 import { ROUTES } from "@/constants/routes";
 import { User as FirebaseUser } from "firebase/auth";
 import { UserResponse, User } from "./user.types";
@@ -13,7 +20,11 @@ import {
   LoginWithTokenFormState,
 } from "./auth.types";
 
-const USER_DATA_COOKIE_NAME = "user_data";
+// Type for cached user data with timestamp
+type CachedUserData = {
+  user: User;
+  cachedAt: number;
+};
 
 /**
  * Helper to make auth API calls that set cookies
@@ -166,9 +177,9 @@ export async function logout(): Promise<void> {
  */
 export async function clearAllAuthCookies(): Promise<void> {
   const cookieStore = await cookies();
-  cookieStore.delete("session");
-  cookieStore.delete("auth_token");
-  cookieStore.delete("csrf_token");
+  cookieStore.delete(SESSION_COOKIE_NAME);
+  cookieStore.delete(AUTH_TOKEN_COOKIE_NAME);
+  cookieStore.delete(CSRF_COOKIE_NAME);
   cookieStore.delete(USER_DATA_COOKIE_NAME);
 }
 
@@ -179,23 +190,66 @@ export async function getAuthUser(options = { redirect: true }): Promise<User | 
   let user: User | null = null;
 
   try {
-    // Try cookie first
-    const cookieData = await getUserDataFromCookie();
-    if (cookieData) {
-      user = cookieData;
-      return user;
+    const cookieStore = await cookies();
+    const sessionCookie = cookieStore.get(SESSION_COOKIE_NAME);
+    const authTokenCookie = cookieStore.get(AUTH_TOKEN_COOKIE_NAME);
+    const cachedUserData = await getCachedUserData();
+
+    // Check for consistency: if we have session cookies AND user_data, check cache validity
+    const hasSessionCookies = !!(sessionCookie || authTokenCookie);
+
+    if (hasSessionCookies && cachedUserData) {
+      const { user: cachedUser, cachedAt } = cachedUserData;
+      const now = Date.now();
+      const cacheAge = now - cachedAt;
+
+      if (cacheAge < USER_DATA_CACHE_TTL) {
+        // Cache is still fresh - trust it
+        user = cachedUser;
+        return user;
+      } else {
+        // Cache is stale - validate with API
+        try {
+          const data = await serverApi().get<{ valid: boolean; user?: User }>("/auth/session");
+          if (data.valid && data.user) {
+            user = data.user;
+            await setUserDataCookie(data.user);
+            return user;
+          } else {
+            // Session is invalid - clear everything
+            await clearAllAuthCookies();
+            return null;
+          }
+        } catch (apiError) {
+          // API call failed (likely 401) - clear stale cookies
+          await clearAllAuthCookies();
+          return null;
+        }
+      }
     }
 
-    // Fallback to API
-    const data = await serverApi().get<{ valid: boolean; user?: User }>("/auth/session");
-    if (data.valid && data.user) {
-      user = data.user;
-      await setUserDataCookie(data.user);
-      return user;
+    if (!hasSessionCookies && cachedUserData) {
+      // Inconsistent state: user_data exists but no session cookies
+      // This means session expired but user_data wasn't cleaned up
+      await clearAllAuthCookies();
+      return null;
     }
+
+    if (hasSessionCookies && !cachedUserData) {
+      // Session cookies exist but no user_data - fetch from API
+      const data = await serverApi().get<{ valid: boolean; user?: User }>("/auth/session");
+      if (data.valid && data.user) {
+        user = data.user;
+        await setUserDataCookie(data.user);
+        return user;
+      }
+    }
+
+    // No cookies at all - user is not authenticated
+    return null;
   } catch (error) {
     console.error("Error verifying session:", error);
-    // Try to clear cookies if API call failed (likely 401/403)
+    // API call failed (likely 401/403) - clear all auth cookies
     // This may fail if called during SSR, which is okay
     try {
       await clearAllAuthCookies();
@@ -230,7 +284,12 @@ async function setUserDataCookie(user: User | null): Promise<void> {
     return;
   }
 
-  cookieStore.set(USER_DATA_COOKIE_NAME, JSON.stringify(user), {
+  const cachedData: CachedUserData = {
+    user,
+    cachedAt: Date.now(),
+  };
+
+  cookieStore.set(USER_DATA_COOKIE_NAME, JSON.stringify(cachedData), {
     httpOnly: true,
     path: "/",
     secure: process.env.NODE_ENV === "production",
@@ -239,18 +298,34 @@ async function setUserDataCookie(user: User | null): Promise<void> {
   });
 }
 
-export async function getUserDataFromCookie(): Promise<User | null> {
+async function getCachedUserData(): Promise<CachedUserData | null> {
   try {
     const cookieStore = await cookies();
     const userDataCookie = cookieStore.get(USER_DATA_COOKIE_NAME);
     if (userDataCookie?.value) {
-      return JSON.parse(userDataCookie.value);
+      const parsed = JSON.parse(userDataCookie.value);
+
+      // Support both old format (just User) and new format (CachedUserData)
+      if (parsed.user && parsed.cachedAt) {
+        return parsed as CachedUserData;
+      } else {
+        // Old format - migrate by adding timestamp
+        return {
+          user: parsed as User,
+          cachedAt: Date.now(),
+        };
+      }
     }
     return null;
   } catch (error) {
-    console.error("Error getting user data from cookie:", error);
+    console.error("Error getting cached user data:", error);
     return null;
   }
+}
+
+export async function getUserDataFromCookie(): Promise<User | null> {
+  const cachedData = await getCachedUserData();
+  return cachedData?.user || null;
 }
 
 // Firebase token handling

@@ -1,6 +1,13 @@
 import axios, { AxiosInstance, AxiosResponse, AxiosError } from "axios";
 import toast from "react-hot-toast";
-import baseApiClient, { BaseApiClientParams, CSRF_COOKIE_NAME, APIResponse } from "./baseApiClient";
+import baseApiClient, {
+  BaseApiClientParams,
+  CSRF_COOKIE_NAME,
+  APIResponse,
+  SESSION_COOKIE_NAME,
+  AUTH_TOKEN_COOKIE_NAME,
+  USER_DATA_COOKIE_NAME,
+} from "./baseApiClient";
 import { ROUTES, isAuthRoute } from "@/constants/routes";
 
 const baseURL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
@@ -42,10 +49,10 @@ function deleteCookie(name: string): void {
  * If you add/remove cookies, update BOTH implementations!
  */
 function clearAuthCookies(): void {
-  deleteCookie("session");
-  deleteCookie("auth_token");
+  deleteCookie(SESSION_COOKIE_NAME);
+  deleteCookie(AUTH_TOKEN_COOKIE_NAME);
   deleteCookie(CSRF_COOKIE_NAME);
-  deleteCookie("user_data");
+  deleteCookie(USER_DATA_COOKIE_NAME);
 }
 
 // Response interceptor for error handling

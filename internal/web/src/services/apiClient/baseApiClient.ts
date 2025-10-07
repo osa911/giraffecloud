@@ -1,9 +1,16 @@
 import { AxiosResponse, AxiosInstance, AxiosRequestConfig } from "axios";
 
-// Constants for CSRF handling
+// Constants for cookie names
 export const CSRF_COOKIE_NAME = "csrf_token";
 export const AUTH_TOKEN_COOKIE_NAME = "auth_token";
+export const SESSION_COOKIE_NAME = "session";
+export const USER_DATA_COOKIE_NAME = "user_data";
+
+// Constants for CSRF handling
 const CSRF_HEADER_NAME = "X-CSRF-Token";
+
+// Cache TTL for user_data cookie (5 minutes)
+export const USER_DATA_CACHE_TTL = 5 * 60 * 1000;
 
 // HTTP methods that require CSRF protection
 const UNSAFE_METHODS = ["post", "put", "patch", "delete"] as const;
