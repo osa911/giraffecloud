@@ -18,29 +18,29 @@ async function fetchDashboardStats(): Promise<DashboardStats> {
     const api = serverApi();
 
     // Fetch tunnels data
-    const tunnelsResponse = await api.get<Tunnel[]>("/tunnels");
-    const tunnels = tunnelsResponse || [];
+    // // const tunnelsResponse = await api.get<Tunnel[]>("/tunnels");
+    // // const tunnels = tunnelsResponse || [];
 
-    // Calculate tunnel statistics
-    const totalTunnels = tunnels.length;
-    const activeTunnels = tunnels.filter((tunnel) => tunnel.is_active).length;
+    // // Calculate tunnel statistics
+    // const totalTunnels = tunnels.length;
+    // const activeTunnels = tunnels.filter((tunnel) => tunnel.is_active).length;
 
     // Fetch usage data for traffic statistics
     let totalTraffic = 0;
-    try {
-      const usageResponse = await api.get<UsageData>("/usage/summary");
-      if (usageResponse?.day) {
-        // Calculate total daily traffic (bytes in + bytes out)
-        totalTraffic = usageResponse.day.bytes_in + usageResponse.day.bytes_out;
-      }
-    } catch (usageError) {
-      console.warn("Could not fetch usage data:", usageError);
-      // Continue with 0 traffic if usage API fails
-    }
+    // try {
+    //   const usageResponse = await api.get<UsageData>("/usage/summary");
+    //   if (usageResponse?.day) {
+    //     // Calculate total daily traffic (bytes in + bytes out)
+    //     totalTraffic = usageResponse.day.bytes_in + usageResponse.day.bytes_out;
+    //   }
+    // } catch (usageError) {
+    //   console.warn("Could not fetch usage data:", usageError);
+    //   // Continue with 0 traffic if usage API fails
+    // }
 
     return {
-      totalTunnels,
-      activeTunnels,
+      totalTunnels: 0,
+      activeTunnels: 0,
       totalTraffic,
     };
   } catch (error) {
