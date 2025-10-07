@@ -26,7 +26,7 @@ async function fetchDashboardStats(): Promise<DashboardStats> {
     // const activeTunnels = tunnels.filter((tunnel) => tunnel.is_active).length;
 
     // Fetch usage data for traffic statistics
-    let totalTraffic = 0;
+    // let totalTraffic = 0;
     // try {
     //   const usageResponse = await api.get<UsageData>("/usage/summary");
     //   if (usageResponse?.day) {
@@ -41,7 +41,7 @@ async function fetchDashboardStats(): Promise<DashboardStats> {
     return {
       totalTunnels: 0,
       activeTunnels: 0,
-      totalTraffic,
+      totalTraffic: 0,
     };
   } catch (error) {
     console.error("Error fetching dashboard stats:", error);
