@@ -57,6 +57,7 @@ async function callAuthEndpointWithCookies<T>(
 
       const cookieOptions: {
         path?: string;
+        domain?: string;
         maxAge?: number;
         secure?: boolean;
         httpOnly?: boolean;
@@ -70,6 +71,11 @@ async function callAuthEndpointWithCookies<T>(
           case "path":
             if (typeof val === "string") {
               cookieOptions.path = val;
+            }
+            break;
+          case "domain":
+            if (typeof val === "string") {
+              cookieOptions.domain = val;
             }
             break;
           case "max-age":
