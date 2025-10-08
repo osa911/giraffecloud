@@ -16,5 +16,6 @@ func SetupProtectedRoutes(router *gin.RouterGroup, h *Handlers, m *Middleware) {
 	SetupSessionRoutes(protected, h.Session)
 	SetupTokenRoutes(protected, h.Token)
 	protected.GET("/usage/summary", h.Usage.GetSummary)
+	protected.GET("/usage/daily-history", h.Usage.GetDailyHistory)
 	// Note: Tunnel routes are set up separately in routes.go to handle both public and protected endpoints
 }
