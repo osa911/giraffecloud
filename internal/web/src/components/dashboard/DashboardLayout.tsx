@@ -28,6 +28,7 @@ import {
 } from "@mui/icons-material";
 import { useAuth } from "@/contexts/AuthProvider";
 import Link from "@/components/common/Link";
+import Footer from "@/components/common/Footer";
 import { User } from "@/lib/actions/user.types";
 import { ROUTES } from "@/constants/routes";
 // import Image from "next/image";
@@ -185,10 +186,14 @@ export default function DashboardLayoutClient({ children, user }: DashboardLayou
           flexGrow: 1,
           p: 3,
           width: { sm: `calc(100% - ${drawerWidth}px)` },
+          display: "flex",
+          flexDirection: "column",
+          minHeight: "100vh",
         }}
       >
         <Toolbar />
-        {children}
+        <Box sx={{ flexGrow: 1 }}>{children}</Box>
+        <Footer />
       </Box>
     </Box>
   );

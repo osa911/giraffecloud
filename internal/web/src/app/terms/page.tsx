@@ -1,3 +1,4 @@
+import Footer from "@/components/common/Footer";
 import { Container, Typography, Box } from "@mui/material";
 import type { Metadata } from "next";
 
@@ -91,6 +92,7 @@ export default function TermsPage() {
           </Typography>
         </Box>
       </Container>
+      <Footer />
     </main>
   );
 }

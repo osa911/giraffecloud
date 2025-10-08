@@ -32,3 +32,16 @@ export interface DashboardStats {
   activeTunnels: number;
   totalTraffic: number;
 }
+
+export interface DailyUsageEntry {
+  date: string;
+  bytes_in: number;
+  bytes_out: number;
+  requests: number;
+  total: number;
+}
+
+export interface DailyUsageHistory {
+  history: DailyUsageEntry[];
+  days: number;
+}

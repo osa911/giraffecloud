@@ -1,3 +1,4 @@
+import Footer from "@/components/common/Footer";
 import { Container, Typography, Box, Grid, Card, CardContent, Button } from "@mui/material";
 import type { Metadata } from "next";
 
@@ -73,6 +74,7 @@ export default function PricingPage() {
           </Grid>
         </Box>
       </Container>
+      <Footer />
     </main>
   );
 }

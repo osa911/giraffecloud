@@ -2,6 +2,7 @@
 
 import { Box, Grid, Typography, Card, CardContent, CardHeader } from "@mui/material";
 import UsageCard from "@/components/dashboard/UsageCard";
+import DailyUsageChart from "@/components/dashboard/DailyUsageChart";
 
 interface DashboardStats {
   totalTunnels: number;
@@ -53,6 +54,9 @@ export default function DashboardPage({ initialStats }: DashboardPageProps) {
         </Grid>
         <Grid size={{ xs: 12, md: 4 }}>
           <UsageCard monthlyLimitBytes={undefined} />
+        </Grid>
+        <Grid size={{ xs: 12 }}>
+          <DailyUsageChart />
         </Grid>
       </Grid>
     </Box>

@@ -1,4 +1,5 @@
 import Link from "@/components/common/Link";
+import Footer from "@/components/common/Footer";
 import { Container, Typography, Box } from "@mui/material";
 import type { Metadata } from "next";
 
@@ -50,6 +51,7 @@ export default function AboutPage() {
           </Typography>
         </Box>
       </Container>
+      <Footer />
     </main>
   );
 }

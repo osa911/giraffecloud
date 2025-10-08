@@ -1,4 +1,5 @@
 import Link from "@/components/common/Link";
+import Footer from "@/components/common/Footer";
 import { Button, Container, Typography, Box } from "@mui/material";
 
 export default function HomeServerPage() {
@@ -7,7 +8,7 @@ export default function HomeServerPage() {
       <Container maxWidth="lg">
         <Box
           sx={{
-            minHeight: "100vh",
+            minHeight: "calc(100vh - 150px)",
             display: "flex",
             flexDirection: "column",
             justifyContent: "center",
@@ -36,6 +37,7 @@ export default function HomeServerPage() {
           </Box>
         </Box>
       </Container>
+      <Footer />
     </main>
   );
 }

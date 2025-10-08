@@ -1,3 +1,4 @@
+import Footer from "@/components/common/Footer";
 import { Container, Typography, Box } from "@mui/material";
 import type { Metadata } from "next";
 import ContactForm from "@/components/common/ContactForm";
@@ -21,6 +22,7 @@ export default function ContactPage() {
           <ContactForm />
         </Box>
       </Container>
+      <Footer />
     </main>
   );
 }
