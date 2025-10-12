@@ -139,6 +139,18 @@ func (s *TunnelServer) acceptConnections() {
 			continue
 		}
 
+		// CRITICAL FIX: Enable TCP keepalive on accepted connections to prevent idle timeouts
+		// This fixes the "i/o timeout" errors during WebSocket bidirectional forwarding
+		if tcpConn := s.getUnderlyingTCPConn(conn); tcpConn != nil {
+			if err := tcpConn.SetKeepAlive(true); err != nil {
+				s.logger.Warn("Failed to enable TCP keepalive: %v", err)
+			} else {
+				if err := tcpConn.SetKeepAlivePeriod(30 * time.Second); err != nil {
+					s.logger.Warn("Failed to set TCP keepalive period: %v", err)
+				}
+			}
+		}
+
 		go s.handleConnection(conn)
 	}
 }
@@ -1524,4 +1536,23 @@ func (s *TunnelServer) proxyMediaRequestHybrid(domain string, clientConn net.Con
 			s.logger.Debug("[HYBRID MEDIA] Keeping fresh media connection in hot pool")
 		}
 	}
+}
+
+// getUnderlyingTCPConn extracts the underlying TCP connection from a potentially wrapped connection
+// This handles TLS-wrapped connections and returns the raw TCP connection for setting keepalive
+func (s *TunnelServer) getUnderlyingTCPConn(conn net.Conn) *net.TCPConn {
+	// If it's already a TCP connection, return it
+	if tcpConn, ok := conn.(*net.TCPConn); ok {
+		return tcpConn
+	}
+
+	// If it's a TLS connection, unwrap it to get the underlying TCP connection
+	if tlsConn, ok := conn.(*tls.Conn); ok {
+		if tcpConn, ok := tlsConn.NetConn().(*net.TCPConn); ok {
+			return tcpConn
+		}
+	}
+
+	// Unable to extract TCP connection
+	return nil
 }
