@@ -1111,6 +1111,11 @@ func (s *TunnelServer) proxyWebSocketConnectionInternal(domain string, clientCon
 			s.logger.Debug("[WEBSOCKET DEBUG] WebSocket upgrade assumed successful, starting bidirectional forwarding")
 			tunnelConn.Unlock()
 
+			// CRITICAL: Clear ALL deadlines on both connections before starting io.Copy()
+			tunnelConn.GetConn().SetDeadline(time.Time{})
+			clientConn.SetDeadline(time.Time{})
+			s.logger.Debug("[WEBSOCKET DEBUG] Cleared all deadlines for WebSocket session (malformed response path)")
+
 			// Start bidirectional copying immediately
 			errChan := make(chan error, 2)
 
@@ -1205,6 +1210,12 @@ func (s *TunnelServer) proxyWebSocketConnectionInternal(domain string, clientCon
 	// Unlock the tunnel connection after successful upgrade
 	// WebSocket data forwarding doesn't need the lock since it's bidirectional copying
 	tunnelConn.Unlock()
+
+	// CRITICAL: Clear ALL deadlines on both connections before starting io.Copy()
+	// This ensures no leftover deadlines from health checks or other operations
+	tunnelConn.GetConn().SetDeadline(time.Time{})
+	clientConn.SetDeadline(time.Time{})
+	s.logger.Debug("[WEBSOCKET DEBUG] Cleared all deadlines for WebSocket session")
 
 	// Start bidirectional copying
 	errChan := make(chan error, 2)
