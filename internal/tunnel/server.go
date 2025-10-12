@@ -143,12 +143,16 @@ func (s *TunnelServer) acceptConnections() {
 		// This fixes the "i/o timeout" errors during WebSocket bidirectional forwarding
 		if tcpConn := s.getUnderlyingTCPConn(conn); tcpConn != nil {
 			if err := tcpConn.SetKeepAlive(true); err != nil {
-				s.logger.Warn("Failed to enable TCP keepalive: %v", err)
+				s.logger.Warn("[KEEPALIVE] ❌ Failed to enable TCP keepalive: %v", err)
 			} else {
 				if err := tcpConn.SetKeepAlivePeriod(30 * time.Second); err != nil {
-					s.logger.Warn("Failed to set TCP keepalive period: %v", err)
+					s.logger.Warn("[KEEPALIVE] ❌ Failed to set TCP keepalive period: %v", err)
+				} else {
+					s.logger.Debug("[KEEPALIVE] ✅ TCP keepalive enabled: 30s period for %s", conn.RemoteAddr())
 				}
 			}
+		} else {
+			s.logger.Warn("[KEEPALIVE] ❌ Could not extract TCP connection from accepted connection (type: %T)", conn)
 		}
 
 		go s.handleConnection(conn)
