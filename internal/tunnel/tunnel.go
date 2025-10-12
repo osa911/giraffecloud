@@ -747,6 +747,12 @@ func (t *Tunnel) handleWebSocketUpgradeOnDedicatedConnection(request *http.Reque
 
 	t.logger.Info("[WEBSOCKET DEBUG] WebSocket upgrade successful, starting bidirectional forwarding")
 
+	// CRITICAL: Clear ALL deadlines on both connections before starting io.Copy()
+	// This ensures no leftover deadlines from request parsing or health checks
+	tunnelConn.SetDeadline(time.Time{})
+	localConn.SetDeadline(time.Time{})
+	t.logger.Info("[WEBSOCKET DEBUG] Cleared all deadlines for WebSocket forwarding")
+
 	// Start bidirectional copying between tunnel and local service
 	errChan := make(chan error, 2)
 
