@@ -904,33 +904,37 @@ func (t *Tunnel) startHealthMonitoring() {
 		for {
 			select {
 			case <-ticker.C:
-				// CRITICAL: Check both HTTP connection (legacy) and WebSocket connection
+			// CRITICAL: Check both HTTP connection (legacy) and WebSocket connection
 
-				// Check HTTP connection (legacy, mostly unused now)
-				if t.conn != nil {
-					t.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
-					_, err := t.conn.Write([]byte{}) // Empty write as keepalive
-					t.conn.SetWriteDeadline(time.Time{})
+			// Check HTTP connection (legacy, mostly unused now)
+			// CRITICAL: Capture connection locally to avoid race condition (TOCTOU)
+			httpConn := t.conn
+			if httpConn != nil {
+				httpConn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+				_, err := httpConn.Write([]byte{}) // Empty write as keepalive
+				httpConn.SetWriteDeadline(time.Time{})
 
-					if err != nil {
-						t.logger.Info("HTTP connection health check failed, triggering reconnection: %v", err)
-						t.coordinatedReconnect()
-						return
-					}
+				if err != nil {
+					t.logger.Info("HTTP connection health check failed, triggering reconnection: %v", err)
+					t.coordinatedReconnect()
+					return
 				}
+			}
 
-				// Check WebSocket connection (active in hybrid mode)
-				if t.wsConn != nil {
-					// Use isConnectionHealthy to detect dead connections
-					if !t.isConnectionHealthy(t.wsConn) {
-						t.logger.Warn("WebSocket connection health check failed, connection is dead")
-						t.logger.Info("Cleaning up dead WebSocket connection and notifying server")
-						// Close the dead connection
-						t.wsConn.Close()
-						t.wsConn = nil
-						// Server will request re-establishment when needed
-					}
+			// Check WebSocket connection (active in hybrid mode)
+			// CRITICAL: Capture connection locally to avoid race condition (TOCTOU)
+			wsConn := t.wsConn
+			if wsConn != nil {
+				// Use isConnectionHealthy to detect dead connections
+				if !t.isConnectionHealthy(wsConn) {
+					t.logger.Warn("WebSocket connection health check failed, connection is dead")
+					t.logger.Info("Cleaning up dead WebSocket connection and notifying server")
+					// Close the dead connection
+					wsConn.Close()
+					t.wsConn = nil
+					// Server will request re-establishment when needed
 				}
+			}
 
 				// Update last ping time
 				t.lastPing = time.Now()
