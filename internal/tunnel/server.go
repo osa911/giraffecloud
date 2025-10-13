@@ -1235,7 +1235,7 @@ func (s *TunnelServer) proxyWebSocketConnectionInternal(domain string, clientCon
 func (s *TunnelServer) getConnectionMemoryOverhead() float64 {
 	// Estimate memory per connection:
 	// - TCP connection buffers (kernel): ~16KB each (read + write)
-	// - TLS buffers: ~32KB each
+	// - TLS buffers: ~32KB each //
 	// - Application buffers: MediaBufferSize + RegularBufferSize
 	// - Connection struct + metadata: ~1KB
 
