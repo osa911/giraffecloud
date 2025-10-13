@@ -1110,17 +1110,14 @@ func (s *TunnelServer) proxyWebSocketConnectionInternal(domain string, clientCon
 			// This handles mobile apps that send WebSocket data immediately after upgrade
 			s.logger.Debug("[WEBSOCKET DEBUG] WebSocket upgrade assumed successful, starting bidirectional forwarding")
 
-			// CRITICAL FIX: Remove WebSocket connection from pool BEFORE unlocking
-			// This prevents other goroutines from accessing and setting deadlines during WebSocket forwarding
-			s.connections.RemoveConnection(domain, ConnectionTypeWebSocket)
-			s.logger.Debug("[WEBSOCKET DEBUG] Removed WebSocket connection from pool (malformed response path)")
-
-			tunnelConn.Unlock()
-
 			// CRITICAL: Clear ALL deadlines on both connections before starting io.Copy()
 			tunnelConn.GetConn().SetDeadline(time.Time{})
 			clientConn.SetDeadline(time.Time{})
 			s.logger.Debug("[WEBSOCKET DEBUG] Cleared all deadlines for WebSocket session (malformed response path)")
+
+			// IMPORTANT: Keep the connection LOCKED during WebSocket forwarding
+			defer tunnelConn.Unlock()
+			s.logger.Debug("[WEBSOCKET DEBUG] Keeping connection locked during WebSocket forwarding (malformed path)")
 
 			// Start bidirectional copying immediately
 			errChan := make(chan error, 2)
@@ -1162,8 +1159,9 @@ func (s *TunnelServer) proxyWebSocketConnectionInternal(domain string, clientCon
 				s.logger.Debug("[WEBSOCKET DEBUG] WebSocket connection closed normally")
 			}
 
-			// NOTE: No need to remove from pool here - already removed before forwarding started
-			// This prevents concurrent access during active WebSocket sessions
+			// CRITICAL: Clean up dead WebSocket connection from pool after forwarding completes
+			s.logger.Info("[WEBSOCKET DEBUG] Cleaning up WebSocket connection for domain: %s (malformed path)", domain)
+			s.connections.RemoveConnection(domain, ConnectionTypeWebSocket)
 
 			s.logger.Debug("[WEBSOCKET DEBUG] WebSocket proxy completed")
 			return nil
@@ -1212,21 +1210,18 @@ func (s *TunnelServer) proxyWebSocketConnectionInternal(domain string, clientCon
 
 	s.logger.Debug("[WEBSOCKET DEBUG] WebSocket upgrade successful, starting bidirectional forwarding")
 
-	// CRITICAL FIX: Remove WebSocket connection from pool BEFORE unlocking
-	// This prevents other goroutines (health checks, new requests) from accessing
-	// and setting deadlines on this connection during active WebSocket forwarding
-	s.connections.RemoveConnection(domain, ConnectionTypeWebSocket)
-	s.logger.Debug("[WEBSOCKET DEBUG] Removed WebSocket connection from pool to prevent concurrent access")
-
-	// Unlock the tunnel connection after successful upgrade
-	// WebSocket data forwarding doesn't need the lock since it's bidirectional copying
-	tunnelConn.Unlock()
-
 	// CRITICAL: Clear ALL deadlines on both connections before starting io.Copy()
 	// This ensures no leftover deadlines from health checks or other operations
 	tunnelConn.GetConn().SetDeadline(time.Time{})
 	clientConn.SetDeadline(time.Time{})
 	s.logger.Debug("[WEBSOCKET DEBUG] Cleared all deadlines for WebSocket session")
+
+	// IMPORTANT: Keep the connection LOCKED during WebSocket forwarding
+	// The lock prevents health checks and other goroutines from setting deadlines
+	// on this connection while io.Copy() is active
+	// We'll unlock after io.Copy() completes
+	defer tunnelConn.Unlock()
+	s.logger.Debug("[WEBSOCKET DEBUG] Keeping connection locked during WebSocket forwarding")
 
 	// Start bidirectional copying
 	errChan := make(chan error, 2)
@@ -1261,8 +1256,9 @@ func (s *TunnelServer) proxyWebSocketConnectionInternal(domain string, clientCon
 		s.logger.Debug("[WEBSOCKET DEBUG] WebSocket connection closed normally")
 	}
 
-	// NOTE: No need to remove from pool here - already removed before forwarding started
-	// This prevents concurrent access during active WebSocket sessions
+	// CRITICAL: Clean up dead WebSocket connection from pool after forwarding completes
+	s.logger.Info("[WEBSOCKET DEBUG] Cleaning up WebSocket connection for domain: %s", domain)
+	s.connections.RemoveConnection(domain, ConnectionTypeWebSocket)
 
 	s.logger.Debug("[WEBSOCKET DEBUG] WebSocket proxy completed")
 	return nil
