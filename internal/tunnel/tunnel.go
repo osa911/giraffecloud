@@ -611,22 +611,11 @@ func (t *Tunnel) handleWebSocketConnection(conn net.Conn) {
 			// Handle WebSocket upgrade - this will consume the entire connection
 			t.handleWebSocketUpgradeOnDedicatedConnection(request, conn)
 
-			// OPTIMIZATION: After a WebSocket session completes, check if connection is still usable
-			// Only reconnect if the connection is actually dead
-			if !t.isConnectionHealthy(conn) {
-				atomic.AddInt64(&t.wsConnectionRecycles, 1)
-				t.logger.Info("[WEBSOCKET DEBUG] WebSocket session completed, connection unhealthy - reconnecting (total recycles: %d)",
-					atomic.LoadInt64(&t.wsConnectionRecycles))
-				t.reconnectTCPTunnelOnly()
-				return
-			}
-
-			// Connection is still healthy - reuse it for next WebSocket session
-			atomic.AddInt64(&t.wsConnectionReuses, 1)
-			t.logger.Info("[WEBSOCKET DEBUG] WebSocket session completed, connection still healthy - reusing (total reuses: %d)",
-				atomic.LoadInt64(&t.wsConnectionReuses))
-			// Continue to next iteration of the loop to handle more WebSocket requests
-			continue
+			// WebSocket session completed - this specific tunnel is now done
+			// The defer in handleWebSocketConnection() already removed it from the pool
+			// Just return to exit this goroutine - server will request a new tunnel if needed
+			t.logger.Info("[WEBSOCKET DEBUG] WebSocket session completed, tunnel connection closed")
+			return
 		}
 	}
 }

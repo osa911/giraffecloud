@@ -262,6 +262,11 @@ func (s *TunnelServer) HasWebSocketConnection(domain string) bool {
 	return s.connections.HasWebSocketConnection(domain)
 }
 
+// GetWebSocketPoolStats returns statistics about WebSocket tunnel pools
+func (s *TunnelServer) GetWebSocketPoolStats() map[string]int {
+	return s.connections.GetWebSocketPoolStats()
+}
+
 // RemoveDeadConnection removes a dead connection for the domain
 func (s *TunnelServer) RemoveDeadConnection(domain string) {
 	s.logger.Info("[CONNECTION CLEANUP] Removing dead WebSocket connection for domain: %s", domain)
@@ -1083,7 +1088,7 @@ func (s *TunnelServer) proxyWebSocketConnectionInternal(domain string, clientCon
 		}
 	}
 
-	s.logger.Debug("[WEBSOCKET DEBUG] Starting WebSocket proxy for domain: %s (pool size: %d/%d)", domain, poolSize+1, MaxWebSocketTunnelsPerDomain)
+	s.logger.Debug("[WEBSOCKET DEBUG] Starting WebSocket proxy for domain: %s (pool size: %d/%d)", domain, poolSize, MaxWebSocketTunnelsPerDomain)
 
 	// Build the WebSocket upgrade request
 	var requestData strings.Builder
