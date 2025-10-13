@@ -1088,7 +1088,16 @@ func (s *TunnelServer) proxyWebSocketConnectionInternal(domain string, clientCon
 		}
 	}
 
-	s.logger.Debug("[WEBSOCKET DEBUG] Starting WebSocket proxy for domain: %s (pool size: %d/%d)", domain, poolSize, MaxWebSocketTunnelsPerDomain)
+	// CRITICAL: Remove this tunnel from the pool IMMEDIATELY before using it
+	// This prevents other requests from trying to use the same tunnel while it's busy
+	s.connections.RemoveSpecificWebSocketConnection(domain, tunnelConn)
+	s.logger.Debug("[WEBSOCKET DEBUG] Removed tunnel from pool, now starting WebSocket proxy for domain: %s (pool size: %d/%d)", domain, poolSize, MaxWebSocketTunnelsPerDomain)
+
+	// Ensure tunnel connection is closed when we're done (all code paths)
+	defer func() {
+		tunnelConn.Close()
+		s.logger.Debug("[WEBSOCKET DEBUG] Tunnel connection closed (defer cleanup)")
+	}()
 
 	// Build the WebSocket upgrade request
 	var requestData strings.Builder
@@ -1197,10 +1206,8 @@ func (s *TunnelServer) proxyWebSocketConnectionInternal(domain string, clientCon
 				s.logger.Debug("[WEBSOCKET DEBUG] WebSocket connection closed normally")
 			}
 
-			// CRITICAL: Remove this specific WebSocket connection from the pool
-			s.logger.Info("[WEBSOCKET DEBUG] Removing WebSocket connection from pool for domain: %s", domain)
-			s.connections.RemoveSpecificWebSocketConnection(domain, tunnelConn)
-
+			// Tunnel was already removed from pool at the start, defer will close the connection
+			s.logger.Info("[WEBSOCKET DEBUG] WebSocket session completed for domain: %s", domain)
 			s.logger.Debug("[WEBSOCKET DEBUG] WebSocket proxy completed")
 			return nil
 		}
@@ -1285,10 +1292,8 @@ func (s *TunnelServer) proxyWebSocketConnectionInternal(domain string, clientCon
 		s.logger.Debug("[WEBSOCKET DEBUG] WebSocket connection closed normally")
 	}
 
-	// CRITICAL: Remove this specific WebSocket connection from the pool
-	s.logger.Info("[WEBSOCKET DEBUG] Removing WebSocket connection from pool for domain: %s", domain)
-	s.connections.RemoveSpecificWebSocketConnection(domain, tunnelConn)
-
+	// Tunnel was already removed from pool at the start, defer will close the connection
+	s.logger.Info("[WEBSOCKET DEBUG] WebSocket session completed for domain: %s", domain)
 	s.logger.Debug("[WEBSOCKET DEBUG] WebSocket proxy completed")
 	return nil
 }
