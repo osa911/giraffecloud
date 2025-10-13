@@ -441,6 +441,36 @@ func (m *ConnectionManager) GetWebSocketPoolSize(domain string) int {
 	return domainConns.wsPool.Size()
 }
 
+// GetWebSocketPoolStats returns statistics about WebSocket pools across all domains
+func (m *ConnectionManager) GetWebSocketPoolStats() map[string]int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	totalTunnels := 0
+	totalDomains := 0
+	maxPerDomain := 0
+
+	for _, domainConns := range m.connections {
+		domainConns.mu.RLock()
+		poolSize := domainConns.wsPool.Size()
+		domainConns.mu.RUnlock()
+
+		if poolSize > 0 {
+			totalTunnels += poolSize
+			totalDomains++
+			if poolSize > maxPerDomain {
+				maxPerDomain = poolSize
+			}
+		}
+	}
+
+	return map[string]int{
+		"total_tunnels":  totalTunnels,
+		"total_domains":  totalDomains,
+		"max_per_domain": maxPerDomain,
+	}
+}
+
 // CleanupDeadConnections removes dead connections from all pools
 func (m *ConnectionManager) CleanupDeadConnections() map[string]int {
 	m.mu.RLock()

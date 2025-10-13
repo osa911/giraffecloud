@@ -665,8 +665,13 @@ func (r *HybridTunnelRouter) reportMetrics() {
 			tcpPercent = float64(tcp) / float64(total) * 100
 		}
 
-		r.logger.Info("[HYBRID METRICS] Total: %d, gRPC: %d (%.1f%%), TCP: %d (%.1f%%), WebSocket: %d, Errors: %d (Timeout: %d)",
+		// Get WebSocket tunnel pool statistics
+		wsPoolStats := r.tcpTunnel.GetWebSocketPoolStats()
+
+		r.logger.Info("[HYBRID METRICS] Total: %d, gRPC: %d (%.1f%%), TCP: %d (%.1f%%), WebSocket Requests: %d, Errors: %d (Timeout: %d)",
 			total, grpc, grpcPercent, tcp, tcpPercent, ws, errors, timeoutErrors)
+		r.logger.Info("[WEBSOCKET POOL] Active Tunnels: %d, Domains: %d, Max Per Domain: %d/25",
+			wsPoolStats["total_tunnels"], wsPoolStats["total_domains"], wsPoolStats["max_per_domain"])
 	}
 }
 
