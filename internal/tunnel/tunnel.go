@@ -747,6 +747,13 @@ func (t *Tunnel) handleWebSocketUpgradeOnDedicatedConnection(request *http.Reque
 
 	t.logger.Info("[WEBSOCKET DEBUG] WebSocket upgrade successful, starting bidirectional forwarding")
 
+	// CRITICAL FIX: Clear t.wsConn BEFORE starting io.Copy() to prevent health check interference
+	// The health check goroutine checks t.wsConn and sets deadlines on it, which would
+	// kill the active WebSocket forwarding. By clearing t.wsConn, we prevent this race condition.
+	// The server will request re-establishment when needed.
+	t.wsConn = nil
+	t.logger.Info("[WEBSOCKET DEBUG] Cleared t.wsConn to prevent health check interference")
+
 	// CRITICAL: Clear ALL deadlines on both connections before starting io.Copy()
 	// This ensures no leftover deadlines from request parsing or health checks
 	tunnelConn.SetDeadline(time.Time{})
@@ -904,37 +911,37 @@ func (t *Tunnel) startHealthMonitoring() {
 		for {
 			select {
 			case <-ticker.C:
-			// CRITICAL: Check both HTTP connection (legacy) and WebSocket connection
+				// CRITICAL: Check both HTTP connection (legacy) and WebSocket connection
 
-			// Check HTTP connection (legacy, mostly unused now)
-			// CRITICAL: Capture connection locally to avoid race condition (TOCTOU)
-			httpConn := t.conn
-			if httpConn != nil {
-				httpConn.SetWriteDeadline(time.Now().Add(5 * time.Second))
-				_, err := httpConn.Write([]byte{}) // Empty write as keepalive
-				httpConn.SetWriteDeadline(time.Time{})
+				// Check HTTP connection (legacy, mostly unused now)
+				// CRITICAL: Capture connection locally to avoid race condition (TOCTOU)
+				httpConn := t.conn
+				if httpConn != nil {
+					httpConn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+					_, err := httpConn.Write([]byte{}) // Empty write as keepalive
+					httpConn.SetWriteDeadline(time.Time{})
 
-				if err != nil {
-					t.logger.Info("HTTP connection health check failed, triggering reconnection: %v", err)
-					t.coordinatedReconnect()
-					return
+					if err != nil {
+						t.logger.Info("HTTP connection health check failed, triggering reconnection: %v", err)
+						t.coordinatedReconnect()
+						return
+					}
 				}
-			}
 
-			// Check WebSocket connection (active in hybrid mode)
-			// CRITICAL: Capture connection locally to avoid race condition (TOCTOU)
-			wsConn := t.wsConn
-			if wsConn != nil {
-				// Use isConnectionHealthy to detect dead connections
-				if !t.isConnectionHealthy(wsConn) {
-					t.logger.Warn("WebSocket connection health check failed, connection is dead")
-					t.logger.Info("Cleaning up dead WebSocket connection and notifying server")
-					// Close the dead connection
-					wsConn.Close()
-					t.wsConn = nil
-					// Server will request re-establishment when needed
+				// Check WebSocket connection (active in hybrid mode)
+				// CRITICAL: Capture connection locally to avoid race condition (TOCTOU)
+				wsConn := t.wsConn
+				if wsConn != nil {
+					// Use isConnectionHealthy to detect dead connections
+					if !t.isConnectionHealthy(wsConn) {
+						t.logger.Warn("WebSocket connection health check failed, connection is dead")
+						t.logger.Info("Cleaning up dead WebSocket connection and notifying server")
+						// Close the dead connection
+						wsConn.Close()
+						t.wsConn = nil
+						// Server will request re-establishment when needed
+					}
 				}
-			}
 
 				// Update last ping time
 				t.lastPing = time.Now()
