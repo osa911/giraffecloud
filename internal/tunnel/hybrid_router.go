@@ -138,6 +138,28 @@ func NewHybridTunnelRouter(
 	// Set up TCP tunnel establishment callback
 	router.tcpTunnel.SetTCPTunnelEstablishedCallback(router.OnTCPTunnelEstablished)
 
+	// Set up request TCP tunnel callback for on-demand WebSocket tunnel establishment
+	router.tcpTunnel.SetRequestTCPTunnelCallback(func(domain string) error {
+		// Request TCP tunnel establishment via gRPC
+		requestID := fmt.Sprintf("ws-%d", time.Now().UnixNano())
+		router.logger.Info("[WEBSOCKET] Requesting new WebSocket tunnel for domain: %s (requestID: %s)", domain, requestID)
+
+		// Create establishment request
+		establishReq := &proto.TunnelEstablishRequest{
+			RequestId:  requestID,
+			Domain:     domain,
+			TunnelType: proto.TunnelType_TUNNEL_TYPE_TCP,
+			Reason:     "WebSocket connection request",
+		}
+
+		// Send request via gRPC tunnel
+		if router.grpcTunnel.IsTunnelActive(domain) {
+			return router.grpcTunnel.SendTunnelEstablishRequest(domain, establishReq)
+		}
+
+		return fmt.Errorf("no active gRPC tunnel for domain: %s", domain)
+	})
+
 	// Set up gRPC tunnel establishment response callback (for logging and failure handling only)
 	// CRITICAL: Do NOT wake connections here - wait for actual TCP server callback
 	router.grpcTunnel.SetTCPEstablishmentResponseCallback(func(domain string, requestId string, success bool) {

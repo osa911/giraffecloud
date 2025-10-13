@@ -43,8 +43,9 @@ type TunnelServer struct {
 	usageRecorder UsageRecorder
 	quotaChecker  QuotaChecker
 
-	// Tunnel establishment callback
+	// Tunnel establishment callbacks
 	onTCPTunnelEstablished func(domain string)
+	onRequestTCPTunnel     func(domain string) error // Request new TCP/WebSocket tunnel from client
 
 	// Performance monitoring
 	requestCount   int64 // Total requests handled
@@ -90,6 +91,11 @@ func (s *TunnelServer) SetQuotaChecker(q QuotaChecker) { s.quotaChecker = q }
 // SetTCPTunnelEstablishedCallback sets the callback for when TCP tunnels are established
 func (s *TunnelServer) SetTCPTunnelEstablishedCallback(callback func(domain string)) {
 	s.onTCPTunnelEstablished = callback
+}
+
+// SetRequestTCPTunnelCallback sets the callback for requesting new TCP/WebSocket tunnels
+func (s *TunnelServer) SetRequestTCPTunnelCallback(callback func(domain string) error) {
+	s.onRequestTCPTunnel = callback
 }
 
 // Start starts the tunnel server
@@ -261,9 +267,8 @@ func (s *TunnelServer) RemoveDeadConnection(domain string) {
 	s.logger.Info("[CONNECTION CLEANUP] Removing dead WebSocket connection for domain: %s", domain)
 	// Remove WebSocket connection if it exists
 	if ws := s.connections.GetWebSocketConnection(domain); ws != nil {
-		ws.Close()
-		// Clear the WebSocket connection
-		s.connections.clearWebSocketConnection(domain)
+		// Remove the specific WebSocket connection from the pool
+		s.connections.RemoveSpecificWebSocketConnection(domain, ws)
 	}
 }
 
@@ -1016,17 +1021,69 @@ func (s *TunnelServer) proxyWebSocketConnectionInternal(domain string, clientCon
 		}
 	}
 
-	tunnelConn := s.connections.GetWebSocketConnection(domain)
-	if tunnelConn == nil {
-		s.logger.Error("No WebSocket tunnel connection found for domain: %s", domain)
-		s.writeHTTPError(clientConn, 502, "Bad Gateway - WebSocket tunnel not connected")
+	// Check if we've reached the max WebSocket tunnels limit
+	poolSize := s.connections.GetWebSocketPoolSize(domain)
+	if poolSize >= MaxWebSocketTunnelsPerDomain {
+		s.logger.Warn("[WEBSOCKET] WebSocket tunnel limit reached for domain: %s (%d/%d)", domain, poolSize, MaxWebSocketTunnelsPerDomain)
+		s.writeHTTPError(clientConn, 503, "Service Unavailable - Too many concurrent WebSocket connections")
 		if returnError {
-			return fmt.Errorf("no WebSocket tunnel connection found")
+			return fmt.Errorf("WebSocket tunnel limit reached: %d/%d", poolSize, MaxWebSocketTunnelsPerDomain)
 		}
 		return nil
 	}
 
-	s.logger.Debug("[WEBSOCKET DEBUG] Starting WebSocket proxy for domain: %s", domain)
+	// Try to get an available WebSocket tunnel connection
+	tunnelConn := s.connections.GetWebSocketConnection(domain)
+	if tunnelConn == nil {
+		// No connections available - request a new one via callback
+		s.logger.Info("[WEBSOCKET] No WebSocket tunnel available for domain: %s, requesting new tunnel (current pool: %d/%d)", domain, poolSize, MaxWebSocketTunnelsPerDomain)
+
+		if s.onRequestTCPTunnel != nil {
+			if err := s.onRequestTCPTunnel(domain); err != nil {
+				s.logger.Error("[WEBSOCKET] Failed to request new WebSocket tunnel: %v", err)
+				s.writeHTTPError(clientConn, 502, "Bad Gateway - Failed to request WebSocket tunnel")
+				if returnError {
+					return fmt.Errorf("failed to request WebSocket tunnel: %w", err)
+				}
+				return nil
+			}
+
+			// Wait briefly for the tunnel to be established (max 5 seconds)
+			s.logger.Debug("[WEBSOCKET] Waiting for WebSocket tunnel establishment...")
+			maxWait := 5 * time.Second
+			pollInterval := 50 * time.Millisecond
+			waited := time.Duration(0)
+
+			for waited < maxWait {
+				time.Sleep(pollInterval)
+				waited += pollInterval
+
+				tunnelConn = s.connections.GetWebSocketConnection(domain)
+				if tunnelConn != nil {
+					s.logger.Info("[WEBSOCKET] WebSocket tunnel established after %v", waited)
+					break
+				}
+			}
+
+			if tunnelConn == nil {
+				s.logger.Error("[WEBSOCKET] Timeout waiting for WebSocket tunnel establishment (waited %v)", waited)
+				s.writeHTTPError(clientConn, 504, "Gateway Timeout - WebSocket tunnel establishment timeout")
+				if returnError {
+					return fmt.Errorf("timeout waiting for WebSocket tunnel establishment")
+				}
+				return nil
+			}
+		} else {
+			s.logger.Error("No WebSocket tunnel connection found for domain: %s and no request callback set", domain)
+			s.writeHTTPError(clientConn, 502, "Bad Gateway - WebSocket tunnel not connected")
+			if returnError {
+				return fmt.Errorf("no WebSocket tunnel connection found")
+			}
+			return nil
+		}
+	}
+
+	s.logger.Debug("[WEBSOCKET DEBUG] Starting WebSocket proxy for domain: %s (pool size: %d/%d)", domain, poolSize+1, MaxWebSocketTunnelsPerDomain)
 
 	// Build the WebSocket upgrade request
 	var requestData strings.Builder
@@ -1135,9 +1192,9 @@ func (s *TunnelServer) proxyWebSocketConnectionInternal(domain string, clientCon
 				s.logger.Debug("[WEBSOCKET DEBUG] WebSocket connection closed normally")
 			}
 
-			// CRITICAL: Clean up dead WebSocket connection from pool
-			s.logger.Info("[WEBSOCKET DEBUG] Cleaning up WebSocket connection for domain: %s", domain)
-			s.connections.RemoveConnection(domain, ConnectionTypeWebSocket)
+			// CRITICAL: Remove this specific WebSocket connection from the pool
+			s.logger.Info("[WEBSOCKET DEBUG] Removing WebSocket connection from pool for domain: %s", domain)
+			s.connections.RemoveSpecificWebSocketConnection(domain, tunnelConn)
 
 			s.logger.Debug("[WEBSOCKET DEBUG] WebSocket proxy completed")
 			return nil
@@ -1223,9 +1280,9 @@ func (s *TunnelServer) proxyWebSocketConnectionInternal(domain string, clientCon
 		s.logger.Debug("[WEBSOCKET DEBUG] WebSocket connection closed normally")
 	}
 
-	// CRITICAL: Clean up dead WebSocket connection from pool
-	s.logger.Info("[WEBSOCKET DEBUG] Cleaning up WebSocket connection for domain: %s", domain)
-	s.connections.RemoveConnection(domain, ConnectionTypeWebSocket)
+	// CRITICAL: Remove this specific WebSocket connection from the pool
+	s.logger.Info("[WEBSOCKET DEBUG] Removing WebSocket connection from pool for domain: %s", domain)
+	s.connections.RemoveSpecificWebSocketConnection(domain, tunnelConn)
 
 	s.logger.Debug("[WEBSOCKET DEBUG] WebSocket proxy completed")
 	return nil

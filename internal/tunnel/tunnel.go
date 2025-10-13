@@ -102,8 +102,9 @@ type Tunnel struct {
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 
-	// WebSocket connection
-	wsConn net.Conn
+	// WebSocket connections (multiple concurrent tunnels supported)
+	wsConns   []net.Conn
+	wsConnsMu sync.Mutex
 
 	// HTTP connections for large file streaming in hybrid mode
 	httpConnections []net.Conn
@@ -403,98 +404,14 @@ func (t *Tunnel) attemptDualConnections(serverAddr string, tlsConfig *tls.Config
 	return fmt.Errorf("gRPC tunnel is required for demand-based tunnel establishment - cannot proceed without it")
 }
 
-// startWebSocketReconnectLoop continuously retries establishing the WebSocket tunnel
-// while gRPC remains connected. It exits on success or when the context is cancelled.
+// startWebSocketReconnectLoop is obsolete in on-demand establishment model
+// The server now requests new WebSocket tunnels via gRPC as needed
+// This function is kept for backward compatibility but does nothing
 func (t *Tunnel) startWebSocketReconnectLoop(serverAddr string, tlsConfig *tls.Config) {
-	// Avoid multiple concurrent loops
-	t.wsReconnectMu.Lock()
-	if t.wsReconnectInProgress || t.ctx == nil {
-		// Already running, or no active context
-		t.wsReconnectMu.Unlock()
-		return
-	}
-	// If a WebSocket connection already exists, nothing to do
-	if t.wsConn != nil {
-		t.wsReconnectMu.Unlock()
-		return
-	}
-	// Mark as in progress
-	t.wsReconnectInProgress = true
-	t.wsReconnectMu.Unlock()
-
-	go func() {
-		defer func() {
-			// Reset flag on exit
-			t.wsReconnectMu.Lock()
-			t.wsReconnectInProgress = false
-			t.wsReconnectMu.Unlock()
-		}()
-
-		// Backoff settings based on retryConfig
-		delay := t.retryConfig.InitialDelay
-		for {
-			// Exit conditions
-			select {
-			case <-t.ctx.Done():
-				return
-			default:
-			}
-
-			// Do not interfere with a full reconnection in progress
-			if t.isReconnecting {
-				time.Sleep(500 * time.Millisecond)
-				continue
-			}
-
-			// If gRPC is not enabled/connected anymore, stop this loop
-			if !t.grpcEnabled || t.grpcClient == nil || !t.grpcClient.IsConnected() {
-				return
-			}
-
-			// Prepare TLS config if needed to ensure fresh TLS state
-			useTLS := tlsConfig
-			if useTLS == nil {
-				EnsureConsistentConfigHome()
-				cfg, err := LoadConfig()
-				if err != nil {
-					// If config can't be loaded, retry later
-					t.logger.Warn("[WS RETRY] Failed to load TLS config: %v", err)
-					// Exponential backoff with jitter
-					time.Sleep(t.calculateNextDelay(delay))
-					continue
-				}
-				c, err := CreateSecureTLSConfig(cfg.Security.CACert, cfg.Security.ClientCert, cfg.Security.ClientKey)
-				if err != nil {
-					t.logger.Warn("[WS RETRY] Failed to create TLS config: %v", err)
-					time.Sleep(t.calculateNextDelay(delay))
-					continue
-				}
-				c = c.Clone()
-				c.ClientSessionCache = nil
-				c.SessionTicketsDisabled = true
-				c.Renegotiation = tls.RenegotiateNever
-				c.Time = func() time.Time { return time.Now() }
-				useTLS = c
-			}
-
-			// Attempt to establish WebSocket connection
-			wsConn, err := t.establishConnection(serverAddr, useTLS, "websocket")
-			if err != nil {
-				t.logger.Warn("[WS RETRY] WebSocket reconnect attempt failed: %v", err)
-				// Exponential backoff with jitter
-				delay = t.calculateNextDelay(delay)
-				time.Sleep(delay)
-				continue
-			}
-
-			// Success: set connection and start handler
-			t.wsConn = wsConn
-			t.logger.Info("✅ WebSocket tunnel re-established successfully")
-			t.wg.Add(1)
-			go t.handleWebSocketConnection(wsConn)
-			return
-		}
-	}()
+	t.logger.Debug("🔄 WebSocket reconnect loop disabled - using on-demand establishment model")
+	// In hybrid mode with on-demand establishment, WebSocket tunnels are
+	// created on-demand by the server via establishTCPTunnelOnDemand()
+	// No need for automatic reconnection loops
 }
 
 // establishConnection establishes a single tunnel connection of specified type
@@ -632,6 +549,24 @@ func (t *Tunnel) handleHTTPConnection(conn net.Conn, connIndex ...int) {
 // handleWebSocketConnection handles WebSocket traffic from the tunnel server
 func (t *Tunnel) handleWebSocketConnection(conn net.Conn) {
 	defer t.wg.Done()
+
+	// CRITICAL: Remove this connection from the pool when goroutine exits
+	defer func() {
+		t.wsConnsMu.Lock()
+		defer t.wsConnsMu.Unlock()
+
+		// Find and remove this specific connection from wsConns array
+		for i, wsConn := range t.wsConns {
+			if wsConn == conn {
+				// Remove by swapping with last element and truncating
+				t.wsConns[i] = t.wsConns[len(t.wsConns)-1]
+				t.wsConns = t.wsConns[:len(t.wsConns)-1]
+				t.logger.Info("🧹 Removed WebSocket connection from pool (remaining: %d/25)", len(t.wsConns))
+				break
+			}
+		}
+	}()
+
 	defer func() {
 		if conn != nil {
 			conn.Close()
@@ -913,18 +848,9 @@ func (t *Tunnel) startHealthMonitoring() {
 					}
 				}
 
-				// Check WebSocket connection (active in hybrid mode)
-				if t.wsConn != nil {
-					// Use isConnectionHealthy to detect dead connections
-					if !t.isConnectionHealthy(t.wsConn) {
-						t.logger.Warn("WebSocket connection health check failed, connection is dead")
-						t.logger.Info("Cleaning up dead WebSocket connection and notifying server")
-						// Close the dead connection
-						t.wsConn.Close()
-						t.wsConn = nil
-						// Server will request re-establishment when needed
-					}
-				}
+				// Note: WebSocket connections (wsConns) are not health-checked here
+				// Each WebSocket tunnel is managed independently and will be removed
+				// by the server when it detects the connection is dead during io.Copy
 
 				// Update last ping time
 				t.lastPing = time.Now()
@@ -959,12 +885,16 @@ func (t *Tunnel) coordinatedReconnect() {
 func (t *Tunnel) reconnectTCPTunnelOnly() {
 	t.logger.Info("🔄 Starting TCP-only reconnection (preserving gRPC tunnel)")
 
-	// Close only the WebSocket connection
-	if t.wsConn != nil {
-		t.wsConn.Close()
-		t.wsConn = nil
-		t.logger.Info("🧹 Closed WebSocket connection")
+	// Close all WebSocket connections
+	t.wsConnsMu.Lock()
+	for _, wsConn := range t.wsConns {
+		if wsConn != nil {
+			wsConn.Close()
+		}
 	}
+	t.wsConns = nil
+	t.wsConnsMu.Unlock()
+	t.logger.Info("🧹 Closed all WebSocket connections")
 
 	// Start WebSocket reconnection loop in background (non-blocking)
 	if t.grpcEnabled && t.grpcClient != nil && t.grpcClient.IsConnected() {
@@ -1018,10 +948,16 @@ func (t *Tunnel) coordinatedReconnectWithContext(isIntentional bool) {
 		t.conn.Close()
 		t.conn = nil
 	}
-	if t.wsConn != nil {
-		t.wsConn.Close()
-		t.wsConn = nil
+
+	// Close all WebSocket connections
+	t.wsConnsMu.Lock()
+	for _, wsConn := range t.wsConns {
+		if wsConn != nil {
+			wsConn.Close()
+		}
 	}
+	t.wsConns = nil
+	t.wsConnsMu.Unlock()
 
 	// Close HTTP connections for large file streaming during reconnect
 	if len(t.httpConnections) > 0 {
@@ -1121,19 +1057,26 @@ func (t *Tunnel) Disconnect() error {
 		t.conn = nil
 	}
 
-	if t.wsConn != nil {
-		// Set a deadline for graceful shutdown
-		t.wsConn.SetDeadline(time.Now().Add(5 * time.Second))
+	// Close all WebSocket connections
+	t.wsConnsMu.Lock()
+	if len(t.wsConns) > 0 {
+		t.logger.Info("Closing %d WebSocket connections...", len(t.wsConns))
+		for i, wsConn := range t.wsConns {
+			if wsConn != nil {
+				// Set a deadline for graceful shutdown
+				wsConn.SetDeadline(time.Now().Add(5 * time.Second))
 
-		// Close the WebSocket connection
-		wsErr := t.wsConn.Close()
-		t.wsConn = nil
-
-		// Return the first error if any
-		if err == nil {
-			err = wsErr
+				// Close the WebSocket connection
+				wsErr := wsConn.Close()
+				if err == nil {
+					err = wsErr
+				}
+				t.logger.Debug("Closed WebSocket connection %d/%d", i+1, len(t.wsConns))
+			}
 		}
+		t.wsConns = nil
 	}
+	t.wsConnsMu.Unlock()
 
 	// Close HTTP connections for large file streaming
 	if len(t.httpConnections) > 0 {
@@ -1315,10 +1258,10 @@ func (t *Tunnel) GetConnectionCount() int {
 		count++
 	}
 
-	// Count WebSocket connection
-	if t.wsConn != nil {
-		count++
-	}
+	// Count WebSocket connections
+	t.wsConnsMu.Lock()
+	count += len(t.wsConns)
+	t.wsConnsMu.Unlock()
 
 	// Count HTTP connections
 	count += len(t.httpConnections)
@@ -1513,40 +1456,22 @@ func (t *Tunnel) handleTunnelEstablishRequest(establishReq *proto.TunnelEstablis
 
 // establishTCPTunnelOnDemand establishes a TCP tunnel when requested by the server
 func (t *Tunnel) establishTCPTunnelOnDemand(establishReq *proto.TunnelEstablishRequest) error {
-	t.logger.Info("⚡ Establishing TCP tunnel on-demand for domain: %s", establishReq.Domain)
+	t.logger.Info("⚡ Establishing WebSocket tunnel on-demand for domain: %s", establishReq.Domain)
 
-	// OPTIMIZATION: Prevent concurrent establishment attempts
-	t.wsReconnectMu.Lock()
+	// Enforce max 25 WebSocket tunnels limit (matches server-side limit)
+	const maxWebSocketTunnels = 25
 
-	// CRITICAL: If server is requesting establishment, it means it doesn't have our connection!
-	// This can happen after server restart, connection manager cleanup, or network issues.
-	// We MUST re-establish to ensure server-side registration, even if our local connection looks healthy.
-	if t.wsConn != nil {
-		t.logger.Warn("⚠️  Server requested TCP tunnel establishment, but we have an existing connection. Server lost it (restart/cleanup) - forcing re-establishment for domain: %s", establishReq.Domain)
-		t.wsConn.Close()
-		t.wsConn = nil
-		// Fall through to establish new connection
+	// Check limit under lock to prevent race condition
+	t.wsConnsMu.Lock()
+	currentSize := len(t.wsConns)
+	if currentSize >= maxWebSocketTunnels {
+		t.wsConnsMu.Unlock()
+		t.logger.Warn("⚠️  WebSocket tunnel limit reached (%d/%d), rejecting establishment request", currentSize, maxWebSocketTunnels)
+		return fmt.Errorf("WebSocket tunnel limit reached: %d/%d", currentSize, maxWebSocketTunnels)
 	}
+	t.wsConnsMu.Unlock()
 
-	// Check if establishment is already in progress
-	if t.wsReconnectInProgress {
-		t.wsReconnectMu.Unlock()
-		atomic.AddInt64(&t.tcpEstablishmentSkips, 1)
-		t.logger.Info("TCP tunnel establishment already in progress for domain: %s (skipped establishments: %d)",
-			establishReq.Domain, atomic.LoadInt64(&t.tcpEstablishmentSkips))
-		return nil
-	}
-
-	// Mark establishment as in progress
-	t.wsReconnectInProgress = true
-	t.wsReconnectMu.Unlock()
-
-	// Ensure we clean up the flag when done
-	defer func() {
-		t.wsReconnectMu.Lock()
-		t.wsReconnectInProgress = false
-		t.wsReconnectMu.Unlock()
-	}()
+	t.logger.Info("📊 Current WebSocket tunnel pool: %d/%d", currentSize, maxWebSocketTunnels)
 
 	// Create TLS config for TCP connection
 	cfg, err := LoadConfig()
@@ -1574,11 +1499,16 @@ func (t *Tunnel) establishTCPTunnelOnDemand(establishReq *proto.TunnelEstablishR
 	// Establish WebSocket tunnel connection
 	wsConn, err := t.establishConnection(serverAddr, tlsConfig, "websocket")
 	if err != nil {
-		return fmt.Errorf("failed to establish TCP tunnel: %w", err)
+		return fmt.Errorf("failed to establish WebSocket tunnel: %w", err)
 	}
 
-	t.wsConn = wsConn
-	t.logger.Info("✅ TCP tunnel established successfully on-demand")
+	// Add to WebSocket connections pool
+	t.wsConnsMu.Lock()
+	t.wsConns = append(t.wsConns, wsConn)
+	newSize := len(t.wsConns)
+	t.wsConnsMu.Unlock()
+
+	t.logger.Info("✅ WebSocket tunnel established successfully on-demand (pool size: %d/%d)", newSize, maxWebSocketTunnels)
 
 	// Start WebSocket handler
 	t.wg.Add(1)

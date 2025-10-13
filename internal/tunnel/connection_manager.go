@@ -160,12 +160,17 @@ func (p *TunnelConnectionPool) Close() {
 type DomainConnections struct {
 	domain     string
 	httpPool   *TunnelConnectionPool // Pool of HTTP connections for concurrency
-	wsConn     *TunnelConnection     // Single WebSocket connection
+	wsPool     *TunnelConnectionPool // Pool of WebSocket connections (max 25 per domain)
 	targetPort int
 	userID     uint32
 	tunnelID   uint32
 	mu         sync.RWMutex
 }
+
+const (
+	// MaxWebSocketTunnelsPerDomain limits concurrent WebSocket tunnels per domain
+	MaxWebSocketTunnelsPerDomain = 25
+)
 
 // ConnectionManager handles mapping between domains and active tunnel connections
 type ConnectionManager struct {
@@ -192,6 +197,7 @@ func (m *ConnectionManager) AddConnection(domain string, conn net.Conn, targetPo
 			domain:     domain,
 			targetPort: targetPort,
 			httpPool:   NewTunnelConnectionPool(domain, targetPort),
+			wsPool:     NewTunnelConnectionPool(domain, targetPort),
 		}
 		m.connections[domain] = domainConns
 	}
@@ -212,10 +218,14 @@ func (m *ConnectionManager) AddConnection(domain string, conn net.Conn, targetPo
 		// Add to HTTP pool for concurrent handling
 		return domainConns.httpPool.AddConnection(conn)
 	case ConnectionTypeWebSocket:
-		// Single WebSocket connection (as before)
-		connection := NewTunnelConnection(domain, conn, targetPort)
-		domainConns.wsConn = connection
-		return connection
+		// Check if we've reached the max WebSocket tunnels limit
+		if domainConns.wsPool.Size() >= MaxWebSocketTunnelsPerDomain {
+			// Limit reached - close the connection
+			conn.Close()
+			return nil
+		}
+		// Add to WebSocket pool for concurrent handling
+		return domainConns.wsPool.AddConnection(conn)
 	}
 
 	return nil
@@ -250,15 +260,14 @@ func (m *ConnectionManager) RemoveConnection(domain string, connType ConnectionT
 		// For HTTP, we don't remove the entire pool, just let individual connections handle cleanup
 		// The pool will be cleaned up when the domain is removed entirely
 	case ConnectionTypeWebSocket:
-		if domainConns.wsConn != nil {
-			domainConns.wsConn.Close()
-			domainConns.wsConn = nil
-		}
+		// For WebSocket, we don't remove the entire pool, just let individual connections handle cleanup
+		// The pool will be cleaned up when the domain is removed entirely
 	}
 
 	// Remove domain if no connections remain
-	if domainConns.httpPool.Size() == 0 && domainConns.wsConn == nil {
+	if domainConns.httpPool.Size() == 0 && domainConns.wsPool.Size() == 0 {
 		domainConns.httpPool.Close()
+		domainConns.wsPool.Close()
 		delete(m.connections, domain)
 	}
 }
@@ -279,9 +288,35 @@ func (m *ConnectionManager) RemoveSpecificHTTPConnection(domain string, targetCo
 	domainConns.httpPool.RemoveConnection(targetConn)
 
 	// Check if we need to remove the domain entirely
-	if domainConns.httpPool.Size() == 0 && domainConns.wsConn == nil {
+	if domainConns.httpPool.Size() == 0 && domainConns.wsPool.Size() == 0 {
 		m.mu.Lock()
 		domainConns.httpPool.Close()
+		domainConns.wsPool.Close()
+		delete(m.connections, domain)
+		m.mu.Unlock()
+	}
+}
+
+// RemoveSpecificWebSocketConnection removes a specific WebSocket connection from the pool
+func (m *ConnectionManager) RemoveSpecificWebSocketConnection(domain string, targetConn *TunnelConnection) {
+	m.mu.RLock()
+	domainConns := m.connections[domain]
+	m.mu.RUnlock()
+
+	if domainConns == nil {
+		return
+	}
+
+	domainConns.mu.Lock()
+	defer domainConns.mu.Unlock()
+
+	domainConns.wsPool.RemoveConnection(targetConn)
+
+	// Check if we need to remove the domain entirely
+	if domainConns.httpPool.Size() == 0 && domainConns.wsPool.Size() == 0 {
+		m.mu.Lock()
+		domainConns.httpPool.Close()
+		domainConns.wsPool.Close()
 		delete(m.connections, domain)
 		m.mu.Unlock()
 	}
@@ -304,7 +339,7 @@ func (m *ConnectionManager) GetConnection(domain string, connType ConnectionType
 	case ConnectionTypeHTTP:
 		return domainConns.httpPool.GetConnection()
 	case ConnectionTypeWebSocket:
-		return domainConns.wsConn
+		return domainConns.wsPool.GetConnection()
 	default:
 		return nil
 	}
@@ -336,16 +371,8 @@ func (m *ConnectionManager) HasDomain(domain string) bool {
 	// Check HTTP pool
 	hasHTTP := domainConns.httpPool.Size() > 0
 
-	// Check WebSocket with health validation
-	hasWS := false
-	if domainConns.wsConn != nil {
-		// Release the read lock temporarily to call HasWebSocketConnection
-		domainConns.mu.RUnlock()
-		m.mu.RUnlock()
-		hasWS = m.HasWebSocketConnection(domain)
-		m.mu.RLock()
-		domainConns.mu.RLock()
-	}
+	// Check WebSocket pool
+	hasWS := domainConns.wsPool.Size() > 0
 
 	return hasHTTP || hasWS
 }
@@ -368,54 +395,18 @@ func (m *ConnectionManager) HasHTTPConnection(domain string) bool {
 
 // HasWebSocketConnection returns true if the domain has an active WebSocket tunnel
 func (m *ConnectionManager) HasWebSocketConnection(domain string) bool {
-	conn := m.GetConnection(domain, ConnectionTypeWebSocket)
-	if conn == nil {
-		return false
-	}
-
-	// Health check: verify the connection is actually alive
-	if conn.GetConn() == nil {
-		// Connection is dead, clean it up
-		m.clearWebSocketConnection(domain)
-		return false
-	}
-
-	// IMPROVED: Use longer timeout and proper error handling
-	conn.GetConn().SetReadDeadline(time.Now().Add(100 * time.Millisecond))
-	defer conn.GetConn().SetReadDeadline(time.Time{}) // Clear deadline
-
-	// Try to read one byte (should timeout immediately if connection is alive)
-	one := make([]byte, 1)
-	_, err := conn.GetConn().Read(one)
-
-	if err == nil {
-		// We read data! This means there's buffered data, which is unexpected.
-		// The connection might be in a bad state, so clean it up.
-		m.clearWebSocketConnection(domain)
-		return false
-	}
-
-	// If we get a timeout, the connection is alive and healthy
-	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-		return true
-	}
-
-	// Connection is dead (EOF or other error), clean it up
-	m.clearWebSocketConnection(domain)
-	return false
-}
-
-// clearWebSocketConnection removes the WebSocket connection for a domain
-func (m *ConnectionManager) clearWebSocketConnection(domain string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 
 	domainConns := m.connections[domain]
-	if domainConns != nil {
-		domainConns.mu.Lock()
-		domainConns.wsConn = nil
-		domainConns.mu.Unlock()
+	if domainConns == nil {
+		return false
 	}
+
+	domainConns.mu.RLock()
+	defer domainConns.mu.RUnlock()
+
+	return domainConns.wsPool.Size() > 0
 }
 
 // GetHTTPPoolSize returns the number of HTTP connections for a domain
@@ -432,6 +423,22 @@ func (m *ConnectionManager) GetHTTPPoolSize(domain string) int {
 	defer domainConns.mu.RUnlock()
 
 	return domainConns.httpPool.Size()
+}
+
+// GetWebSocketPoolSize returns the number of WebSocket connections for a domain
+func (m *ConnectionManager) GetWebSocketPoolSize(domain string) int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	domainConns := m.connections[domain]
+	if domainConns == nil {
+		return 0
+	}
+
+	domainConns.mu.RLock()
+	defer domainConns.mu.RUnlock()
+
+	return domainConns.wsPool.Size()
 }
 
 // CleanupDeadConnections removes dead connections from all pools
@@ -473,9 +480,7 @@ func (m *ConnectionManager) Close() {
 	for domain, domainConns := range m.connections {
 		domainConns.mu.Lock()
 		domainConns.httpPool.Close()
-		if domainConns.wsConn != nil {
-			domainConns.wsConn.Close()
-		}
+		domainConns.wsPool.Close()
 		domainConns.mu.Unlock()
 		delete(m.connections, domain)
 	}
