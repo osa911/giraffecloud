@@ -138,6 +138,21 @@ func (p *TunnelConnectionPool) RemoveConnection(targetConn *TunnelConnection) {
 	}
 }
 
+// RemoveConnectionWithoutClosing removes a specific connection from the pool WITHOUT closing it
+// This is useful when you want to take ownership of the connection for exclusive use
+func (p *TunnelConnectionPool) RemoveConnectionWithoutClosing(targetConn *TunnelConnection) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	for i, conn := range p.connections {
+		if conn == targetConn {
+			// Remove from slice WITHOUT closing
+			p.connections = append(p.connections[:i], p.connections[i+1:]...)
+			break
+		}
+	}
+}
+
 // Size returns the number of connections in the pool
 func (p *TunnelConnectionPool) Size() int {
 	p.mu.RLock()
@@ -311,6 +326,32 @@ func (m *ConnectionManager) RemoveSpecificWebSocketConnection(domain string, tar
 	defer domainConns.mu.Unlock()
 
 	domainConns.wsPool.RemoveConnection(targetConn)
+
+	// Check if we need to remove the domain entirely
+	if domainConns.httpPool.Size() == 0 && domainConns.wsPool.Size() == 0 {
+		m.mu.Lock()
+		domainConns.httpPool.Close()
+		domainConns.wsPool.Close()
+		delete(m.connections, domain)
+		m.mu.Unlock()
+	}
+}
+
+// RemoveSpecificWebSocketConnectionWithoutClosing removes a specific WebSocket connection from the pool WITHOUT closing it
+// This allows taking ownership of the connection for exclusive use
+func (m *ConnectionManager) RemoveSpecificWebSocketConnectionWithoutClosing(domain string, targetConn *TunnelConnection) {
+	m.mu.RLock()
+	domainConns := m.connections[domain]
+	m.mu.RUnlock()
+
+	if domainConns == nil {
+		return
+	}
+
+	domainConns.mu.Lock()
+	defer domainConns.mu.Unlock()
+
+	domainConns.wsPool.RemoveConnectionWithoutClosing(targetConn)
 
 	// Check if we need to remove the domain entirely
 	if domainConns.httpPool.Size() == 0 && domainConns.wsPool.Size() == 0 {

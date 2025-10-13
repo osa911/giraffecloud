@@ -1088,10 +1088,10 @@ func (s *TunnelServer) proxyWebSocketConnectionInternal(domain string, clientCon
 		}
 	}
 
-	// CRITICAL: Remove this tunnel from the pool IMMEDIATELY before using it
+	// CRITICAL: Remove this tunnel from the pool IMMEDIATELY before using it (without closing!)
 	// This prevents other requests from trying to use the same tunnel while it's busy
-	s.connections.RemoveSpecificWebSocketConnection(domain, tunnelConn)
-	s.logger.Debug("[WEBSOCKET DEBUG] Removed tunnel from pool, now starting WebSocket proxy for domain: %s (pool size: %d/%d)", domain, poolSize, MaxWebSocketTunnelsPerDomain)
+	s.connections.RemoveSpecificWebSocketConnectionWithoutClosing(domain, tunnelConn)
+	s.logger.Debug("[WEBSOCKET DEBUG] Removed tunnel from pool (not closed yet), now starting WebSocket proxy for domain: %s (pool size: %d/%d)", domain, poolSize, MaxWebSocketTunnelsPerDomain)
 
 	// Ensure tunnel connection is closed when we're done (all code paths)
 	defer func() {
