@@ -29,9 +29,9 @@ async function fetchDashboardStats(): Promise<DashboardStats> {
     let totalTraffic = 0;
     try {
       const usageResponse = await api.get<UsageData>("/usage/summary");
-      if (usageResponse?.day) {
-        // Calculate total daily traffic (bytes in + bytes out)
-        totalTraffic = usageResponse.day.bytes_in + usageResponse.day.bytes_out;
+      if (usageResponse?.month) {
+        // Use monthly total traffic (current billing period)
+        totalTraffic = usageResponse.month.used_bytes;
       }
     } catch (usageError) {
       console.warn("Could not fetch usage data:", usageError);

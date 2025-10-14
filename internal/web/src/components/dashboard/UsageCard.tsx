@@ -29,7 +29,7 @@ export default function UsageCard({ monthlyLimitBytes }: { monthlyLimitBytes?: n
     errorRetryInterval: 30000,
     errorRetryCount: 3,
   });
-  const used = (data?.day?.bytes_in ?? 0) + (data?.day?.bytes_out ?? 0);
+  const used = data?.month?.used_bytes ?? 0;
   const hasLimit = typeof monthlyLimitBytes === "number" && monthlyLimitBytes > 0;
   const pct = hasLimit
     ? Math.min(100, Math.round((used / (monthlyLimitBytes as number)) * 100))

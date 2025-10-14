@@ -37,12 +37,23 @@ interface CustomTooltipProps {
     name: string;
     value: number;
     color: string;
+    payload: {
+      bytes_in: number;
+      bytes_out: number;
+      date: string;
+    };
   }>;
   label?: string;
 }
 
 function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
   if (active && payload && payload.length) {
+    // Extract the actual byte values from the data point
+    const dataPoint = payload[0]?.payload;
+    const bytesIn = dataPoint?.bytes_in ?? 0;
+    const bytesOut = dataPoint?.bytes_out ?? 0;
+    const total = bytesIn + bytesOut;
+
     return (
       <Box
         sx={{
@@ -56,13 +67,14 @@ function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
         <Typography variant="body2" fontWeight="bold" gutterBottom>
           {label}
         </Typography>
-        {payload.map((entry, index) => (
-          <Typography key={index} variant="body2" sx={{ color: entry.color }}>
-            {entry.name}: {formatBytes(entry.value)}
-          </Typography>
-        ))}
+        <Typography variant="body2" sx={{ color: payload[0]?.color }}>
+          Incoming: {formatBytes(bytesIn)}
+        </Typography>
+        <Typography variant="body2" sx={{ color: payload[1]?.color }}>
+          Outgoing: {formatBytes(bytesOut)}
+        </Typography>
         <Typography variant="body2" fontWeight="bold" sx={{ mt: 0.5 }}>
-          Total: {formatBytes(payload.reduce((sum, entry) => sum + entry.value, 0))}
+          Total: {formatBytes(total)}
         </Typography>
       </Box>
     );
