@@ -98,7 +98,11 @@ func (s *caddyService) ConfigureRoute(domain string, targetIP string, targetPort
 					},
 				},
 				"transport": map[string]interface{}{
-					"protocol": "http",
+					"protocol":                "http",
+					"read_timeout":            "30m", // 30 minutes for large uploads
+					"write_timeout":           "30m", // 30 minutes for large downloads
+					"dial_timeout":            "10s", // 10 seconds to establish connection
+					"response_header_timeout": "30m", // 30 minutes to wait for response headers
 				},
 				"headers": map[string]interface{}{
 					"request": map[string]interface{}{
@@ -372,6 +376,13 @@ func (s *caddyService) LoadConfig() error {
 					}
 					// Ensure proper listening addresses
 					srv0["listen"] = []string{":80", ":443"}
+					// Set large body size limit for file uploads (50GB)
+					srv0["max_body_size"] = 53687091200 // 50 GB in bytes
+					// Set timeouts - generous but not unlimited
+					srv0["idle_timeout"] = "5m"         // 5 min idle before disconnect
+					srv0["read_header_timeout"] = "30s" // 30 sec to read request headers (fast)
+					srv0["read_timeout"] = "30m"        // 30 min to read request body (for uploads)
+					srv0["write_timeout"] = "30m"       // 30 min to write response (for downloads)
 				}
 			}
 		}
