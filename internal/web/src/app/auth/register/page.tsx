@@ -6,7 +6,8 @@ import RegisterPage from "@/components/auth/register/RegisterPage";
 // Server component
 export default async function RegisterServerPage() {
   // If user is already authenticated, redirect to dashboard
-  const user = await getAuthUser({ redirect: false });
+  // Use updateCache: false since page components can't modify cookies in Next.js 15
+  const user = await getAuthUser({ redirect: false, updateCache: false });
   if (user) {
     redirect(ROUTES.DASHBOARD.HOME);
   }

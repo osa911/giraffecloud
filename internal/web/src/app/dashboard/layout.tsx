@@ -7,7 +7,7 @@ type DashboardServerLayoutProps = {
 
 // Server component
 async function DashboardServerLayout({ children }: DashboardServerLayoutProps) {
-  const user = await getAuthUser();
+  const user = await getAuthUser({ redirect: true, updateCache: false });
   return <DashboardLayout user={user}>{children}</DashboardLayout>;
 }
 

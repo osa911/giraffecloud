@@ -38,9 +38,9 @@ export default function Footer() {
             <Link href={ROUTES.ACCEPTABLE_USE} underline="hover">
               AUP
             </Link>
-            <Link href={ROUTES.REFUND} underline="hover">
+            {/* <Link href={ROUTES.REFUND} underline="hover">
               Refunds
-            </Link>
+            </Link> */}
             <Link href={ROUTES.COOKIE_POLICY} underline="hover">
               Cookies
             </Link>

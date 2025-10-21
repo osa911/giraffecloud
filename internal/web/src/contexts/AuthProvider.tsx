@@ -63,7 +63,13 @@ export const AuthProvider = ({ children, initialUser = null }: AuthProviderProps
   useEffect(() => {
     const unsubscribe = onIdTokenChanged(firebaseAuth, async (firebaseUser) => {
       if (firebaseUser) {
-        await handleTokenChanged(firebaseUser);
+        // Extract ID token on client side (can't pass FirebaseUser to server action - circular refs)
+        try {
+          const idToken = await firebaseUser.getIdToken();
+          await handleTokenChanged(idToken);
+        } catch (error) {
+          console.error("Error getting ID token:", error);
+        }
       }
     });
 

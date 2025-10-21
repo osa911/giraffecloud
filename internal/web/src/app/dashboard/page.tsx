@@ -1,12 +1,10 @@
-import { getAuthUser } from "@/lib/actions/auth.actions";
 import DashboardPage from "@/components/dashboard/DashboardPage";
 import serverApi from "@/services/apiClient/serverApiClient";
 import type { Tunnel, UsageData, DashboardStats } from "@/types/tunnel";
 
 // Server component
 export default async function DashboardServerPage() {
-  // check if user is authenticated
-  await getAuthUser();
+  // User authentication is already checked in the layout
   const stats = await fetchDashboardStats();
 
   return <DashboardPage initialStats={stats} />;

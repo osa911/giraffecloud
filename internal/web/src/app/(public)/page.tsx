@@ -6,11 +6,12 @@ import { redirect } from "next/navigation";
 
 export default async function HomeServerPage() {
   // Get user from cache (no API call)
-  const user = await getCachedUser();
+  const cachedUser = await getCachedUser();
 
   // Redirect logged-in users to dashboard
   // This is standard SaaS behavior - homepage is for marketing only
-  if (user) {
+  // If session is invalid, dashboard layout will handle the redirect back to login
+  if (cachedUser) {
     redirect(ROUTES.DASHBOARD.HOME);
   }
 

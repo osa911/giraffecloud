@@ -189,21 +189,23 @@ export async function clearAllAuthCookies(): Promise<void> {
   cookieStore.delete(USER_DATA_COOKIE_NAME);
 }
 
-export async function getAuthUser(): Promise<User>;
-export async function getAuthUser(options: { redirect: true }): Promise<User>;
-export async function getAuthUser(options: { redirect: false }): Promise<User | null>;
-export async function getAuthUser(options = { redirect: true }): Promise<User | null> {
+export async function getAuthUser(options?: {
+  redirect?: true;
+  updateCache?: boolean;
+}): Promise<User>;
+export async function getAuthUser(options: {
+  redirect: false;
+  updateCache?: boolean;
+}): Promise<User | null>;
+export async function getAuthUser(
+  options: { redirect?: boolean; updateCache?: boolean } = { redirect: true, updateCache: true },
+): Promise<User | null> {
   let user: User | null = null;
+  const shouldRedirect = options.redirect !== false;
+  const shouldUpdateCache = options.updateCache !== false;
 
   try {
-    // First, try to get user from cache (fast path)
-    const cachedUser = await getCachedUser();
-    if (cachedUser) {
-      // Cache is fresh and valid - return immediately
-      return cachedUser;
-    }
-
-    // Cache miss or expired - need to validate with backend
+    // First check if we have session cookies at all
     const cookieStore = await cookies();
     const sessionCookie = cookieStore.get(SESSION_COOKIE_NAME);
     const authTokenCookie = cookieStore.get(AUTH_TOKEN_COOKIE_NAME);
@@ -211,44 +213,74 @@ export async function getAuthUser(options = { redirect: true }): Promise<User | 
 
     if (!hasSessionCookies) {
       // No session cookies - user is not authenticated
+      // Clear cache if it exists (only if updateCache is enabled)
+      if (shouldUpdateCache) {
+        const cachedUser = await getCachedUser();
+        if (cachedUser) {
+          try {
+            await clearAllAuthCookies();
+          } catch {
+            // Cookie clearing might fail in layouts - that's okay
+          }
+        }
+      }
       return null;
     }
 
-    // We have session cookies but no fresh cache - validate with API
+    // Check cache first (fast path) - only if we have session cookies
+    const cachedUser = await getCachedUser();
+    if (cachedUser) {
+      return cachedUser;
+    }
+
+    // Cache miss or expired - validate with backend
     try {
       const data = await serverApi().get<{ valid: boolean; user?: User }>("/auth/session");
       if (data.valid && data.user) {
         user = data.user;
-        await setUserDataCookie(data.user);
+        // Only update cache if we're in a Server Action context
+        if (shouldUpdateCache) {
+          try {
+            await setUserDataCookie(data.user);
+          } catch {
+            // Cookie setting might fail in layouts - that's okay, just continue
+          }
+        }
         return user;
       } else {
-        // Session is invalid - clear everything
-        await clearAllAuthCookies();
+        // Session is invalid - clear everything (if possible)
+        if (shouldUpdateCache) {
+          try {
+            await clearAllAuthCookies();
+          } catch {
+            // Silently fail - not in Server Action context
+          }
+        }
         return null;
       }
-    } catch {
-      // API call failed (likely 401) - clear stale cookies
-      await clearAllAuthCookies();
+    } catch (error) {
+      // API call failed (likely 401) - clear stale cookies (if possible)
+      if (shouldUpdateCache) {
+        try {
+          await clearAllAuthCookies();
+        } catch {
+          // Silently fail - not in Server Action context
+        }
+      }
       return null;
     }
   } catch (error) {
     console.error("Error verifying session:", error);
-    // API call failed (likely 401/403) - clear all auth cookies
-    // This may fail if called during SSR, which is okay
-    try {
-      await clearAllAuthCookies();
-    } catch (cookieError) {
-      // Cookie clearing failed - likely during SSR, safe to ignore
-      if (process.env.NODE_ENV === "development") {
-        const errorMessage =
-          cookieError instanceof Error ? cookieError.message : String(cookieError);
-        if (!errorMessage.includes("Server Action or Route Handler")) {
-          console.warn("Failed to clear auth cookies:", errorMessage);
-        }
+    // API call failed (likely 401/403) - clear all auth cookies (if possible)
+    if (shouldUpdateCache) {
+      try {
+        await clearAllAuthCookies();
+      } catch {
+        // Cookie clearing failed - likely during SSR, safe to ignore
       }
     }
   } finally {
-    if (options.redirect && !user) {
+    if (shouldRedirect && !user) {
       redirect(ROUTES.AUTH.LOGIN);
     }
   }
@@ -350,20 +382,9 @@ export async function getCachedUser(): Promise<User | null> {
 }
 
 // Firebase token handling
-export async function refreshSessionIfNeeded(user: FirebaseUser): Promise<boolean> {
+export async function handleTokenChanged(idToken: string): Promise<void> {
   try {
-    const idToken = await user.getIdToken();
     await verifyToken({ id_token: idToken });
-    return true;
-  } catch (error) {
-    console.error("Error refreshing session cookie:", error);
-    return false;
-  }
-}
-
-export async function handleTokenChanged(user: FirebaseUser): Promise<void> {
-  try {
-    await refreshSessionIfNeeded(user);
   } catch (error) {
     console.error("Error handling token change:", error);
   }
