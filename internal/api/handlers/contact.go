@@ -4,6 +4,7 @@ import (
 	"giraffecloud/internal/api/constants"
 	"giraffecloud/internal/api/dto/common"
 	"giraffecloud/internal/api/dto/v1/contact"
+	"giraffecloud/internal/db/ent"
 	"giraffecloud/internal/service"
 	"giraffecloud/internal/utils"
 
@@ -44,11 +45,34 @@ func (h *ContactHandler) Submit(c *gin.Context) {
 		return
 	}
 
+	// Gather additional information about the submission
+	messageInfo := &service.ContactMessageInfo{
+		IPAddress: c.ClientIP(),
+		UserAgent: c.Request.UserAgent(),
+		Referrer:  c.Request.Referer(),
+	}
+
+	// Check if user is authenticated (optional - contact form is public)
+	if userID, exists := c.Get(constants.ContextKeyUserID); exists {
+		if id, ok := userID.(int); ok {
+			messageInfo.UserID = &id
+			messageInfo.IsAuthenticated = true
+
+			// Try to get user's registered email from context
+			if userData, userExists := c.Get(constants.ContextKeyUser); userExists {
+				if user, ok := userData.(*ent.User); ok && user.Email != "" {
+					messageInfo.UserEmail = &user.Email
+				}
+			}
+		}
+	}
+
 	// Send message to Telegram
 	err = h.telegramService.SendContactMessage(
 		contactPtr.Name,
 		contactPtr.Email,
 		contactPtr.Message,
+		messageInfo,
 	)
 	if err != nil {
 		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to send message")
