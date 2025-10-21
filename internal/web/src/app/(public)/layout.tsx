@@ -6,14 +6,14 @@ type PublicLayoutProps = {
 };
 
 export default function PublicLayout({ children }: PublicLayoutProps) {
-  const footerHeight = 113;
+  const FOOTER_HEIGHT = 97;
 
   return (
     <main>
       <Container maxWidth="lg">
         <Box
           sx={{
-            minHeight: `calc(100vh - ${footerHeight}px)`,
+            minHeight: `calc(100vh - ${FOOTER_HEIGHT}px)`,
             display: "flex",
           }}
         >

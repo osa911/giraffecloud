@@ -4,7 +4,7 @@ import { Box, Container, Divider, Stack, Typography } from "@mui/material";
 
 export default function Footer() {
   return (
-    <Box component="footer" sx={{ pt: 4, pb: 4, bgcolor: "background.default" }}>
+    <Box component="footer" sx={{ pt: 3, pb: 3, bgcolor: "background.default" }}>
       <Divider sx={{ mb: 3 }} />
       <Container maxWidth="lg">
         <Stack
