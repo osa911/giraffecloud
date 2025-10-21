@@ -1,5 +1,5 @@
 import useSWR from "swr";
-import type { Tunnel } from "@/types/tunnel";
+import type { Tunnel, FreeSubdomainResponse } from "@/types/tunnel";
 import clientApi from "@/services/apiClient/clientApiClient";
 
 const fetcher = async (url: string) => {
@@ -15,4 +15,8 @@ export function useTunnels() {
     isError: error,
     mutate,
   };
+}
+
+export async function getFreeSubdomain(): Promise<FreeSubdomainResponse> {
+  return clientApi().get<FreeSubdomainResponse>("/tunnels/free");
 }

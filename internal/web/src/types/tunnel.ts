@@ -13,6 +13,11 @@ export interface TunnelFormData {
   is_active: boolean;
 }
 
+export interface FreeSubdomainResponse {
+  domain: string;
+  available: boolean;
+}
+
 export interface UsageData {
   day: {
     period_start: string;
