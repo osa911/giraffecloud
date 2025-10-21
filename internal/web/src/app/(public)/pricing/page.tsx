@@ -1,5 +1,4 @@
-import Footer from "@/components/common/Footer";
-import { Container, Typography, Box, Grid, Card, CardContent, Button } from "@mui/material";
+import { Typography, Box, Grid, Card, CardContent, Button } from "@mui/material";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -37,9 +36,7 @@ const plans: Plan[] = [
 
 export default function PricingPage() {
   return (
-    <main>
-      <Container maxWidth="lg">
-        <Box sx={{ py: 8 }}>
+    <Box sx={{ py: 8 }}>
           <Typography variant="h2" component="h1" align="center" gutterBottom>
             Pricing
           </Typography>
@@ -72,9 +69,6 @@ export default function PricingPage() {
               </Grid>
             ))}
           </Grid>
-        </Box>
-      </Container>
-      <Footer />
-    </main>
+    </Box>
   );
 }

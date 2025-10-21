@@ -1,12 +1,11 @@
 "use client";
 
-import Footer from "@/components/common/Footer";
 import { Box, Container, Typography, Card, CardContent, Stack, Button } from "@mui/material";
 
 export default function InstallationPage() {
   return (
-    <>
-      <Container maxWidth="md" sx={{ py: 6 }}>
+    <Container maxWidth="md">
+      <Box sx={{ py: 6 }}>
         <Typography variant="h3" gutterBottom>
           Install GiraffeCloud
         </Typography>
@@ -94,8 +93,7 @@ export default function InstallationPage() {
             </Button>
           </Stack>
         </Stack>
-      </Container>
-      <Footer />
-    </>
+      </Box>
+    </Container>
   );
 }
