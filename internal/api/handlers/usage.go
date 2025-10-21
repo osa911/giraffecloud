@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"strconv"
 	"time"
 
 	"giraffecloud/internal/api/constants"
@@ -95,8 +96,8 @@ func (h *UsageHandler) GetDailyHistory(c *gin.Context) {
 	// Get days parameter (default to 30)
 	days := 30
 	if daysParam := c.Query("days"); daysParam != "" {
-		if parsedDays, err := time.ParseDuration(daysParam + "h"); err == nil {
-			days = int(parsedDays.Hours() / 24)
+		if parsedDays, err := strconv.Atoi(daysParam); err == nil && parsedDays > 0 {
+			days = parsedDays
 		}
 	}
 
