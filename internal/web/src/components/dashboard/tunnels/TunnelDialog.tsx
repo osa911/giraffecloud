@@ -62,8 +62,8 @@ export default function TunnelDialog({ open, onClose, tunnel, onSuccess }: Tunne
       const response = await getFreeSubdomain();
       setFreeSubdomain(response.domain);
       setFormData((prev) => ({ ...prev, domain: response.domain }));
-    } catch (error: any) {
-      const errorMessage = error?.message || "Failed to load free subdomain";
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Failed to load free subdomain";
       setFreeSubdomainError(errorMessage);
       toast.error(errorMessage);
     } finally {
