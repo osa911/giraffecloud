@@ -23,6 +23,7 @@ func SetupTunnelRoutes(v1Group *gin.RouterGroup, m *Middleware, h *Handlers) {
 		certRateLimit := middleware.RateLimitMiddleware(middleware.RateLimitConfig{RPS: 1, Burst: 2})
 		protected.GET("/certificates", certRateLimit, h.TunnelCertificate.IssueClientCertificate)
 
+		protected.GET("/free", h.Tunnel.GetFreeSubdomain)
 		protected.POST("", h.Tunnel.CreateTunnel)
 		protected.GET("", h.Tunnel.ListTunnels)
 		protected.GET("/:id", h.Tunnel.GetTunnel)

@@ -92,6 +92,25 @@ func (h *TunnelHandler) GetVersion(c *gin.Context) {
 	c.JSON(200, versionInfo)
 }
 
+// GetFreeSubdomain returns the auto-generated subdomain available for the user
+func (h *TunnelHandler) GetFreeSubdomain(c *gin.Context) {
+	userID := c.MustGet(constants.ContextKeyUserID).(uint32)
+
+	subdomain, err := h.tunnelService.GetFreeSubdomain(c.Request.Context(), userID)
+	if err != nil {
+		logging.GetGlobalLogger().Error("GetFreeSubdomain: Failed for userID=%d, error: %v", userID, err)
+		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, err.Error())
+		return
+	}
+
+	response := map[string]interface{}{
+		"domain":    subdomain,
+		"available": true,
+	}
+
+	utils.HandleSuccess(c, response)
+}
+
 // CreateTunnel creates a new tunnel
 func (h *TunnelHandler) CreateTunnel(c *gin.Context) {
 	var req struct {
