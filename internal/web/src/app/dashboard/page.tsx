@@ -2,6 +2,9 @@ import DashboardPage from "@/components/dashboard/DashboardPage";
 import serverApi from "@/services/apiClient/serverApiClient";
 import type { Tunnel, UsageData, DashboardStats } from "@/types/tunnel";
 
+// Force dynamic rendering (uses cookies for auth)
+export const dynamic = "force-dynamic";
+
 // Server component
 export default async function DashboardServerPage() {
   // User authentication is already checked in the layout

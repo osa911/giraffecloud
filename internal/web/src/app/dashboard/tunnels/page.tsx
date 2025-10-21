@@ -6,6 +6,9 @@ export const metadata: Metadata = {
   description: "Manage your GiraffeCloud tunnels",
 };
 
+// Force dynamic rendering (auth-protected page)
+export const dynamic = "force-dynamic";
+
 export default function TunnelsPage() {
   return <TunnelList />;
 }

@@ -3,6 +3,9 @@ import { getAuthUser } from "@/lib/actions/auth.actions";
 import { ROUTES } from "@/constants/routes";
 import LoginPage from "@/components/auth/login/LoginPage";
 
+// Force dynamic rendering (uses cookies for auth)
+export const dynamic = "force-dynamic";
+
 // Server component
 export default async function LoginServerPage() {
   // If user is already authenticated, redirect to dashboard

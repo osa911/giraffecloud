@@ -11,7 +11,6 @@ import {
   CSRF_COOKIE_NAME,
 } from "@/services/apiClient/baseApiClient";
 import { ROUTES } from "@/constants/routes";
-import { User as FirebaseUser } from "firebase/auth";
 import { UserResponse, User } from "./user.types";
 import {
   LoginRequest,
@@ -258,7 +257,7 @@ export async function getAuthUser(
         }
         return null;
       }
-    } catch (error) {
+    } catch {
       // API call failed (likely 401) - clear stale cookies (if possible)
       if (shouldUpdateCache) {
         try {
