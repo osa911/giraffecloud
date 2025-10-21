@@ -12,6 +12,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"runtime"
 	"strings"
 	"sync/atomic"
@@ -63,8 +64,20 @@ type TunnelServer struct {
 
 // NewServer creates a new tunnel server instance
 func NewServer(tokenRepo repository.TokenRepository, tunnelRepo repository.TunnelRepository, tunnelService interfaces.TunnelService) *TunnelServer {
+	// Determine certificate paths based on environment
+	certDir := "/app/certs"
+	env := os.Getenv("ENV")
+	if env == "development" || env == "" {
+		// Use local certs directory for development
+		certDir = "certs"
+	}
+
+	certPath := certDir + "/tunnel.crt"
+	keyPath := certDir + "/tunnel.key"
+	caPath := certDir + "/ca.crt"
+
 	// Create secure server TLS configuration - PRODUCTION: Fail hard if certificates missing
-	serverTLSConfig, err := CreateSecureServerTLSConfig("/app/certs/tunnel.crt", "/app/certs/tunnel.key", "/app/certs/ca.crt")
+	serverTLSConfig, err := CreateSecureServerTLSConfig(certPath, keyPath, caPath)
 	if err != nil {
 		logging.GetGlobalLogger().Fatalf("PRODUCTION SECURITY ERROR: Failed to create secure TLS config - certificates required: %v", err)
 		panic("TLS certificates are required for production deployment")

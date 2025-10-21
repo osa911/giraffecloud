@@ -41,9 +41,17 @@ func (h *TunnelCertificateHandler) IssueClientCertificate(c *gin.Context) {
 	logger := logging.GetGlobalLogger()
 	userID := c.MustGet(constants.ContextKeyUserID).(uint32)
 
+	// Determine certificate paths based on environment
+	certDir := "/app/certs"
+	env := os.Getenv("ENV")
+	if env == "development" || env == "" {
+		// Use local certs directory for development
+		certDir = "certs"
+	}
+
 	// Load CA cert and key
-	caCertPath := "/app/certs/ca.crt"
-	caKeyPath := "/app/certs/ca.key"
+	caCertPath := certDir + "/ca.crt"
+	caKeyPath := certDir + "/ca.key"
 	caCertPEM, err := os.ReadFile(caCertPath)
 	if err != nil {
 		logger.Error("Failed to read CA cert: %v", err)

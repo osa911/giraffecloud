@@ -12,6 +12,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -169,14 +170,26 @@ func NewGRPCTunnelServer(
 
 // Start starts the gRPC tunnel server
 func (s *GRPCTunnelServer) Start(addr string) error {
+	// Determine certificate paths based on environment
+	certDir := "/app/certs"
+	env := os.Getenv("ENV")
+	if env == "development" || env == "" {
+		// Use local certs directory for development
+		certDir = "certs"
+	}
+	
+	certPath := certDir + "/tunnel.crt"
+	keyPath := certDir + "/tunnel.key"
+	caPath := certDir + "/ca.crt"
+	
 	// Create secure TLS configuration with mutual authentication
-	tlsConfig, err := CreateSecureServerTLSConfig("/app/certs/tunnel.crt", "/app/certs/tunnel.key", "/app/certs/ca.crt")
+	tlsConfig, err := CreateSecureServerTLSConfig(certPath, keyPath, caPath)
 	if err != nil {
 		s.logger.Warn("Failed to create secure TLS config, using fallback: %v", err)
 		// Fallback configuration for compatibility
 		tlsConfig = &tls.Config{
 			GetCertificate: func(info *tls.ClientHelloInfo) (*tls.Certificate, error) {
-				cert, err := tls.LoadX509KeyPair("/app/certs/tunnel.crt", "/app/certs/tunnel.key")
+				cert, err := tls.LoadX509KeyPair(certPath, keyPath)
 				if err != nil {
 					return nil, fmt.Errorf("failed to load certificate: %w", err)
 				}

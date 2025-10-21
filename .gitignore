@@ -10,6 +10,7 @@ internal/config/env/.env.*
 !internal/config/env/.env.example
 !internal/web/.env.example
 internal/web/.env.local
+certs/
 
 # Database backups
 internal/db/backups/**/*.dump
