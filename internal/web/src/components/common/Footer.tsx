@@ -14,7 +14,7 @@ export default function Footer() {
           alignItems={{ xs: "flex-start", sm: "center" }}
         >
           <Typography variant="body2" color="text.secondary">
-            © {new Date().getFullYear()} GiraffeCloud
+            © <Link href={ROUTES.HOME}>GiraffeCloud</Link> {new Date().getFullYear()}
           </Typography>
           <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
             <Link href={ROUTES.ABOUT} underline="hover">

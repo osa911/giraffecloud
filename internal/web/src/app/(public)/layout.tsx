@@ -11,7 +11,14 @@ export default function PublicLayout({ children }: PublicLayoutProps) {
   return (
     <main>
       <Container maxWidth="lg">
-        <Box sx={{ minHeight: `calc(100vh - ${footerHeight}px)` }}>{children}</Box>
+        <Box
+          sx={{
+            minHeight: `calc(100vh - ${footerHeight}px)`,
+            display: "flex",
+          }}
+        >
+          {children}
+        </Box>
       </Container>
       <Footer />
     </main>
