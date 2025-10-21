@@ -99,7 +99,7 @@ export default function ContactForm() {
 
       // Send to backend using API client
       const response = await clientApi().post<{ message: string; success: boolean }>(
-        "/api/v1/contact/submit",
+        "/contact/submit",
         {
           name,
           email,
