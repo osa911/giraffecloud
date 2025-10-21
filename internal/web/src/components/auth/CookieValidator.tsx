@@ -14,11 +14,17 @@ import {
  *
  * This handles the case where server-side 401 cleared server cookies
  * but browser still has stale cookies
+ *
+ * NOTE: When hasServerAuth is undefined (e.g., in root layout with no server check),
+ * this component doesn't do anything. It's only active when server explicitly says no auth.
  */
-export default function CookieValidator({ hasServerAuth }: { hasServerAuth: boolean }) {
+export default function CookieValidator({ hasServerAuth }: { hasServerAuth?: boolean }) {
   useEffect(() => {
     // Only run in browser
     if (typeof document === "undefined") return;
+
+    // Skip if server auth state is unknown (undefined)
+    if (hasServerAuth === undefined) return;
 
     // Check if browser has auth cookies
     const hasBrowserSessionCookie = document.cookie.includes(`${SESSION_COOKIE_NAME}=`);

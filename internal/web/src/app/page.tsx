@@ -2,8 +2,19 @@ import Footer from "@/components/common/Footer";
 import Link from "@/components/common/Link";
 import { ROUTES } from "@/constants/routes";
 import { Box, Button, Container, Typography } from "@mui/material";
+import { getCachedUser } from "@/lib/actions/auth.actions";
+import { redirect } from "next/navigation";
 
-export default function HomeServerPage() {
+export default async function HomeServerPage() {
+  // Get user from cache (no API call)
+  const user = await getCachedUser();
+
+  // Redirect logged-in users to dashboard
+  // This is standard SaaS behavior - homepage is for marketing only
+  if (user) {
+    redirect(ROUTES.DASHBOARD.HOME);
+  }
+
   const footerHeight = 113;
   return (
     <main>

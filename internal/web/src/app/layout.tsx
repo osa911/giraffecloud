@@ -8,7 +8,6 @@ import { ThemeProvider } from "@mui/material/styles";
 import CssBaseline from "@mui/material/CssBaseline";
 import theme from "@/styles/theme";
 import { Toaster } from "react-hot-toast";
-import { getAuthUser } from "@/lib/actions/auth.actions";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 
@@ -28,17 +27,15 @@ type RootServerLayoutProps = {
   children: React.ReactNode;
 };
 
-export default async function RootServerLayout({ children }: RootServerLayoutProps) {
-  const initialUser = await getAuthUser({ redirect: false });
-
+export default function RootServerLayout({ children }: RootServerLayoutProps) {
   return (
     <html lang="en" className={inter.className}>
       <body>
         <AppRouterCacheProvider>
           <ThemeProvider theme={theme}>
             <CssBaseline />
-            <CookieValidator hasServerAuth={!!initialUser} />
-            <AuthProvider initialUser={initialUser}>{children}</AuthProvider>
+            <CookieValidator />
+            <AuthProvider>{children}</AuthProvider>
             <Toaster />
           </ThemeProvider>
         </AppRouterCacheProvider>

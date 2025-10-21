@@ -43,10 +43,10 @@ export const useAuth = () => {
 
 type AuthProviderProps = {
   children: React.ReactNode;
-  initialUser: User | null;
+  initialUser?: User | null;
 };
 
-export const AuthProvider = ({ children, initialUser }: AuthProviderProps) => {
+export const AuthProvider = ({ children, initialUser = null }: AuthProviderProps) => {
   const [user, setUser] = useState<User | null>(initialUser);
   const [, startTransition] = useTransition();
   const [, loginWithToken] = useActionState<undefined, LoginWithTokenFormState>(

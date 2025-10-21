@@ -196,63 +196,41 @@ export async function getAuthUser(options = { redirect: true }): Promise<User | 
   let user: User | null = null;
 
   try {
+    // First, try to get user from cache (fast path)
+    const cachedUser = await getCachedUser();
+    if (cachedUser) {
+      // Cache is fresh and valid - return immediately
+      return cachedUser;
+    }
+
+    // Cache miss or expired - need to validate with backend
     const cookieStore = await cookies();
     const sessionCookie = cookieStore.get(SESSION_COOKIE_NAME);
     const authTokenCookie = cookieStore.get(AUTH_TOKEN_COOKIE_NAME);
-    const cachedUserData = await getCachedUserData();
-
-    // Check for consistency: if we have session cookies AND user_data, check cache validity
     const hasSessionCookies = !!(sessionCookie || authTokenCookie);
 
-    if (hasSessionCookies && cachedUserData) {
-      const { user: cachedUser, cachedAt } = cachedUserData;
-      const now = Date.now();
-      const cacheAge = now - cachedAt;
-
-      if (cacheAge < USER_DATA_CACHE_TTL) {
-        // Cache is still fresh - trust it
-        user = cachedUser;
-        return user;
-      } else {
-        // Cache is stale - validate with API
-        try {
-          const data = await serverApi().get<{ valid: boolean; user?: User }>("/auth/session");
-          if (data.valid && data.user) {
-            user = data.user;
-            await setUserDataCookie(data.user);
-            return user;
-          } else {
-            // Session is invalid - clear everything
-            await clearAllAuthCookies();
-            return null;
-          }
-        } catch {
-          // API call failed (likely 401) - clear stale cookies
-          await clearAllAuthCookies();
-          return null;
-        }
-      }
-    }
-
-    if (!hasSessionCookies && cachedUserData) {
-      // Inconsistent state: user_data exists but no session cookies
-      // This means session expired but user_data wasn't cleaned up
-      await clearAllAuthCookies();
+    if (!hasSessionCookies) {
+      // No session cookies - user is not authenticated
       return null;
     }
 
-    if (hasSessionCookies && !cachedUserData) {
-      // Session cookies exist but no user_data - fetch from API
+    // We have session cookies but no fresh cache - validate with API
+    try {
       const data = await serverApi().get<{ valid: boolean; user?: User }>("/auth/session");
       if (data.valid && data.user) {
         user = data.user;
         await setUserDataCookie(data.user);
         return user;
+      } else {
+        // Session is invalid - clear everything
+        await clearAllAuthCookies();
+        return null;
       }
+    } catch {
+      // API call failed (likely 401) - clear stale cookies
+      await clearAllAuthCookies();
+      return null;
     }
-
-    // No cookies at all - user is not authenticated
-    return null;
   } catch (error) {
     console.error("Error verifying session:", error);
     // API call failed (likely 401/403) - clear all auth cookies
@@ -332,6 +310,43 @@ async function getCachedUserData(): Promise<CachedUserData | null> {
 export async function getUserDataFromCookie(): Promise<User | null> {
   const cachedData = await getCachedUserData();
   return cachedData?.user || null;
+}
+
+/**
+ * Gets cached user data without making API calls or redirecting
+ *
+ * Use this when:
+ * - You need user data for UI purposes (display name, email, etc.)
+ * - You don't need to validate the session
+ * - You're okay with potentially stale data (up to 5 minutes old)
+ *
+ * Don't use this when:
+ * - You need to verify authentication (use getAuthUser instead)
+ * - You need fresh data from the backend
+ * - You're in a security-critical component
+ *
+ * @returns User object from cache or null if not found/expired
+ */
+export async function getCachedUser(): Promise<User | null> {
+  try {
+    const cachedData = await getCachedUserData();
+    if (!cachedData) return null;
+
+    const { user, cachedAt } = cachedData;
+    const now = Date.now();
+    const cacheAge = now - cachedAt;
+
+    // Return user only if cache is still fresh
+    if (cacheAge < USER_DATA_CACHE_TTL) {
+      return user;
+    }
+
+    // Cache expired - return null
+    return null;
+  } catch (error) {
+    console.error("Error getting cached user:", error);
+    return null;
+  }
 }
 
 // Firebase token handling
