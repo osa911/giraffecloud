@@ -4,10 +4,22 @@ import { useState, useEffect } from "react";
 import toast from "react-hot-toast";
 import clientApi from "@/services/apiClient/clientApiClient";
 
+// Type definitions for Google reCAPTCHA
+interface ReCaptchaV3 {
+  ready: (callback: () => void) => void;
+  execute: (siteKey: string, options: { action: string }) => Promise<string>;
+}
+
+declare global {
+  interface Window {
+    grecaptcha?: ReCaptchaV3;
+  }
+}
+
 // Load reCAPTCHA script
 const loadRecaptcha = () => {
   return new Promise<void>((resolve, reject) => {
-    if (typeof window !== "undefined" && (window as any).grecaptcha) {
+    if (typeof window !== "undefined" && window.grecaptcha) {
       resolve();
       return;
     }
@@ -42,16 +54,16 @@ export default function ContactForm() {
 
   const getRecaptchaToken = async (): Promise<string> => {
     return new Promise((resolve, reject) => {
-      if (!recaptchaReady || !(window as any).grecaptcha) {
+      if (!recaptchaReady || !window.grecaptcha) {
         reject(new Error("reCAPTCHA not ready"));
         return;
       }
 
-      (window as any).grecaptcha.ready(() => {
-        (window as any).grecaptcha
-          .execute(process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY, { action: "contact" })
+      window.grecaptcha.ready(() => {
+        window
+          .grecaptcha!.execute(process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY!, { action: "contact" })
           .then((token: string) => resolve(token))
-          .catch((err: any) => reject(err));
+          .catch((err: Error) => reject(err));
       });
     });
   };
@@ -101,7 +113,7 @@ export default function ContactForm() {
       setName("");
       setEmail("");
       setMessage("");
-    } catch (error: any) {
+    } catch (error) {
       // Error toasts are already shown by the API client interceptor
       // Just log it for debugging
       console.error("Contact form error:", error);
