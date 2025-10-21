@@ -1,14 +1,16 @@
-import Link from "@/components/common/Link";
 import Footer from "@/components/common/Footer";
-import { Button, Container, Typography, Box } from "@mui/material";
+import Link from "@/components/common/Link";
+import { ROUTES } from "@/constants/routes";
+import { Box, Button, Container, Typography } from "@mui/material";
 
 export default function HomeServerPage() {
+  const footerHeight = 113;
   return (
     <main>
       <Container maxWidth="lg">
         <Box
           sx={{
-            minHeight: "calc(100vh - 150px)",
+            minHeight: `calc(100vh - ${footerHeight}px)`,
             display: "flex",
             flexDirection: "column",
             justifyContent: "center",
@@ -24,12 +26,12 @@ export default function HomeServerPage() {
             Secure and efficient reverse tunnel service
           </Typography>
           <Box sx={{ mt: 4 }}>
-            <Link href="/auth/register">
+            <Link href={ROUTES.AUTH.REGISTER}>
               <Button variant="contained" size="large" sx={{ mr: 2 }}>
                 Get Started
               </Button>
             </Link>
-            <Link href="/auth/login">
+            <Link href={ROUTES.AUTH.LOGIN}>
               <Button variant="outlined" size="large">
                 Login
               </Button>
