@@ -4,6 +4,7 @@ import (
 	"giraffecloud/internal/api/constants"
 	"giraffecloud/internal/api/dto/common"
 	"giraffecloud/internal/api/dto/v1/auth"
+	"giraffecloud/internal/api/dto/v1/contact"
 	"giraffecloud/internal/api/dto/v1/user"
 	"giraffecloud/internal/utils"
 
@@ -86,6 +87,16 @@ func (m *ValidationMiddleware) ValidateUpdateProfileRequest() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var profileReq user.UpdateProfileRequest
 		if m.validateRequest(c, &profileReq, constants.ContextKeyUpdateProfile) {
+			c.Next()
+		}
+	}
+}
+
+// ValidateContactRequest validates contact form request
+func (m *ValidationMiddleware) ValidateContactRequest() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var contactReq contact.ContactRequest
+		if m.validateRequest(c, &contactReq, constants.ContextKeyContact) {
 			c.Next()
 		}
 	}

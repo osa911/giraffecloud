@@ -18,6 +18,7 @@ type Handlers struct {
 	Webhook           *handlers.WebhookHandler
 	Admin             *handlers.AdminHandler
 	Usage             *handlers.UsageHandler
+	Contact           *handlers.ContactHandler
 }
 
 // Middleware contains all the middleware

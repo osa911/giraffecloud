@@ -276,6 +276,7 @@ func (s *Server) Init() error {
 		Webhook:           handlers.NewWebhookHandler(),
 		Admin:             handlers.NewAdminHandler(versionService),
 		Usage:             handlers.NewUsageHandler(s.db.DB, quotaService),
+		Contact:           handlers.NewContactHandler(),
 	}
 	logger.Info("Handlers initialized")
 

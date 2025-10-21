@@ -17,4 +17,7 @@ const (
 	ContextKeyBodyValidation = "body_validation"
 	ContextKeyRawBody        = "raw_body"
 	ContextKeyValidate       = "validate"
+
+	// Contact context key
+	ContextKeyContact = "contact"
 )

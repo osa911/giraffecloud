@@ -27,6 +27,9 @@ func Setup(router *gin.Engine, h *Handlers, m *Middleware) {
 	// Auth routes (no auth required for login/register)
 	SetupAuthRoutes(v1, h.Auth, m)
 
+	// Contact routes (public)
+	SetupContactRoutes(v1, h.Contact, m)
+
 	// Admin routes (requires authentication)
 	SetupAdminRoutes(v1, h.Admin, m)
 
