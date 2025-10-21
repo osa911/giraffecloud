@@ -185,6 +185,7 @@ export default function DashboardLayoutClient({ children, user }: DashboardLayou
         sx={{
           flexGrow: 1,
           p: 3,
+          pb: 0,
           width: { sm: `calc(100% - ${drawerWidth}px)` },
           display: "flex",
           flexDirection: "column",
