@@ -376,13 +376,8 @@ func (s *caddyService) LoadConfig() error {
 					}
 					// Ensure proper listening addresses
 					srv0["listen"] = []string{":80", ":443"}
-					// Set large body size limit for file uploads (50GB)
-					srv0["max_body_size"] = 53687091200 // 50 GB in bytes
-					// Set timeouts - generous but not unlimited
-					srv0["idle_timeout"] = "5m"         // 5 min idle before disconnect
-					srv0["read_header_timeout"] = "30s" // 30 sec to read request headers (fast)
-					srv0["read_timeout"] = "30m"        // 30 min to read request body (for uploads)
-					srv0["write_timeout"] = "30m"       // 30 min to write response (for downloads)
+					// Note: Caddy v2 doesn't have max_body_size at server level
+					// Request body size limits should be handled via request_body handler if needed
 				}
 			}
 		}
