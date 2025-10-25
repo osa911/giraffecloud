@@ -867,6 +867,9 @@ func (c *GRPCTunnelClient) streamResponseInChunksWithContext(ctx context.Context
 	}
 
 	chunkNum := 0
+	totalBytes := int64(0)
+	lastProgressLog := 0
+	progressInterval := 50 // Log every 50 chunks
 	buffer := make([]byte, ChunkSize)
 
 	for {
@@ -899,6 +902,7 @@ func (c *GRPCTunnelClient) streamResponseInChunksWithContext(ctx context.Context
 
 		if n > 0 {
 			chunkNum++
+			totalBytes += int64(n)
 
 			// Create chunk data
 			chunkData := make([]byte, n)
@@ -931,6 +935,13 @@ func (c *GRPCTunnelClient) streamResponseInChunksWithContext(ctx context.Context
 
 			c.logger.Debug("[CHUNKED CLIENT] ✅ Sending chunk %d (%d bytes), final: %v", chunkNum, len(chunkData), isFinalChunk)
 
+			// Progress logging every N chunks
+			if chunkNum-lastProgressLog >= progressInterval {
+				totalMB := float64(totalBytes) / (1024 * 1024)
+				c.logger.Info("[CHUNKED CLIENT] 📊 Progress: streamed %d chunks (%.1f MB) so far...", chunkNum, totalMB)
+				lastProgressLog = chunkNum
+			}
+
 			// Check if stream is still healthy before sending
 			if c.stream == nil {
 				c.logger.Error("[CHUNKED CLIENT] ❌ Stream is nil, stopping chunk streaming")
@@ -957,7 +968,7 @@ func (c *GRPCTunnelClient) streamResponseInChunksWithContext(ctx context.Context
 		// Check for end of file
 		if err == io.EOF {
 			// Calculate and log streaming performance
-			totalMB := float64(chunkNum*ChunkSize) / (1024 * 1024)
+			totalMB := float64(totalBytes) / (1024 * 1024)
 			c.logger.Info("[CHUNKED CLIENT] 🎉 Completed streaming %d chunks (%.1f MB) for large file", chunkNum, totalMB)
 			break
 		} else if err != nil {
