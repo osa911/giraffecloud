@@ -384,13 +384,13 @@ func (s *GRPCTunnelServer) monitorTunnelHealth(tunnelStream *TunnelStream) error
 				},
 			}
 
-		tunnelStream.sendMux.Lock()
-		err := tunnelStream.Stream.Send(healthCheck)
-		tunnelStream.sendMux.Unlock()
-		if err != nil {
-			s.logger.Error("Failed to send health check to tunnel %s: %v", tunnelStream.Domain, err)
-			return err
-		}
+			tunnelStream.sendMux.Lock()
+			err := tunnelStream.Stream.Send(healthCheck)
+			tunnelStream.sendMux.Unlock()
+			if err != nil {
+				s.logger.Error("Failed to send health check to tunnel %s: %v", tunnelStream.Domain, err)
+				return err
+			}
 		}
 	}
 }

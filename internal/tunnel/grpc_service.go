@@ -104,8 +104,8 @@ type TunnelStream struct {
 	totalErrors   int64
 
 	// Concurrency control
-	mu       sync.RWMutex
-	sendMux  sync.Mutex
+	mu      sync.RWMutex
+	sendMux sync.Mutex
 }
 
 // GRPCTunnelConfig holds configuration for the gRPC tunnel service

@@ -617,17 +617,17 @@ func (s *GRPCTunnelServer) collectChunkedResponse(tunnelStream *TunnelStream, re
 									},
 								}
 
-							// Send cancel signal (best effort - non-blocking)
-							go func() {
-								tunnelStream.sendMux.Lock()
-								sendErr := tunnelStream.Stream.Send(cancelMsg)
-								tunnelStream.sendMux.Unlock()
-								if sendErr != nil {
-									s.logger.Debug("[CHUNKED] Could not send cancel signal: %v", sendErr)
-								} else {
-									s.logger.Debug("[CHUNKED] ✅ Cancel signal sent - client will stop immediately")
-								}
-							}()
+								// Send cancel signal (best effort - non-blocking)
+								go func() {
+									tunnelStream.sendMux.Lock()
+									sendErr := tunnelStream.Stream.Send(cancelMsg)
+									tunnelStream.sendMux.Unlock()
+									if sendErr != nil {
+										s.logger.Debug("[CHUNKED] Could not send cancel signal: %v", sendErr)
+									} else {
+										s.logger.Debug("[CHUNKED] ✅ Cancel signal sent - client will stop immediately")
+									}
+								}()
 
 								errorCh <- fmt.Errorf("failed to write chunk to pipe: %w", writeErr)
 								return
