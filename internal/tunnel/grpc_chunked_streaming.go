@@ -344,7 +344,7 @@ func (s *GRPCTunnelServer) handleLargeFileUploadWithStreaming(domain string, htt
 
 	s.logger.Info("[CHUNKED UPLOAD] 📤 Upload %s: Sending Start message", requestID)
 
-	// Send Start message (with mutex for gRPC stream thread-safety)
+	// Send Start message (with mutex for thread-safety)
 	startMsg := &proto.TunnelMessage{
 		RequestId: requestID,
 		Timestamp: time.Now().Unix(),
@@ -405,7 +405,7 @@ func (s *GRPCTunnelServer) handleLargeFileUploadWithStreaming(domain string, htt
 					lastProgressLog = chunkCount
 				}
 
-				// Send chunk with mutex for gRPC stream thread-safety
+				// Send chunk (with mutex for thread-safety)
 				tunnelStream.sendMux.Lock()
 				sendErr := tunnelStream.Stream.Send(chunkMsg)
 				tunnelStream.sendMux.Unlock()
@@ -426,7 +426,7 @@ func (s *GRPCTunnelServer) handleLargeFileUploadWithStreaming(domain string, htt
 
 	s.logger.Info("[CHUNKED UPLOAD] 📤 Upload %s: Sending End message", requestID)
 
-	// Send End message (with mutex for gRPC stream thread-safety)
+	// Send End (with mutex for thread-safety)
 	endMsg := &proto.TunnelMessage{
 		RequestId:   requestID,
 		Timestamp:   time.Now().Unix(),
@@ -617,15 +617,28 @@ func (s *GRPCTunnelServer) collectChunkedResponse(tunnelStream *TunnelStream, re
 									},
 								}
 
-								// Send cancel signal (best effort - non-blocking)
+								// Send cancel signal with timeout to avoid blocking on upload traffic
 								go func() {
-									tunnelStream.sendMux.Lock()
-									sendErr := tunnelStream.Stream.Send(cancelMsg)
-									tunnelStream.sendMux.Unlock()
-									if sendErr != nil {
-										s.logger.Debug("[CHUNKED] Could not send cancel signal: %v", sendErr)
-									} else {
-										s.logger.Debug("[CHUNKED] ✅ Cancel signal sent - client will stop immediately")
+									// Try to acquire lock with a short timeout
+									lockAcquired := make(chan struct{})
+									go func() {
+										tunnelStream.sendMux.Lock()
+										close(lockAcquired)
+									}()
+
+									select {
+									case <-lockAcquired:
+										// Got lock, send cancel
+										sendErr := tunnelStream.Stream.Send(cancelMsg)
+										tunnelStream.sendMux.Unlock()
+										if sendErr != nil {
+											s.logger.Debug("[CHUNKED] Could not send cancel signal: %v", sendErr)
+										} else {
+											s.logger.Info("[CHUNKED] ✅ Cancel signal sent successfully")
+										}
+									case <-time.After(50 * time.Millisecond):
+										// Lock is busy (upload traffic), but that's OK - client will stop on its own soon
+										s.logger.Debug("[CHUNKED] Cancel signal delayed by upload traffic (will rely on client timeout)")
 									}
 								}()
 

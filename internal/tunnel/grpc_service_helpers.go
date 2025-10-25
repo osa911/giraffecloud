@@ -497,7 +497,7 @@ func (s *GRPCTunnelServer) sendRequestAndWaitResponse(tunnelStream *TunnelStream
 	tunnelStream.pendingRequests[grpcMsg.RequestId] = responseChan
 	tunnelStream.requestsMux.Unlock()
 
-	// Send request to client (with mutex for gRPC stream thread-safety)
+	// Send request to client (with mutex for thread-safety)
 	tunnelStream.sendMux.Lock()
 	sendErr := tunnelStream.Stream.Send(grpcMsg)
 	tunnelStream.sendMux.Unlock()
