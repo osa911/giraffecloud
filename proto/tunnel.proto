@@ -9,6 +9,10 @@ service TunnelService {
     // EstablishTunnel creates a bidirectional streaming tunnel for regular HTTP traffic
     rpc EstablishTunnel(stream TunnelMessage) returns (stream TunnelMessage);
 
+    // ControlChannel provides a dedicated stream for high-priority control messages
+    // This prevents cancels and health checks from being blocked by large data transfers
+    rpc ControlChannel(stream ControlMessage) returns (stream ControlMessage);
+
     // StreamLargeFile handles large file streaming with chunked transfer for memory efficiency
     rpc StreamLargeFile(LargeFileRequest) returns (stream LargeFileChunk);
 
@@ -33,6 +37,28 @@ message TunnelMessage {
 
     string request_id = 10;
     int64 timestamp = 11;
+}
+
+// ControlMessage is used exclusively for the ControlChannel
+// This keeps control messages separate from data traffic to prevent blocking
+message ControlMessage {
+    oneof message_type {
+        ControlHandshake handshake = 1;
+        CancelRequest cancel = 2;
+        HealthCheckRequest health_check = 3;
+        HealthCheckResponse health_response = 4;
+        ControlPing ping = 5;
+        ControlPong pong = 6;
+    }
+
+    string request_id = 10;
+    int64 timestamp = 11;
+}
+
+// ControlHandshake establishes the control channel
+message ControlHandshake {
+    string domain = 1;
+    string client_version = 2;
 }
 
 // TunnelHandshake initiates the tunnel connection
@@ -217,6 +243,16 @@ message TunnelMetrics {
     int64 chunked_transfers = 6;
     double average_response_time = 7;
     int64 errors_count = 8;
+}
+
+// Control channel ping/pong for keepalive
+message ControlPing {
+    int64 timestamp = 1;
+}
+
+message ControlPong {
+    int64 timestamp = 1;
+    int64 reply_timestamp = 2;
 }
 
 // Health check messages

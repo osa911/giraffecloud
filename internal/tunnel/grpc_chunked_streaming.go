@@ -588,29 +588,50 @@ func (s *GRPCTunnelServer) collectChunkedResponse(tunnelStream *TunnelStream, re
 								// Client disconnected (broken pipe) - SEND CANCEL SIGNAL to stop client immediately
 								s.logger.Info("[CHUNKED] 🛑 Client disconnected, sending cancel signal to stop streaming")
 
-								// Send CONTROL message (not ERROR) to cancel this specific request
-								cancelMsg := &proto.TunnelMessage{
-									RequestId: response.RequestId,
-									Timestamp: time.Now().Unix(),
-									MessageType: &proto.TunnelMessage_Control{
-										Control: &proto.TunnelControl{
-											ControlType: &proto.TunnelControl_CancelRequest{
-												CancelRequest: &proto.CancelRequest{
-													RequestId: response.RequestId,
-													Reason:    "downstream_disconnected",
-													Timestamp: time.Now().Unix(),
+								// Send cancel via dedicated control channel (instant delivery!)
+								go func() {
+									// Try control channel first (no data blocking)
+									tunnelStream.controlMux.RLock()
+									controlStream := tunnelStream.ControlStream
+									tunnelStream.controlMux.RUnlock()
+
+									cancelMsg := &proto.CancelRequest{
+										RequestId: response.RequestId,
+										Reason:    "downstream_disconnected",
+										Timestamp: time.Now().Unix(),
+									}
+
+									if controlStream != nil {
+										// Control channel available - instant delivery!
+										controlMsg := &proto.ControlMessage{
+											RequestId: response.RequestId,
+											Timestamp: time.Now().Unix(),
+											MessageType: &proto.ControlMessage_Cancel{
+												Cancel: cancelMsg,
+											},
+										}
+										if sendErr := controlStream.Send(controlMsg); sendErr != nil {
+											s.logger.Debug("[CHUNKED] ⚠️ Control channel send failed: %v", sendErr)
+										} else {
+											s.logger.Debug("[CHUNKED] ✅ Cancel sent via CONTROL CHANNEL (instant)")
+										}
+									} else {
+										// Fallback to data channel (backward compatibility with old clients)
+										s.logger.Debug("[CHUNKED] ℹ️ Control channel not available, using data channel (may be delayed)")
+										dataMsg := &proto.TunnelMessage{
+											RequestId: response.RequestId,
+											Timestamp: time.Now().Unix(),
+											MessageType: &proto.TunnelMessage_Control{
+												Control: &proto.TunnelControl{
+													ControlType: &proto.TunnelControl_CancelRequest{
+														CancelRequest: cancelMsg,
+													},
 												},
 											},
-										},
-									},
-								}
-
-								// Send cancel signal (best effort - non-blocking)
-								go func() {
-									if sendErr := tunnelStream.Stream.Send(cancelMsg); sendErr != nil {
-										s.logger.Debug("[CHUNKED] Could not send cancel signal: %v", sendErr)
-									} else {
-										s.logger.Debug("[CHUNKED] ✅ Cancel signal sent - client will stop immediately")
+										}
+										if sendErr := tunnelStream.Stream.Send(dataMsg); sendErr != nil {
+											s.logger.Debug("[CHUNKED] Could not send cancel via data channel: %v", sendErr)
+										}
 									}
 								}()
 

@@ -91,6 +91,10 @@ type TunnelStream struct {
 	Context    context.Context
 	UserID     uint32
 
+	// Control channel for high-priority messages (cancels, health checks)
+	ControlStream proto.TunnelService_ControlChannelServer
+	controlMux    sync.RWMutex
+
 	// Request correlation (requestID -> response channel)
 	pendingRequests map[string]chan *proto.TunnelMessage
 	requestsMux     sync.RWMutex
@@ -390,6 +394,102 @@ func (s *GRPCTunnelServer) EstablishTunnel(stream proto.TunnelService_EstablishT
 
 	// Keep the stream alive and monitor health
 	return s.monitorTunnelHealth(tunnelStream)
+}
+
+// ControlChannel handles the dedicated control stream for high-priority messages
+func (s *GRPCTunnelServer) ControlChannel(stream proto.TunnelService_ControlChannelServer) error {
+	ctx := stream.Context()
+	s.logger.Info("[CONTROL] New control channel connection from %s", getPeerIP(ctx))
+
+	// Wait for handshake
+	handshakeMsg, err := stream.Recv()
+	if err != nil {
+		s.logger.Error("[CONTROL] Failed to receive handshake: %v", err)
+		return status.Errorf(codes.InvalidArgument, "handshake required")
+	}
+
+	// Validate handshake
+	handshake := handshakeMsg.GetHandshake()
+	if handshake == nil || handshake.Domain == "" {
+		s.logger.Error("[CONTROL] Invalid handshake - missing domain")
+		return status.Errorf(codes.InvalidArgument, "invalid handshake: domain required")
+	}
+
+	domain := handshake.Domain
+	s.logger.Info("[CONTROL] Handshake received for domain: %s", domain)
+
+	// Find existing tunnel stream
+	s.tunnelStreamsMux.RLock()
+	tunnelStream, exists := s.tunnelStreams[domain]
+	s.tunnelStreamsMux.RUnlock()
+
+	if !exists {
+		s.logger.Error("[CONTROL] No data tunnel found for domain: %s", domain)
+		return status.Errorf(codes.FailedPrecondition, "data tunnel must be established first")
+	}
+
+	// Attach control stream to tunnel
+	tunnelStream.controlMux.Lock()
+	tunnelStream.ControlStream = stream
+	tunnelStream.controlMux.Unlock()
+
+	s.logger.Info("[CONTROL] ✅ Control channel established for domain: %s", domain)
+
+	// Send handshake confirmation
+	confirmMsg := &proto.ControlMessage{
+		RequestId: handshakeMsg.RequestId,
+		Timestamp: time.Now().Unix(),
+		MessageType: &proto.ControlMessage_Pong{
+			Pong: &proto.ControlPong{
+				Timestamp:      time.Now().Unix(),
+				ReplyTimestamp: time.Now().Unix(),
+			},
+		},
+	}
+	if err := stream.Send(confirmMsg); err != nil {
+		s.logger.Error("[CONTROL] Failed to send handshake confirmation: %v", err)
+		return err
+	}
+
+	// Detach control stream on exit
+	defer func() {
+		tunnelStream.controlMux.Lock()
+		tunnelStream.ControlStream = nil
+		tunnelStream.controlMux.Unlock()
+		s.logger.Info("[CONTROL] Control channel closed for domain: %s", domain)
+	}()
+
+	// Listen for incoming control messages (mostly for ping/pong keepalive)
+	for {
+		msg, err := stream.Recv()
+		if err != nil {
+			if err == io.EOF {
+				s.logger.Info("[CONTROL] Client closed control channel for domain: %s", domain)
+				return nil
+			}
+			s.logger.Error("[CONTROL] Error receiving control message: %v", err)
+			return err
+		}
+
+		// Handle ping requests
+		if ping := msg.GetPing(); ping != nil {
+			pong := &proto.ControlMessage{
+				RequestId: msg.RequestId,
+				Timestamp: time.Now().Unix(),
+				MessageType: &proto.ControlMessage_Pong{
+					Pong: &proto.ControlPong{
+						Timestamp:      ping.Timestamp,
+						ReplyTimestamp: time.Now().Unix(),
+					},
+				},
+			}
+			if err := stream.Send(pong); err != nil {
+				s.logger.Error("[CONTROL] Failed to send pong: %v", err)
+				return err
+			}
+		}
+		// Other control messages would be handled here (not needed for now)
+	}
 }
 
 // HealthCheck implements health checking for the tunnel service

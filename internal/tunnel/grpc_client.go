@@ -39,9 +39,11 @@ type GRPCTunnelClient struct {
 	token      string
 
 	// gRPC connection
-	conn   *grpc.ClientConn
-	client proto.TunnelServiceClient
-	stream proto.TunnelService_EstablishTunnelClient
+	conn          *grpc.ClientConn
+	client        proto.TunnelServiceClient
+	stream        proto.TunnelService_EstablishTunnelClient
+	controlStream proto.TunnelService_ControlChannelClient
+	controlMux    sync.RWMutex
 
 	// State management
 	connected  bool
@@ -361,8 +363,119 @@ func (c *GRPCTunnelClient) connect() error {
 		return fmt.Errorf("handshake response failed: %w", err)
 	}
 
-	c.logger.Info("[%s] [CONNECT] ✅ gRPC connection fully established", c.clientID)
+	c.logger.Info("[%s] [CONNECT] ✅ gRPC data tunnel established", c.clientID)
+
+	// Establish control channel (for instant cancels and control messages)
+	c.logger.Debug("[%s] [CONNECT] Establishing control channel", c.clientID)
+	if err := c.establishControlChannel(); err != nil {
+		c.logger.Warn("[%s] [CONNECT] ⚠️ Control channel failed (will use data channel fallback): %v", c.clientID, err)
+		// Don't fail the connection - control channel is optional for backward compatibility
+	}
+
 	return nil
+}
+
+// establishControlChannel establishes the dedicated control channel for cancels
+func (c *GRPCTunnelClient) establishControlChannel() error {
+	// Create control channel stream
+	controlStream, err := c.client.ControlChannel(c.ctx)
+	if err != nil {
+		return fmt.Errorf("failed to create control stream: %w", err)
+	}
+
+	// Send control handshake
+	handshake := &proto.ControlMessage{
+		RequestId: generateRequestID(),
+		Timestamp: time.Now().Unix(),
+		MessageType: &proto.ControlMessage_Handshake{
+			Handshake: &proto.ControlHandshake{
+				Domain:        c.domain,
+				ClientVersion: "1.0.0",
+			},
+		},
+	}
+
+	if err := controlStream.Send(handshake); err != nil {
+		return fmt.Errorf("failed to send control handshake: %w", err)
+	}
+
+	// Wait for confirmation
+	confirmMsg, err := controlStream.Recv()
+	if err != nil {
+		return fmt.Errorf("failed to receive control handshake confirmation: %w", err)
+	}
+
+	if confirmMsg.GetPong() == nil {
+		return fmt.Errorf("invalid control handshake response")
+	}
+
+	// Store control stream
+	c.controlMux.Lock()
+	c.controlStream = controlStream
+	c.controlMux.Unlock()
+
+	c.logger.Info("[%s] [CONTROL] ✅ Control channel established", c.clientID)
+
+	// Start listening for control messages in background
+	go c.handleControlMessages()
+
+	return nil
+}
+
+// handleControlMessages listens for incoming control messages
+func (c *GRPCTunnelClient) handleControlMessages() {
+	c.controlMux.RLock()
+	stream := c.controlStream
+	c.controlMux.RUnlock()
+
+	if stream == nil {
+		return
+	}
+
+	c.logger.Debug("[%s] [CONTROL] Started listening for control messages", c.clientID)
+
+	for {
+		msg, err := stream.Recv()
+		if err != nil {
+			if err == io.EOF {
+				c.logger.Info("[%s] [CONTROL] Control channel closed by server", c.clientID)
+				return
+			}
+			c.logger.Error("[%s] [CONTROL] Error receiving control message: %v", c.clientID, err)
+			return
+		}
+
+		// Handle cancel requests
+		if cancel := msg.GetCancel(); cancel != nil {
+			c.logger.Info("[%s] [CANCEL] Received cancellation for request %s (reason: %s)",
+				c.clientID, cancel.RequestId, cancel.Reason)
+
+			// Cancel the active stream
+			c.activeStreamsMu.Lock()
+			if cancelFunc, exists := c.activeStreams[cancel.RequestId]; exists {
+				cancelFunc()
+				delete(c.activeStreams, cancel.RequestId)
+			}
+			c.activeStreamsMu.Unlock()
+		}
+
+		// Handle ping requests
+		if ping := msg.GetPing(); ping != nil {
+			pong := &proto.ControlMessage{
+				RequestId: msg.RequestId,
+				Timestamp: time.Now().Unix(),
+				MessageType: &proto.ControlMessage_Pong{
+					Pong: &proto.ControlPong{
+						Timestamp:      ping.Timestamp,
+						ReplyTimestamp: time.Now().Unix(),
+					},
+				},
+			}
+			if err := stream.Send(pong); err != nil {
+				c.logger.Error("[%s] [CONTROL] Failed to send pong: %v", c.clientID, err)
+			}
+		}
+	}
 }
 
 // sendHandshake sends the initial handshake message

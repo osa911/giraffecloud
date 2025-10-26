@@ -20,6 +20,7 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	TunnelService_EstablishTunnel_FullMethodName = "/tunnel.TunnelService/EstablishTunnel"
+	TunnelService_ControlChannel_FullMethodName  = "/tunnel.TunnelService/ControlChannel"
 	TunnelService_StreamLargeFile_FullMethodName = "/tunnel.TunnelService/StreamLargeFile"
 	TunnelService_HealthCheck_FullMethodName     = "/tunnel.TunnelService/HealthCheck"
 )
@@ -32,6 +33,9 @@ const (
 type TunnelServiceClient interface {
 	// EstablishTunnel creates a bidirectional streaming tunnel for regular HTTP traffic
 	EstablishTunnel(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[TunnelMessage, TunnelMessage], error)
+	// ControlChannel provides a dedicated stream for high-priority control messages
+	// This prevents cancels and health checks from being blocked by large data transfers
+	ControlChannel(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ControlMessage, ControlMessage], error)
 	// StreamLargeFile handles large file streaming with chunked transfer for memory efficiency
 	StreamLargeFile(ctx context.Context, in *LargeFileRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[LargeFileChunk], error)
 	// HealthCheck provides tunnel health monitoring
@@ -59,9 +63,22 @@ func (c *tunnelServiceClient) EstablishTunnel(ctx context.Context, opts ...grpc.
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type TunnelService_EstablishTunnelClient = grpc.BidiStreamingClient[TunnelMessage, TunnelMessage]
 
+func (c *tunnelServiceClient) ControlChannel(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[ControlMessage, ControlMessage], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &TunnelService_ServiceDesc.Streams[1], TunnelService_ControlChannel_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[ControlMessage, ControlMessage]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type TunnelService_ControlChannelClient = grpc.BidiStreamingClient[ControlMessage, ControlMessage]
+
 func (c *tunnelServiceClient) StreamLargeFile(ctx context.Context, in *LargeFileRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[LargeFileChunk], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &TunnelService_ServiceDesc.Streams[1], TunnelService_StreamLargeFile_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &TunnelService_ServiceDesc.Streams[2], TunnelService_StreamLargeFile_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -96,6 +113,9 @@ func (c *tunnelServiceClient) HealthCheck(ctx context.Context, in *HealthCheckRe
 type TunnelServiceServer interface {
 	// EstablishTunnel creates a bidirectional streaming tunnel for regular HTTP traffic
 	EstablishTunnel(grpc.BidiStreamingServer[TunnelMessage, TunnelMessage]) error
+	// ControlChannel provides a dedicated stream for high-priority control messages
+	// This prevents cancels and health checks from being blocked by large data transfers
+	ControlChannel(grpc.BidiStreamingServer[ControlMessage, ControlMessage]) error
 	// StreamLargeFile handles large file streaming with chunked transfer for memory efficiency
 	StreamLargeFile(*LargeFileRequest, grpc.ServerStreamingServer[LargeFileChunk]) error
 	// HealthCheck provides tunnel health monitoring
@@ -112,6 +132,9 @@ type UnimplementedTunnelServiceServer struct{}
 
 func (UnimplementedTunnelServiceServer) EstablishTunnel(grpc.BidiStreamingServer[TunnelMessage, TunnelMessage]) error {
 	return status.Errorf(codes.Unimplemented, "method EstablishTunnel not implemented")
+}
+func (UnimplementedTunnelServiceServer) ControlChannel(grpc.BidiStreamingServer[ControlMessage, ControlMessage]) error {
+	return status.Errorf(codes.Unimplemented, "method ControlChannel not implemented")
 }
 func (UnimplementedTunnelServiceServer) StreamLargeFile(*LargeFileRequest, grpc.ServerStreamingServer[LargeFileChunk]) error {
 	return status.Errorf(codes.Unimplemented, "method StreamLargeFile not implemented")
@@ -146,6 +169,13 @@ func _TunnelService_EstablishTunnel_Handler(srv interface{}, stream grpc.ServerS
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type TunnelService_EstablishTunnelServer = grpc.BidiStreamingServer[TunnelMessage, TunnelMessage]
+
+func _TunnelService_ControlChannel_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(TunnelServiceServer).ControlChannel(&grpc.GenericServerStream[ControlMessage, ControlMessage]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type TunnelService_ControlChannelServer = grpc.BidiStreamingServer[ControlMessage, ControlMessage]
 
 func _TunnelService_StreamLargeFile_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(LargeFileRequest)
@@ -192,6 +222,12 @@ var TunnelService_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "EstablishTunnel",
 			Handler:       _TunnelService_EstablishTunnel_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
+		},
+		{
+			StreamName:    "ControlChannel",
+			Handler:       _TunnelService_ControlChannel_Handler,
 			ServerStreams: true,
 			ClientStreams: true,
 		},
