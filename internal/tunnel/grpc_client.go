@@ -48,7 +48,6 @@ type GRPCTunnelClient struct {
 	connecting bool
 	stopping   bool // Prevent auto-reconnection during shutdown
 	mu         sync.RWMutex
-	sendMux    sync.Mutex // Protects stream.Send() for thread-safety (gRPC requires serialization)
 	stopChan   chan struct{}
 	ctx        context.Context
 	cancel     context.CancelFunc
@@ -391,10 +390,7 @@ func (c *GRPCTunnelClient) sendHandshake() error {
 		},
 	}
 
-	c.sendMux.Lock()
-	err := c.stream.Send(handshake)
-	c.sendMux.Unlock()
-	return err
+	return c.stream.Send(handshake)
 }
 
 // waitForHandshakeResponse waits for and validates the handshake response
@@ -877,10 +873,10 @@ func (c *GRPCTunnelClient) streamResponseInChunksWithContext(ctx context.Context
 	buffer := make([]byte, ChunkSize)
 
 	for {
-		// CRITICAL: Check for server-initiated cancellation FIRST
+		// CRITICAL: Check for server-initiated cancellation FIRST (before reading)
 		select {
 		case <-ctx.Done():
-			c.logger.Info("[CHUNKED CLIENT] ⏹️  Request %s cancelled by server - stopping immediately", requestID)
+			c.logger.Info("[CHUNKED CLIENT] ⏹️  Request %s cancelled by server - stopping immediately (before read)", requestID)
 			// Close response body to stop reading from local service
 			response.Body.Close()
 			return nil // Silent exit - server already knows about cancellation
@@ -953,10 +949,17 @@ func (c *GRPCTunnelClient) streamResponseInChunksWithContext(ctx context.Context
 				return fmt.Errorf("stream connection lost")
 			}
 
-			c.sendMux.Lock()
-			sendErr := c.stream.Send(chunkResponse)
-			c.sendMux.Unlock()
-			if sendErr != nil {
+			// CRITICAL: Check for cancellation AFTER reading but BEFORE sending
+			// This prevents sending chunks after browser disconnects
+			select {
+			case <-ctx.Done():
+				c.logger.Info("[CHUNKED CLIENT] ⏹️  Request %s cancelled after read, before send - stopping immediately", requestID)
+				response.Body.Close()
+				return nil
+			default:
+			}
+
+			if sendErr := c.stream.Send(chunkResponse); sendErr != nil {
 				c.logger.Error("[CHUNKED CLIENT] Failed to send chunk %d: %v", chunkNum, sendErr)
 
 				// If stream send fails, trigger reconnection to recover
@@ -1029,10 +1032,7 @@ func (c *GRPCTunnelClient) sendCompleteResponse(requestID string, response *http
 	}
 
 	atomic.AddInt64(&c.totalResponses, 1)
-	c.sendMux.Lock()
-	err := c.stream.Send(responseMsg)
-	c.sendMux.Unlock()
-	return err
+	return c.stream.Send(responseMsg)
 }
 
 // sendErrorResponse sends an error response back to the server
@@ -1055,10 +1055,7 @@ func (c *GRPCTunnelClient) sendErrorResponse(requestId, errorMsg string) error {
 		},
 	}
 
-	c.sendMux.Lock()
-	err := c.stream.Send(response)
-	c.sendMux.Unlock()
-	return err
+	return c.stream.Send(response)
 }
 
 // handleControlMessage handles control messages from the server
@@ -1383,8 +1380,5 @@ func (c *GRPCTunnelClient) sendTunnelEstablishResponse(requestId string, success
 		}
 	}
 
-	c.sendMux.Lock()
-	err := c.stream.Send(responseMsg)
-	c.sendMux.Unlock()
-	return err
+	return c.stream.Send(responseMsg)
 }
