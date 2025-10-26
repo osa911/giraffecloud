@@ -104,8 +104,7 @@ type TunnelStream struct {
 	totalErrors   int64
 
 	// Concurrency control
-	mu      sync.RWMutex
-	sendMux sync.Mutex // Protects Stream.Send() for thread-safety (gRPC requires serialization)
+	mu sync.RWMutex
 }
 
 // GRPCTunnelConfig holds configuration for the gRPC tunnel service
@@ -573,11 +572,8 @@ func (s *GRPCTunnelServer) SendTunnelEstablishRequest(domain string, establishRe
 		},
 	}
 
-	// Send the control message to client (with mutex for thread-safety)
-	tunnelStream.sendMux.Lock()
-	err := tunnelStream.Stream.Send(controlMsg)
-	tunnelStream.sendMux.Unlock()
-	if err != nil {
+	// Send the control message to client
+	if err := tunnelStream.Stream.Send(controlMsg); err != nil {
 		return fmt.Errorf("failed to send tunnel establishment request: %w", err)
 	}
 
