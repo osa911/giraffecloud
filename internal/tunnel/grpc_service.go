@@ -95,6 +95,9 @@ type TunnelStream struct {
 	ControlStream proto.TunnelService_ControlChannelServer
 	controlMux    sync.RWMutex
 
+	// Data stream serialization (for upload thread-safety)
+	sendMux sync.Mutex
+
 	// Request correlation (requestID -> response channel)
 	pendingRequests map[string]chan *proto.TunnelMessage
 	requestsMux     sync.RWMutex
@@ -672,8 +675,11 @@ func (s *GRPCTunnelServer) SendTunnelEstablishRequest(domain string, establishRe
 		},
 	}
 
-	// Send the control message to client
-	if err := tunnelStream.Stream.Send(controlMsg); err != nil {
+	// Send the control message to client (with sendMux for thread-safety)
+	tunnelStream.sendMux.Lock()
+	err := tunnelStream.Stream.Send(controlMsg)
+	tunnelStream.sendMux.Unlock()
+	if err != nil {
 		return fmt.Errorf("failed to send tunnel establishment request: %w", err)
 	}
 

@@ -344,7 +344,7 @@ func (s *GRPCTunnelServer) handleLargeFileUploadWithStreaming(domain string, htt
 
 	s.logger.Info("[CHUNKED UPLOAD] 📤 Upload %s: Sending Start message", requestID)
 
-	// Send Start message
+	// Send Start message (with sendMux for upload thread-safety)
 	startMsg := &proto.TunnelMessage{
 		RequestId: requestID,
 		Timestamp: time.Now().Unix(),
@@ -359,7 +359,10 @@ func (s *GRPCTunnelServer) handleLargeFileUploadWithStreaming(domain string, htt
 			},
 		},
 	}
-	if err := tunnelStream.Stream.Send(startMsg); err != nil {
+	tunnelStream.sendMux.Lock()
+	err := tunnelStream.Stream.Send(startMsg)
+	tunnelStream.sendMux.Unlock()
+	if err != nil {
 		return nil, fmt.Errorf("failed to send upload start: %w", err)
 	}
 
@@ -402,9 +405,12 @@ func (s *GRPCTunnelServer) handleLargeFileUploadWithStreaming(domain string, htt
 					lastProgressLog = chunkCount
 				}
 
-				// Send chunk
-				if err := tunnelStream.Stream.Send(chunkMsg); err != nil {
-					return nil, fmt.Errorf("failed to send upload chunk: %w", err)
+				// Send chunk (with sendMux for upload thread-safety)
+				tunnelStream.sendMux.Lock()
+				sendErr := tunnelStream.Stream.Send(chunkMsg)
+				tunnelStream.sendMux.Unlock()
+				if sendErr != nil {
+					return nil, fmt.Errorf("failed to send upload chunk: %w", sendErr)
 				}
 			}
 			if er == io.EOF {
@@ -420,13 +426,16 @@ func (s *GRPCTunnelServer) handleLargeFileUploadWithStreaming(domain string, htt
 
 	s.logger.Info("[CHUNKED UPLOAD] 📤 Upload %s: Sending End message", requestID)
 
-	// Send End
+	// Send End (with sendMux for upload thread-safety)
 	endMsg := &proto.TunnelMessage{
 		RequestId:   requestID,
 		Timestamp:   time.Now().Unix(),
 		MessageType: &proto.TunnelMessage_HttpRequestEnd{HttpRequestEnd: &proto.HTTPRequestEnd{RequestId: requestID}},
 	}
-	if err := tunnelStream.Stream.Send(endMsg); err != nil {
+	tunnelStream.sendMux.Lock()
+	err = tunnelStream.Stream.Send(endMsg)
+	tunnelStream.sendMux.Unlock()
+	if err != nil {
 		return nil, fmt.Errorf("failed to send upload end: %w", err)
 	}
 
@@ -493,7 +502,10 @@ func (s *GRPCTunnelServer) collectChunkedResponse(tunnelStream *TunnelStream, re
 		},
 	}
 
-	if err := tunnelStream.Stream.Send(requestMsg); err != nil {
+	tunnelStream.sendMux.Lock()
+	err := tunnelStream.Stream.Send(requestMsg)
+	tunnelStream.sendMux.Unlock()
+	if err != nil {
 		return nil, fmt.Errorf("failed to send large file request: %w", err)
 	}
 

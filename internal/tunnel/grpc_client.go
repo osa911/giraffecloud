@@ -45,6 +45,9 @@ type GRPCTunnelClient struct {
 	controlStream proto.TunnelService_ControlChannelClient
 	controlMux    sync.RWMutex
 
+	// Data stream serialization (for download thread-safety)
+	sendMux sync.Mutex
+
 	// State management
 	connected  bool
 	connecting bool
@@ -503,7 +506,10 @@ func (c *GRPCTunnelClient) sendHandshake() error {
 		},
 	}
 
-	return c.stream.Send(handshake)
+	c.sendMux.Lock()
+	err := c.stream.Send(handshake)
+	c.sendMux.Unlock()
+	return err
 }
 
 // waitForHandshakeResponse waits for and validates the handshake response
@@ -1072,7 +1078,11 @@ func (c *GRPCTunnelClient) streamResponseInChunksWithContext(ctx context.Context
 			default:
 			}
 
-			if sendErr := c.stream.Send(chunkResponse); sendErr != nil {
+			// Send chunk (with sendMux for thread-safety)
+			c.sendMux.Lock()
+			sendErr := c.stream.Send(chunkResponse)
+			c.sendMux.Unlock()
+			if sendErr != nil {
 				c.logger.Error("[CHUNKED CLIENT] Failed to send chunk %d: %v", chunkNum, sendErr)
 
 				// If stream send fails, trigger reconnection to recover
@@ -1145,7 +1155,10 @@ func (c *GRPCTunnelClient) sendCompleteResponse(requestID string, response *http
 	}
 
 	atomic.AddInt64(&c.totalResponses, 1)
-	return c.stream.Send(responseMsg)
+	c.sendMux.Lock()
+	err := c.stream.Send(responseMsg)
+	c.sendMux.Unlock()
+	return err
 }
 
 // sendErrorResponse sends an error response back to the server
@@ -1168,7 +1181,10 @@ func (c *GRPCTunnelClient) sendErrorResponse(requestId, errorMsg string) error {
 		},
 	}
 
-	return c.stream.Send(response)
+	c.sendMux.Lock()
+	err := c.stream.Send(response)
+	c.sendMux.Unlock()
+	return err
 }
 
 // handleControlMessage handles control messages from the server
@@ -1493,5 +1509,8 @@ func (c *GRPCTunnelClient) sendTunnelEstablishResponse(requestId string, success
 		}
 	}
 
-	return c.stream.Send(responseMsg)
+	c.sendMux.Lock()
+	err := c.stream.Send(responseMsg)
+	c.sendMux.Unlock()
+	return err
 }

@@ -384,7 +384,10 @@ func (s *GRPCTunnelServer) monitorTunnelHealth(tunnelStream *TunnelStream) error
 				},
 			}
 
-			if err := tunnelStream.Stream.Send(healthCheck); err != nil {
+			tunnelStream.sendMux.Lock()
+			err := tunnelStream.Stream.Send(healthCheck)
+			tunnelStream.sendMux.Unlock()
+			if err != nil {
 				s.logger.Error("Failed to send health check to tunnel %s: %v", tunnelStream.Domain, err)
 				return err
 			}
@@ -494,8 +497,11 @@ func (s *GRPCTunnelServer) sendRequestAndWaitResponse(tunnelStream *TunnelStream
 	tunnelStream.pendingRequests[grpcMsg.RequestId] = responseChan
 	tunnelStream.requestsMux.Unlock()
 
-	// Send request to client
-	if err := tunnelStream.Stream.Send(grpcMsg); err != nil {
+	// Send request to client (with sendMux for thread-safety)
+	tunnelStream.sendMux.Lock()
+	sendErr := tunnelStream.Stream.Send(grpcMsg)
+	tunnelStream.sendMux.Unlock()
+	if sendErr != nil {
 		// Clean up on send failure - safe close (only if we still own the channel)
 		tunnelStream.requestsMux.Lock()
 		if ch, exists := tunnelStream.pendingRequests[grpcMsg.RequestId]; exists && ch == responseChan {
@@ -503,7 +509,7 @@ func (s *GRPCTunnelServer) sendRequestAndWaitResponse(tunnelStream *TunnelStream
 			close(responseChan)
 		}
 		tunnelStream.requestsMux.Unlock()
-		return nil, fmt.Errorf("failed to send request: %w", err)
+		return nil, fmt.Errorf("failed to send request: %w", sendErr)
 	}
 
 	// Wait for response with timeout
