@@ -9,14 +9,15 @@ export default function Footer() {
       <Container maxWidth="lg">
         <Stack
           direction={{ xs: "column", sm: "row" }}
-          spacing={2}
+          columnGap={2}
           justifyContent="space-between"
+          flexWrap="wrap"
           alignItems={{ xs: "flex-start", sm: "center" }}
         >
           <Typography variant="body2" color="text.secondary">
             © <Link href={ROUTES.HOME}>GiraffeCloud</Link> {new Date().getFullYear()}
           </Typography>
-          <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
+          <Stack direction="row" columnGap={2} flexWrap="wrap" useFlexGap>
             <Link href={ROUTES.ABOUT} underline="hover">
               About
             </Link>
