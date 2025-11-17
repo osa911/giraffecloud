@@ -28,7 +28,7 @@ import TokenDialog from "./settings/TokenDialog";
 import { useTunnels } from "@/hooks/useTunnels";
 
 export default function GettingStartedPage() {
-  const { mutate } = useTunnels();
+  const { mutate, tunnels } = useTunnels();
   const [copiedStep, setCopiedStep] = useState<number | null>(null);
 
   // Token creation dialog state
@@ -762,6 +762,7 @@ export default function GettingStartedPage() {
             "Tunnel created! Make sure to copy the tunnel token - you'll need it to connect.",
           );
         }}
+        existingTunnels={tunnels}
       />
     </Box>
   );

@@ -30,16 +30,24 @@ interface TunnelDialogProps {
   onClose: () => void;
   tunnel?: Tunnel | null;
   onSuccess: () => void;
+  existingTunnels?: Tunnel[];
 }
 
 type DomainType = "free" | "custom";
 
-export default function TunnelDialog({ open, onClose, tunnel, onSuccess }: TunnelDialogProps) {
+export default function TunnelDialog({
+  open,
+  onClose,
+  tunnel,
+  onSuccess,
+  existingTunnels = [],
+}: TunnelDialogProps) {
   const [domainType, setDomainType] = useState<DomainType>("free");
   const [freeSubdomain, setFreeSubdomain] = useState<string>("");
   const [freeSubdomainAvailable, setFreeSubdomainAvailable] = useState<boolean>(true);
   const [loadingFreeSubdomain, setLoadingFreeSubdomain] = useState(false);
   const [freeSubdomainError, setFreeSubdomainError] = useState<string>("");
+  const [portError, setPortError] = useState<string>("");
 
   const [formData, setFormData] = useState<TunnelFormData>(() => ({
     domain: tunnel?.domain || "",
@@ -65,6 +73,7 @@ export default function TunnelDialog({ open, onClose, tunnel, onSuccess }: Tunne
         setFreeSubdomain("");
         setFreeSubdomainAvailable(true);
         setFreeSubdomainError("");
+        setPortError("");
         setFormData({
           domain: "",
           target_port: 80,
@@ -99,6 +108,31 @@ export default function TunnelDialog({ open, onClose, tunnel, onSuccess }: Tunne
     }
   };
 
+  const validatePort = (port: number): boolean => {
+    // Check if another tunnel is already using this port
+    const duplicateTunnel = existingTunnels.find(
+      (t) => t.target_port === port && (!tunnel || t.id !== tunnel.id),
+    );
+
+    if (duplicateTunnel) {
+      setPortError(`Port ${port} is already used by another tunnel (${duplicateTunnel.domain})`);
+      return false;
+    }
+
+    setPortError("");
+    return true;
+  };
+
+  const handlePortChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const port = parseInt(e.target.value, 10);
+    setFormData({ ...formData, target_port: port });
+
+    // Validate port on change
+    if (port && !isNaN(port)) {
+      validatePort(port);
+    }
+  };
+
   const handleDomainTypeChange = (
     _event: React.MouseEvent<HTMLElement>,
     newType: DomainType | null,
@@ -115,6 +149,12 @@ export default function TunnelDialog({ open, onClose, tunnel, onSuccess }: Tunne
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Validate port before submitting
+    if (!validatePort(formData.target_port)) {
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -249,14 +289,10 @@ export default function TunnelDialog({ open, onClose, tunnel, onSuccess }: Tunne
               fullWidth
               required
               value={formData.target_port}
-              onChange={(e) =>
-                setFormData({
-                  ...formData,
-                  target_port: parseInt(e.target.value) || 80,
-                })
-              }
+              onChange={handlePortChange}
               inputProps={{ min: 1, max: 65535 }}
-              helperText="Port on your local machine to forward traffic to"
+              helperText={portError || "Port on your local machine to forward traffic to"}
+              error={!!portError}
             />
 
             {tunnel && (

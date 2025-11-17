@@ -15,6 +15,7 @@ import {
   TableHead,
   TableRow,
   Typography,
+  Link,
 } from "@mui/material";
 import { Edit as EditIcon, Delete as DeleteIcon } from "@mui/icons-material";
 import { format } from "date-fns";
@@ -100,7 +101,16 @@ export default function TunnelList() {
             <TableBody>
               {tunnels?.map((tunnel) => (
                 <TableRow key={tunnel.id}>
-                  <TableCell>{tunnel.domain}</TableCell>
+                  <TableCell>
+                    <Link
+                      href={`https://${tunnel.domain}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      sx={{ textDecoration: "none", "&:hover": { textDecoration: "underline" } }}
+                    >
+                      {tunnel.domain}
+                    </Link>
+                  </TableCell>
                   <TableCell>{tunnel.target_port}</TableCell>
                   <TableCell>
                     <Switch
@@ -143,6 +153,7 @@ export default function TunnelList() {
           handleCloseDialog();
           mutate();
         }}
+        existingTunnels={tunnels}
       />
     </>
   );

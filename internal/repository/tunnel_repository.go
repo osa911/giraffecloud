@@ -47,10 +47,11 @@ func (r *tunnelRepository) GetByID(ctx context.Context, id uint32) (*ent.Tunnel,
 		Only(ctx)
 }
 
-// GetByUserID retrieves all tunnels for a user
+// GetByUserID retrieves all tunnels for a user, ordered by ID
 func (r *tunnelRepository) GetByUserID(ctx context.Context, userID uint32) ([]*ent.Tunnel, error) {
 	return r.client.Tunnel.Query().
 		Where(tunnel.UserIDEQ(userID)).
+		Order(ent.Asc(tunnel.FieldID)).
 		All(ctx)
 }
 

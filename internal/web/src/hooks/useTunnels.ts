@@ -9,8 +9,11 @@ const fetcher = async (url: string) => {
 export function useTunnels() {
   const { data, error, isLoading, mutate } = useSWR<Tunnel[]>("/tunnels", fetcher);
 
+  // Sort tunnels by ID (ascending) to maintain consistent order
+  const sortedTunnels = data ? [...data].sort((a, b) => a.id - b.id) : undefined;
+
   return {
-    tunnels: data,
+    tunnels: sortedTunnels,
     isLoading,
     isError: error,
     mutate,
