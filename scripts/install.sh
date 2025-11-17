@@ -123,8 +123,8 @@ resolve_latest_url() {
   # We avoid jq; use grep/sed to extract a matching tar.gz url
   local url
   url=$(curl -fsSL "$api" \
-    | grep -Eo '"browser_download_url"\s*:\s*"[^"]+"' \
-    | sed -E 's/"browser_download_url"\s*:\s*"(.*)"/\1/' \
+    | grep -Eo '"browser_download_url"[[:space:]]*:[[:space:]]*"[^"]+"' \
+    | sed -E 's/.*"browser_download_url"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/' \
     | grep "giraffecloud_${OS}_${ARCH}_.*\\.tar\\.gz" \
     | head -n1 || true)
   echo "$url"
