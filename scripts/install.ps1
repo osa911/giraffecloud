@@ -164,7 +164,7 @@ try {
   Write-Host 'Next steps:'
   Write-Host '  1. Get your API token from: https://giraffecloud.xyz/dashboard/getting-started'
   Write-Host '  2. Login: giraffecloud.exe login --token YOUR_API_TOKEN'
-  Write-Host '  3. Connect: giraffecloud.exe connect'
+  Write-Host '  3. Connect with your configured tunnel: giraffecloud.exe connect'
   Write-Host ''
   Write-Host 'If the command is not found, open a new terminal window to pick up PATH changes.'
 

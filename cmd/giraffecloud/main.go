@@ -71,6 +71,21 @@ Example:
   giraffecloud connect                  # Use port configured on server
   giraffecloud connect --local-port 3000  # Override with local port 3000`,
 	Run: func(cmd *cobra.Command, args []string) {
+		// Check if user has logged in (config.json exists)
+		configPath, err := tunnel.GetConfigPath()
+		if err != nil {
+			logger.Error("Failed to determine config path: %v", err)
+			os.Exit(1)
+		}
+		if _, err := os.Stat(configPath); os.IsNotExist(err) {
+			fmt.Println("\n❌ Configuration not found. You must login first.")
+			fmt.Println("\nTo get started:")
+			fmt.Println("  1. Get your API token from: https://giraffecloud.xyz/dashboard/getting-started")
+			fmt.Println("  2. Login: giraffecloud login --token YOUR_API_TOKEN")
+			fmt.Println("  3. Connect: giraffecloud connect")
+			os.Exit(1)
+		}
+
 		cfg, err := tunnel.LoadConfig()
 		if err != nil {
 			logger.Error("Error loading config: %v", err)
@@ -427,7 +442,7 @@ func init() {
 	tunnel.EnsureConsistentConfigHome()
 	// Initialize logger after home normalization so file paths are correct
 	initLogger()
-	logger.Info("🦒🦒🦒 Initializing GiraffeCloud CLI (%s) 🦒🦒🦒", version.Info())
+	logger.Info("🦒 Initializing GiraffeCloud CLI %s 🦒", version.Info())
 
 	// Setup core commands
 	rootCmd.AddCommand(connectCmd)
