@@ -29,6 +29,7 @@ export const ROUTES = {
   // Dashboard routes
   DASHBOARD: {
     HOME: "/dashboard",
+    GETTING_STARTED: "/dashboard/getting-started",
     TUNNELS: "/dashboard/tunnels",
     PROFILE: "/dashboard/profile",
     SETTINGS: "/dashboard/settings",

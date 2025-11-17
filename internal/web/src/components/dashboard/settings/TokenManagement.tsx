@@ -4,10 +4,6 @@ import React, { useState, useEffect } from "react";
 import {
   Box,
   Button,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
   IconButton,
   Paper,
   Table,
@@ -16,28 +12,21 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  TextField,
   Typography,
   Alert,
   Snackbar,
-  InputAdornment,
-  Tooltip,
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
-import ContentCopyIcon from "@mui/icons-material/ContentCopy";
-import CheckIcon from "@mui/icons-material/Check";
 import { format } from "date-fns";
-import { createToken, getTokensList, revokeToken, type Token } from "@/api/tokenApi";
+import { getTokensList, revokeToken, type Token } from "@/api/tokenApi";
 import { ApiError } from "@/utils/error";
+import TokenDialog from "./TokenDialog";
 
 const TokenManagement: React.FC = () => {
   const [tokens, setTokens] = useState<Token[]>([]);
   const [open, setOpen] = useState(false);
-  const [newTokenName, setNewTokenName] = useState("");
-  const [newTokenValue, setNewTokenValue] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [copied, setCopied] = useState(false);
 
   const fetchTokens = async () => {
     try {
@@ -57,28 +46,9 @@ const TokenManagement: React.FC = () => {
     fetchTokens();
   }, []);
 
-  const handleCreateToken = async () => {
-    try {
-      setLoading(true);
-      const data = await createToken(newTokenName);
-      setNewTokenValue(data.token);
-      setTokens([
-        ...tokens,
-        {
-          id: data.id,
-          name: data.name,
-          created_at: data.created_at,
-          last_used_at: data.created_at,
-          expires_at: data.expires_at,
-        },
-      ]);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to create token");
-      console.error("Error creating token:", err);
-    } finally {
-      setLoading(false);
-    }
+  const handleTokenCreated = () => {
+    // Refresh the tokens list after a new token is created
+    fetchTokens();
   };
 
   const handleRevokeToken = async (id: string) => {
@@ -95,24 +65,8 @@ const TokenManagement: React.FC = () => {
     }
   };
 
-  const handleCopyToken = async () => {
-    if (newTokenValue) {
-      try {
-        await navigator.clipboard.writeText(newTokenValue);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      } catch (err) {
-        console.error("Failed to copy token:", err);
-        setError("Failed to copy token to clipboard");
-      }
-    }
-  };
-
   const handleClose = () => {
     setOpen(false);
-    setNewTokenName("");
-    setNewTokenValue(null);
-    setCopied(false);
   };
 
   const handleErrorClose = () => {
@@ -162,60 +116,7 @@ const TokenManagement: React.FC = () => {
         </Table>
       </TableContainer>
 
-      <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
-        <DialogTitle>{newTokenValue ? "Save Your Token" : "Create New Token"}</DialogTitle>
-        <DialogContent>
-          {newTokenValue ? (
-            <Box sx={{ mt: 2 }}>
-              <Typography variant="body2" color="error" gutterBottom>
-                Make sure to copy your token now. You won&apos;t be able to see it again!
-              </Typography>
-              <TextField
-                fullWidth
-                value={newTokenValue}
-                variant="outlined"
-                InputProps={{
-                  readOnly: true,
-                  endAdornment: (
-                    <InputAdornment position="end">
-                      <Tooltip title={copied ? "Copied!" : "Copy to clipboard"}>
-                        <IconButton onClick={handleCopyToken} edge="end" color={copied ? "success" : "default"}>
-                          {copied ? <CheckIcon /> : <ContentCopyIcon />}
-                        </IconButton>
-                      </Tooltip>
-                    </InputAdornment>
-                  ),
-                }}
-              />
-            </Box>
-          ) : (
-            <TextField
-              autoFocus
-              margin="dense"
-              label="Token Name"
-              fullWidth
-              variant="outlined"
-              value={newTokenName}
-              onChange={(e) => setNewTokenName(e.target.value)}
-              disabled={loading}
-            />
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleClose} disabled={loading}>
-            {newTokenValue ? "Close" : "Cancel"}
-          </Button>
-          {!newTokenValue && (
-            <Button
-              onClick={handleCreateToken}
-              variant="contained"
-              disabled={loading || !newTokenName.trim()}
-            >
-              Create
-            </Button>
-          )}
-        </DialogActions>
-      </Dialog>
+      <TokenDialog open={open} onClose={handleClose} onSuccess={handleTokenCreated} />
 
       <Snackbar
         open={!!error}

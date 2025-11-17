@@ -25,6 +25,7 @@ import {
   Person as ProfileIcon,
   Settings as SettingsIcon,
   SwapHoriz as TunnelIcon,
+  RocketLaunch as RocketLaunchIcon,
 } from "@mui/icons-material";
 import { useAuth } from "@/contexts/AuthProvider";
 import Link from "@/components/common/Link";
@@ -36,6 +37,7 @@ const drawerWidth = 240;
 
 const menuItems = [
   { text: "Dashboard", icon: <DashboardIcon />, path: ROUTES.DASHBOARD.HOME },
+  { text: "Getting Started", icon: <RocketLaunchIcon />, path: ROUTES.DASHBOARD.GETTING_STARTED },
   { text: "Tunnels", icon: <TunnelIcon />, path: ROUTES.DASHBOARD.TUNNELS },
   { text: "Profile", icon: <ProfileIcon />, path: ROUTES.DASHBOARD.PROFILE },
   { text: "Settings", icon: <SettingsIcon />, path: ROUTES.DASHBOARD.SETTINGS },

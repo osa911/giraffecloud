@@ -37,14 +37,14 @@ export default function UsageCard({ monthlyLimitBytes }: { monthlyLimitBytes?: n
 
   return (
     <Card>
-      <CardHeader title="Usage" subheader="Current period" />
-      <CardContent>
+      <CardHeader title="Usage" />
+      <CardContent sx={{ pt: "8px !important" }}>
         <Box sx={{ mb: 1 }}>
           <LinearProgress variant={hasLimit ? "determinate" : "indeterminate"} value={pct} />
         </Box>
         <Typography variant="body2" color="text.secondary">
           {formatBytes(used)}
-          {hasLimit ? ` of ${formatBytes(monthlyLimitBytes as number)} used` : " used"}
+          {hasLimit ? ` of ${formatBytes(monthlyLimitBytes as number)} used` : " used"} this month
         </Typography>
       </CardContent>
     </Card>
