@@ -99,7 +99,7 @@ func (h *TunnelHandler) GetVersion(c *gin.Context) {
 func (h *TunnelHandler) GetFreeSubdomain(c *gin.Context) {
 	userID := c.MustGet(constants.ContextKeyUserID).(uint32)
 
-	subdomain, err := h.tunnelService.GetFreeSubdomain(c.Request.Context(), userID)
+	subdomain, available, err := h.tunnelService.GetFreeSubdomain(c.Request.Context(), userID)
 	if err != nil {
 		logging.GetGlobalLogger().Error("GetFreeSubdomain: Failed for userID=%d, error: %v", userID, err)
 		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, err.Error())
@@ -108,7 +108,7 @@ func (h *TunnelHandler) GetFreeSubdomain(c *gin.Context) {
 
 	response := &tunneldto.FreeSubdomainResponse{
 		Domain:    subdomain,
-		Available: true,
+		Available: available,
 	}
 
 	utils.HandleSuccess(c, response)

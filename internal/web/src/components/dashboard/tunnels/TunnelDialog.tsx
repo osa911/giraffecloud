@@ -37,6 +37,7 @@ type DomainType = "free" | "custom";
 export default function TunnelDialog({ open, onClose, tunnel, onSuccess }: TunnelDialogProps) {
   const [domainType, setDomainType] = useState<DomainType>("free");
   const [freeSubdomain, setFreeSubdomain] = useState<string>("");
+  const [freeSubdomainAvailable, setFreeSubdomainAvailable] = useState<boolean>(true);
   const [loadingFreeSubdomain, setLoadingFreeSubdomain] = useState(false);
   const [freeSubdomainError, setFreeSubdomainError] = useState<string>("");
 
@@ -48,12 +49,32 @@ export default function TunnelDialog({ open, onClose, tunnel, onSuccess }: Tunne
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Fetch free subdomain when dialog opens and it's a new tunnel
+  // Reset state when dialog opens
   useEffect(() => {
-    if (open && !tunnel && domainType === "free") {
-      loadFreeSubdomain();
+    if (open) {
+      if (tunnel) {
+        // Editing existing tunnel - populate form with tunnel data
+        setFormData({
+          domain: tunnel.domain,
+          target_port: tunnel.target_port,
+          is_active: tunnel.is_active,
+        });
+      } else {
+        // Creating new tunnel - reset to initial state
+        setDomainType("free");
+        setFreeSubdomain("");
+        setFreeSubdomainAvailable(true);
+        setFreeSubdomainError("");
+        setFormData({
+          domain: "",
+          target_port: 80,
+          is_active: true,
+        });
+        // Load free subdomain
+        loadFreeSubdomain();
+      }
     }
-  }, [open, tunnel, domainType]);
+  }, [open, tunnel]);
 
   const loadFreeSubdomain = async () => {
     setLoadingFreeSubdomain(true);
@@ -61,11 +82,18 @@ export default function TunnelDialog({ open, onClose, tunnel, onSuccess }: Tunne
     try {
       const response = await getFreeSubdomain();
       setFreeSubdomain(response.domain);
-      setFormData((prev) => ({ ...prev, domain: response.domain }));
+      setFreeSubdomainAvailable(response.available);
+
+      // If subdomain is not available, switch to custom domain
+      if (!response.available) {
+        setDomainType("custom");
+        setFormData((prev) => ({ ...prev, domain: "" }));
+      } else {
+        setFormData((prev) => ({ ...prev, domain: response.domain }));
+      }
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : "Failed to load free subdomain";
       setFreeSubdomainError(errorMessage);
-      toast.error(errorMessage);
     } finally {
       setLoadingFreeSubdomain(false);
     }
@@ -136,7 +164,11 @@ export default function TunnelDialog({ open, onClose, tunnel, onSuccess }: Tunne
                   fullWidth
                   size="small"
                 >
-                  <ToggleButton value="free" aria-label="free subdomain">
+                  <ToggleButton
+                    value="free"
+                    aria-label="free subdomain"
+                    disabled={!freeSubdomainAvailable}
+                  >
                     <AutoAwesome sx={{ mr: 1, fontSize: 18 }} />
                     Free Subdomain
                   </ToggleButton>
@@ -145,6 +177,13 @@ export default function TunnelDialog({ open, onClose, tunnel, onSuccess }: Tunne
                     Custom Domain
                   </ToggleButton>
                 </ToggleButtonGroup>
+                {!freeSubdomainAvailable && freeSubdomain && (
+                  <Alert severity="info" sx={{ mt: 2 }}>
+                    You already have a free subdomain: <strong>{freeSubdomain}</strong>
+                    <br />
+                    To create additional tunnels, please use a custom domain.
+                  </Alert>
+                )}
               </Box>
             )}
 

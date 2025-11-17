@@ -15,5 +15,5 @@ type TunnelService interface {
 	GetByToken(ctx context.Context, token string) (*ent.Tunnel, error)
 	UpdateClientIP(ctx context.Context, id uint32, clientIP string) error
 	GetActive(ctx context.Context) ([]*ent.Tunnel, error)
-	GetFreeSubdomain(ctx context.Context, userID uint32) (string, error)
+	GetFreeSubdomain(ctx context.Context, userID uint32) (domain string, available bool, err error)
 }
