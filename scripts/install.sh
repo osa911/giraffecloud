@@ -273,7 +273,8 @@ fi
 
 echo
 echo "Next steps:"
-echo "  giraffecloud config path"
-echo "  giraffecloud connect"
+echo "  1. Get your API token from: https://giraffecloud.xyz/dashboard/getting-started"
+echo "  2. Login: giraffecloud login --token YOUR_API_TOKEN"
+echo "  3. Connect with your configured tunnel: giraffecloud connect"
 
 

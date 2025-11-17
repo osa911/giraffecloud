@@ -203,10 +203,12 @@ var loginCmd = &cobra.Command{
 The token will be stored securely in your config file (~/.giraffecloud/config).
 This command will also fetch your client certificates from the server.
 
+Get your API token from: https://giraffecloud.xyz/dashboard/getting-started
+
 After successful login, use 'giraffecloud connect' to establish a tunnel connection.
 
 Example:
-  giraffecloud login --token your-api-token [--api-host api.giraffecloud.xyz] [--api-port 443]`,
+  giraffecloud login --token your-api-token`,
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg, err := tunnel.LoadConfig()
 		if err != nil {
@@ -214,14 +216,18 @@ Example:
 			os.Exit(1)
 		}
 
-		// Get API host and port from flags if provided
+		// Get API host and port from flags if provided, otherwise use defaults
 		apiHost, _ := cmd.Flags().GetString("api-host")
 		apiPort, _ := cmd.Flags().GetInt("api-port")
 		if apiHost != "" {
 			cfg.API.Host = apiHost
+		} else if cfg.API.Host == "" {
+			cfg.API.Host = "api.giraffecloud.xyz" // Default
 		}
 		if apiPort != 0 {
 			cfg.API.Port = apiPort
+		} else if cfg.API.Port == 0 {
+			cfg.API.Port = 443 // Default
 		}
 
 		token, _ := cmd.Flags().GetString("token")
@@ -460,8 +466,8 @@ func init() {
 	}
 
 	// Add host flags to login command
-	loginCmd.Flags().String("api-host", "", "API host for login/certificates (default: api.giraffecloud.xyz)")
-	loginCmd.Flags().Int("api-port", 443, "API port for login/certificates (default: 443)")
+	loginCmd.Flags().String("api-host", "", "API host for login/certificates")
+	loginCmd.Flags().Int("api-port", 0, "API port for login/certificates")
 	loginCmd.Flags().String("token", "", "API token for authentication")
 	loginCmd.MarkFlagRequired("token")
 

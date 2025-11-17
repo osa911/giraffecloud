@@ -18,22 +18,47 @@ var configCmd = &cobra.Command{
 
 var configPathCmd = &cobra.Command{
 	Use:   "path",
-	Short: "Show configuration file path",
-	Long:  `Display the path to the GiraffeCloud configuration file.`,
+	Short: "Show configuration file paths",
+	Long:  `Display paths to existing GiraffeCloud configuration files and directories.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		baseDir, err := tunnel.GetConfigDir()
 		if err != nil {
 			logger.Error("Failed to determine config directory: %v", err)
 			os.Exit(1)
 		}
-		configPath := filepath.Join(baseDir, "config.json")
-		certsDir := filepath.Join(baseDir, "certs")
-		logPath := filepath.Join(baseDir, "client.log")
 
 		fmt.Printf("Configuration directory: %s\n", baseDir)
-		fmt.Printf("Config file:            %s\n", configPath)
-		fmt.Printf("Certificates directory: %s\n", certsDir)
-		fmt.Printf("Log file:              %s\n", logPath)
+
+		// Only show files/directories that actually exist
+		configPath := filepath.Join(baseDir, "config.json")
+		if _, err := os.Stat(configPath); err == nil {
+			fmt.Printf("Config file:            %s\n", configPath)
+		}
+
+		certsDir := filepath.Join(baseDir, "certs")
+		if _, err := os.Stat(certsDir); err == nil {
+			fmt.Printf("Certificates directory: %s\n", certsDir)
+			// List certificate files if they exist
+			certFiles := []string{"ca.crt", "client.crt", "client.key"}
+			for _, certFile := range certFiles {
+				certPath := filepath.Join(certsDir, certFile)
+				if _, err := os.Stat(certPath); err == nil {
+					fmt.Printf("  - %s\n", certPath)
+				}
+			}
+		}
+
+		logPath := filepath.Join(baseDir, "client.log")
+		if _, err := os.Stat(logPath); err == nil {
+			fmt.Printf("Log file:               %s\n", logPath)
+		}
+
+		// If nothing exists, show helpful message
+		if _, err := os.Stat(configPath); os.IsNotExist(err) {
+			if _, err := os.Stat(certsDir); os.IsNotExist(err) {
+				fmt.Printf("\nNo configuration found. Run 'giraffecloud login --token YOUR_API_TOKEN' to set up.\n")
+			}
+		}
 	},
 }
 
