@@ -26,22 +26,22 @@ jobs:
 
           echo "Checking releases for cleanup..."
 
-          while IFS= read -r line; do
-            # Extract release info (Title, Type, Tag, Date)
-            if [[ $line =~ ^([^\t]*)\t([^\t]*)\t([^\t]*)\t(.*)$ ]]; then
-              title="${BASH_REMATCH[1]}"
-              type="${BASH_REMATCH[2]}"
-              tag="${BASH_REMATCH[3]}"
-              date="${BASH_REMATCH[4]}"
+          while IFS=$'\t' read -r title type tag published_at; do
+            # Skip empty lines or header
+            if [[ -z "$tag" || "$tag" == "TAG NAME" ]]; then
+              continue
+            fi
 
-              # Convert release date to timestamp
-              release_time=$(date -d "$date" +%s)
+            # Convert release date to timestamp (handle potential errors)
+            if ! release_time=$(date -d "$published_at" +%s 2>/dev/null); then
+              echo "Warning: Could not parse date for release $tag: $published_at"
+              continue
+            fi
 
-              # Check if it's a pre-release (Draft or Pre-release)
-              if [[ "$type" == "Pre-release" ]] && [[ $release_time -lt $month_ago ]]; then
-                echo "Deleting old pre-release: $title ($tag) from $date"
-                gh release delete "$tag" --yes --repo "$GH_REPO" || echo "Failed to delete release $tag"
-              fi
+            # Check if it's a pre-release (Draft or Pre-release)
+            if [[ "$type" == "Pre-release" ]] && [[ $release_time -lt $month_ago ]]; then
+              echo "Deleting old pre-release: $title ($tag) from $published_at"
+              gh release delete "$tag" --yes --repo "$GH_REPO" || echo "Failed to delete release $tag"
             fi
           done <<< "$releases"
 
