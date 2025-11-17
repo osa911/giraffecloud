@@ -20,8 +20,12 @@ import {
   Typography,
   Alert,
   Snackbar,
+  InputAdornment,
+  Tooltip,
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import CheckIcon from "@mui/icons-material/Check";
 import { format } from "date-fns";
 import { createToken, getTokensList, revokeToken, type Token } from "@/api/tokenApi";
 import { ApiError } from "@/utils/error";
@@ -33,6 +37,7 @@ const TokenManagement: React.FC = () => {
   const [newTokenValue, setNewTokenValue] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const fetchTokens = async () => {
     try {
@@ -90,10 +95,24 @@ const TokenManagement: React.FC = () => {
     }
   };
 
+  const handleCopyToken = async () => {
+    if (newTokenValue) {
+      try {
+        await navigator.clipboard.writeText(newTokenValue);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch (err) {
+        console.error("Failed to copy token:", err);
+        setError("Failed to copy token to clipboard");
+      }
+    }
+  };
+
   const handleClose = () => {
     setOpen(false);
     setNewTokenName("");
     setNewTokenValue(null);
+    setCopied(false);
   };
 
   const handleErrorClose = () => {
@@ -157,6 +176,15 @@ const TokenManagement: React.FC = () => {
                 variant="outlined"
                 InputProps={{
                   readOnly: true,
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <Tooltip title={copied ? "Copied!" : "Copy to clipboard"}>
+                        <IconButton onClick={handleCopyToken} edge="end" color={copied ? "success" : "default"}>
+                          {copied ? <CheckIcon /> : <ContentCopyIcon />}
+                        </IconButton>
+                      </Tooltip>
+                    </InputAdornment>
+                  ),
                 }}
               />
             </Box>
