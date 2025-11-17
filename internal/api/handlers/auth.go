@@ -508,9 +508,6 @@ func (h *AuthHandler) GetSession(c *gin.Context) {
 	// If we get here, no valid session was found
 	// Clear any invalid cookies to prevent redirect loops
 	if sessionCookie != "" || authToken != "" {
-		logger := logging.GetGlobalLogger()
-		logger.Info("Clearing invalid session cookies to prevent redirect loops")
-
 		// Clear all auth cookies with consistent domain
 		cookieDomain := getCookieDomain()
 		c.SetCookie(constants.CookieSession, "", -1, constants.CookiePathRoot, cookieDomain, true, true)
