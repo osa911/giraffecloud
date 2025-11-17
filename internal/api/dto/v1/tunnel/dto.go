@@ -4,7 +4,7 @@ import "time"
 
 // CreateRequest represents the request for creating a tunnel
 type CreateRequest struct {
-	Domain     string `json:"domain"`                                      // Optional: auto-generated if empty
+	Domain     string `json:"domain"` // Optional: auto-generated if empty
 	TargetPort int    `json:"target_port" binding:"required,min=1,max=65535"`
 }
 
@@ -41,4 +41,3 @@ type FreeSubdomainResponse struct {
 	Domain    string `json:"domain"`
 	Available bool   `json:"available"`
 }
-

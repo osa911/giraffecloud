@@ -51,4 +51,3 @@ func TunnelsToResponses(tunnels []*ent.Tunnel) []*tunnel.Response {
 	}
 	return responses
 }
-
