@@ -10,7 +10,7 @@ export interface Tunnel {
 export interface TunnelFormData {
   domain: string;
   target_port: number;
-  is_active: boolean;
+  is_active?: boolean;
 }
 
 export interface FreeSubdomainResponse {

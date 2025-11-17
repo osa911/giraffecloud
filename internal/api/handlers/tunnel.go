@@ -4,6 +4,7 @@ import (
 	"giraffecloud/internal/api/constants"
 	"giraffecloud/internal/api/dto/common"
 	"giraffecloud/internal/interfaces"
+	"giraffecloud/internal/repository"
 	"giraffecloud/internal/service"
 	"giraffecloud/internal/utils"
 	"strconv"
@@ -188,11 +189,11 @@ func (h *TunnelHandler) DeleteTunnel(c *gin.Context) {
 }
 
 // UpdateTunnel updates a tunnel's configuration
+// Note: Domain cannot be changed after creation
 func (h *TunnelHandler) UpdateTunnel(c *gin.Context) {
 	var req struct {
-		IsActive   *bool  `json:"is_active,omitempty"`
-		TargetPort *int   `json:"target_port,omitempty" binding:"omitempty,min=1,max=65535"`
-		Domain     string `json:"domain,omitempty" binding:"omitempty"`
+		IsActive   *bool `json:"is_active,omitempty"`
+		TargetPort *int  `json:"target_port,omitempty" binding:"omitempty,min=1,max=65535"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -209,7 +210,13 @@ func (h *TunnelHandler) UpdateTunnel(c *gin.Context) {
 		return
 	}
 
-	tunnel, err := h.tunnelService.UpdateTunnel(c.Request.Context(), userID, uint32(tunnelID), &req)
+	// Convert to repository.TunnelUpdate type
+	updates := &repository.TunnelUpdate{
+		IsActive:   req.IsActive,
+		TargetPort: req.TargetPort,
+	}
+
+	tunnel, err := h.tunnelService.UpdateTunnel(c.Request.Context(), userID, uint32(tunnelID), updates)
 	if err != nil {
 		logging.GetGlobalLogger().Error("UpdateTunnel: Failed to update tunnel for userID=%d, tunnelID=%d, req=%+v, error: %v", userID, tunnelID, req, err)
 		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to update tunnel")

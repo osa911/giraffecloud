@@ -68,13 +68,16 @@ func (r *tunnelRepository) GetByDomain(ctx context.Context, domain string) (*ent
 		Only(ctx)
 }
 
+// TunnelUpdate represents the fields that can be updated
+type TunnelUpdate struct {
+	IsActive   *bool
+	TargetPort *int
+	Domain     string
+}
+
 // Update updates a tunnel's configuration
 func (r *tunnelRepository) Update(ctx context.Context, id uint32, updates interface{}) (*ent.Tunnel, error) {
-	u, ok := updates.(*struct {
-		IsActive   *bool
-		TargetPort *int
-		Domain     string
-	})
+	u, ok := updates.(*TunnelUpdate)
 	if !ok {
 		return nil, fmt.Errorf("invalid updates type")
 	}
