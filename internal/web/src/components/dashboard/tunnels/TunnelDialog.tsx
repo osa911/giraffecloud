@@ -190,6 +190,12 @@ export default function TunnelDialog({
       <form onSubmit={handleSubmit}>
         <DialogTitle>{tunnel ? "Edit Tunnel" : "Create New Tunnel"}</DialogTitle>
         <DialogContent>
+          {!tunnel && (
+            <Alert severity="info" sx={{ mb: 2 }}>
+              GiraffeCloud supports <strong>HTTP/HTTPS</strong> and <strong>WebSocket</strong>{" "}
+              traffic.
+            </Alert>
+          )}
           <Stack spacing={3} sx={{ mt: 2 }}>
             {/* Domain Type Selector - only for new tunnels */}
             {!tunnel && (

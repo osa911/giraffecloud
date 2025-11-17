@@ -453,6 +453,11 @@ export default function GettingStartedPage() {
                       </Tooltip>
                     </Paper>
                   </Box>
+                  <Box>
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 3 }}>
+                      <strong>Note:</strong> GiraffeCloud supports HTTP/HTTPS and WebSocket traffic.
+                    </Typography>
+                  </Box>
                 </Box>
               </Stack>
             </Box>
