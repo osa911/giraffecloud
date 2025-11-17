@@ -1,6 +1,19 @@
+// Tunnel response (no token)
 export interface Tunnel {
   id: number;
   domain: string;
+  target_port: number;
+  is_active: boolean;
+  client_ip?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// Tunnel create response (includes token)
+export interface TunnelCreateResponse {
+  id: number;
+  domain: string;
+  token: string;
   target_port: number;
   is_active: boolean;
   created_at: string;

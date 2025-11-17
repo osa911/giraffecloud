@@ -21,7 +21,7 @@ import {
 } from "@mui/material";
 import { AutoAwesome, Language } from "@mui/icons-material";
 import toast from "react-hot-toast";
-import type { Tunnel, TunnelFormData } from "@/types/tunnel";
+import type { Tunnel, TunnelFormData, TunnelCreateResponse } from "@/types/tunnel";
 import clientApi from "@/services/apiClient/clientApiClient";
 import { getFreeSubdomain } from "@/hooks/useTunnels";
 
@@ -92,11 +92,21 @@ export default function TunnelDialog({ open, onClose, tunnel, onSuccess }: Tunne
     try {
       if (tunnel) {
         await clientApi().put<Tunnel>(`/tunnels/${tunnel.id}`, formData);
+        toast.success("Tunnel updated successfully");
       } else {
-        await clientApi().post<Tunnel>("/tunnels", formData);
+        const response = await clientApi().post<TunnelCreateResponse>("/tunnels", formData);
+        toast.success("Tunnel created successfully");
+
+        // Show token to user (they need it for CLI)
+        if (response.token) {
+          toast.success(`Token: ${response.token.substring(0, 20)}... (saved to clipboard)`, {
+            duration: 5000,
+          });
+          // Copy token to clipboard
+          navigator.clipboard.writeText(response.token);
+        }
       }
 
-      toast.success(`Tunnel ${tunnel ? "updated" : "created"} successfully`);
       onSuccess();
       onClose();
     } catch (error) {
@@ -184,7 +194,9 @@ export default function TunnelDialog({ open, onClose, tunnel, onSuccess }: Tunne
                 value={formData.domain}
                 onChange={(e) => setFormData({ ...formData, domain: e.target.value })}
                 placeholder="example.com"
-                helperText={tunnel ? "Domain cannot be changed after creation" : "Enter your custom domain"}
+                helperText={
+                  tunnel ? "Domain cannot be changed after creation" : "Enter your custom domain"
+                }
                 disabled={!!tunnel}
                 InputProps={{
                   readOnly: !!tunnel,

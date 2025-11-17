@@ -29,7 +29,7 @@ type Tunnel struct {
 	// ClientIP holds the value of the "client_ip" field.
 	ClientIP string `json:"client_ip,omitempty"`
 	// IsActive holds the value of the "is_active" field.
-	IsActive bool `json:"is_active,omitempty"`
+	IsActive bool `json:"is_active"`
 	// TargetPort holds the value of the "target_port" field.
 	TargetPort int `json:"target_port,omitempty"`
 	// UserID holds the value of the "user_id" field.

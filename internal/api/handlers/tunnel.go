@@ -3,6 +3,8 @@ package handlers
 import (
 	"giraffecloud/internal/api/constants"
 	"giraffecloud/internal/api/dto/common"
+	tunneldto "giraffecloud/internal/api/dto/v1/tunnel"
+	"giraffecloud/internal/api/mapper"
 	"giraffecloud/internal/interfaces"
 	"giraffecloud/internal/repository"
 	"giraffecloud/internal/service"
@@ -104,20 +106,18 @@ func (h *TunnelHandler) GetFreeSubdomain(c *gin.Context) {
 		return
 	}
 
-	response := map[string]interface{}{
-		"domain":    subdomain,
-		"available": true,
+	response := &tunneldto.FreeSubdomainResponse{
+		Domain:    subdomain,
+		Available: true,
 	}
 
 	utils.HandleSuccess(c, response)
 }
 
 // CreateTunnel creates a new tunnel
+// Domain is optional - if not provided, a subdomain will be auto-generated
 func (h *TunnelHandler) CreateTunnel(c *gin.Context) {
-	var req struct {
-		Domain     string `json:"domain" binding:"required"`
-		TargetPort int    `json:"target_port" binding:"required,min=1,max=65535"`
-	}
+	var req tunneldto.CreateRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		logging.GetGlobalLogger().Error("CreateTunnel: Invalid request data: %+v, error: %v", req, err)
@@ -133,7 +133,9 @@ func (h *TunnelHandler) CreateTunnel(c *gin.Context) {
 		return
 	}
 
-	utils.HandleCreated(c, tunnel)
+	// Convert to CreateResponse DTO (includes token)
+	response := mapper.TunnelToCreateResponse(tunnel)
+	utils.HandleCreated(c, response)
 }
 
 // ListTunnels lists all tunnels for the authenticated user
@@ -146,7 +148,9 @@ func (h *TunnelHandler) ListTunnels(c *gin.Context) {
 		return
 	}
 
-	utils.HandleSuccess(c, tunnels)
+	// Convert to Response DTOs (no token)
+	response := mapper.TunnelsToResponses(tunnels)
+	utils.HandleSuccess(c, response)
 }
 
 // GetTunnel gets a specific tunnel by ID
@@ -166,7 +170,9 @@ func (h *TunnelHandler) GetTunnel(c *gin.Context) {
 		return
 	}
 
-	utils.HandleSuccess(c, tunnel)
+	// Convert to Response DTO (no token)
+	response := mapper.TunnelToResponse(tunnel)
+	utils.HandleSuccess(c, response)
 }
 
 // DeleteTunnel deletes a tunnel
@@ -191,10 +197,7 @@ func (h *TunnelHandler) DeleteTunnel(c *gin.Context) {
 // UpdateTunnel updates a tunnel's configuration
 // Note: Domain cannot be changed after creation
 func (h *TunnelHandler) UpdateTunnel(c *gin.Context) {
-	var req struct {
-		IsActive   *bool `json:"is_active,omitempty"`
-		TargetPort *int  `json:"target_port,omitempty" binding:"omitempty,min=1,max=65535"`
-	}
+	var req tunneldto.UpdateRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		logging.GetGlobalLogger().Error("UpdateTunnel: Invalid request data: %+v, error: %v", req, err)
@@ -223,5 +226,7 @@ func (h *TunnelHandler) UpdateTunnel(c *gin.Context) {
 		return
 	}
 
-	utils.HandleSuccess(c, tunnel)
+	// Convert to Response DTO (no token)
+	response := mapper.TunnelToResponse(tunnel)
+	utils.HandleSuccess(c, response)
 }

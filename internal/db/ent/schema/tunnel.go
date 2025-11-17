@@ -23,7 +23,8 @@ func (Tunnel) Fields() []ent.Field {
 		field.String("client_ip").
 			Optional(),
 		field.Bool("is_active").
-			Default(true),
+			Default(true).
+			StructTag(`json:"is_active"`),
 		field.Int("target_port").
 			Positive(),
 		field.Uint32("user_id"),
