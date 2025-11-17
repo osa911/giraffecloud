@@ -37,9 +37,6 @@ export default function StaleAuthCookieCleaner() {
     // If cookies exist, clear them
     // We know they're stale because this component only renders when server said no valid user
     if (hasBrowserCookies) {
-      console.log("[StaleAuthCookieCleaner] Clearing stale auth cookies on auth page");
-      console.log("[StaleAuthCookieCleaner] Current cookies:", document.cookie);
-
       const deleteCookie = (name: string) => {
         // Clear with multiple domain configurations to ensure deletion
         const configs = [
@@ -62,19 +59,6 @@ export default function StaleAuthCookieCleaner() {
       deleteCookie(AUTH_TOKEN_COOKIE_NAME);
       deleteCookie(CSRF_COOKIE_NAME);
       deleteCookie(USER_DATA_COOKIE_NAME);
-
-      // Verify cookies were cleared
-      setTimeout(() => {
-        console.log("[StaleAuthCookieCleaner] Cookies after clearing:", document.cookie);
-        const stillHasCookies =
-          document.cookie.includes(`${SESSION_COOKIE_NAME}=`) ||
-          document.cookie.includes(`${AUTH_TOKEN_COOKIE_NAME}=`);
-        if (stillHasCookies) {
-          console.warn("[StaleAuthCookieCleaner] WARNING: Cookies still present after clearing attempt");
-        } else {
-          console.log("[StaleAuthCookieCleaner] Successfully cleared all auth cookies");
-        }
-      }, 100);
     }
   }, []);
 
