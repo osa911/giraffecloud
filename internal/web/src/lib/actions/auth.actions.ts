@@ -212,24 +212,30 @@ export async function getAuthUser(
 
     if (!hasSessionCookies) {
       // No session cookies - user is not authenticated
-      // Clear cache if it exists (only if updateCache is enabled)
-      if (shouldUpdateCache) {
-        const cachedUser = await getCachedUser();
-        if (cachedUser) {
-          try {
-            await clearAllAuthCookies();
-          } catch {
-            // Cookie clearing might fail in layouts - that's okay
-          }
-        }
+      // ALWAYS clear cache including user_data cookie to prevent redirect loops
+      try {
+        await clearAllAuthCookies();
+      } catch {
+        // Cookie clearing might fail in layouts - that's okay
       }
       return null;
     }
 
     // Check cache first (fast path) - only if we have session cookies
+    // BUT: validate that cache timestamp is recent to avoid stale data after redeployment
     const cachedUser = await getCachedUser();
     if (cachedUser) {
-      return cachedUser;
+      const cachedData = await getCachedUserData();
+      if (cachedData) {
+        const cacheAge = Date.now() - cachedData.cachedAt;
+        // Only use cache if it's fresh (< 3 minutes)
+        // This balances performance (fewer API calls) with freshness (updates after ~3 min)
+        // Note: The backend will still clear invalid cookies immediately
+        if (cacheAge < 180000) {
+          return cachedUser;
+        }
+        // Cache is older than 3 minutes - revalidate with backend
+      }
     }
 
     // Cache miss or expired - validate with backend
@@ -247,36 +253,34 @@ export async function getAuthUser(
         }
         return user;
       } else {
-        // Session is invalid - clear everything (if possible)
-        if (shouldUpdateCache) {
-          try {
-            await clearAllAuthCookies();
-          } catch {
-            // Silently fail - not in Server Action context
-          }
+        // Session is invalid - ALWAYS try to clear cookies to prevent redirect loops
+        // This is critical for security, regardless of updateCache setting
+        try {
+          await clearAllAuthCookies();
+        } catch {
+          // Cookie clearing might fail in page/layout context - that's expected
+          // The backend will also clear cookies via Set-Cookie headers
         }
         return null;
       }
     } catch {
-      // API call failed (likely 401) - clear stale cookies (if possible)
-      if (shouldUpdateCache) {
-        try {
-          await clearAllAuthCookies();
-        } catch {
-          // Silently fail - not in Server Action context
-        }
+      // API call failed (likely 401) - ALWAYS try to clear stale cookies
+      try {
+        await clearAllAuthCookies();
+      } catch {
+        // Cookie clearing might fail in page/layout context - that's expected
+        // The backend will also clear cookies via Set-Cookie headers
       }
       return null;
     }
   } catch (error) {
     console.error("Error verifying session:", error);
-    // API call failed (likely 401/403) - clear all auth cookies (if possible)
-    if (shouldUpdateCache) {
-      try {
-        await clearAllAuthCookies();
-      } catch {
-        // Cookie clearing failed - likely during SSR, safe to ignore
-      }
+    // API call failed (likely 401/403) - ALWAYS try to clear stale cookies
+    try {
+      await clearAllAuthCookies();
+    } catch {
+      // Cookie clearing failed - likely during SSR in page/layout, safe to ignore
+      // The backend will also clear cookies via Set-Cookie headers
     }
   } finally {
     if (shouldRedirect && !user) {

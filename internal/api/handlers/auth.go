@@ -435,6 +435,9 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 }
 
 func (h *AuthHandler) GetSession(c *gin.Context) {
+	// Declare cookie variables at function level for later access
+	var sessionCookie, authToken string
+
 	// Check for session cookie first
 	sessionCookie, err := c.Cookie(constants.CookieSession)
 	if err == nil && sessionCookie != "" {
@@ -464,7 +467,7 @@ func (h *AuthHandler) GetSession(c *gin.Context) {
 	}
 
 	// Check auth_token cookie as fallback
-	authToken, err := c.Cookie(constants.CookieAuthToken)
+	authToken, err = c.Cookie(constants.CookieAuthToken)
 	if err == nil && authToken != "" {
 		existingSession, err := h.sessionRepo.GetActiveByToken(c.Request.Context(), authToken)
 		if err == nil {

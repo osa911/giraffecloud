@@ -23,16 +23,7 @@ export function middleware(request: NextRequest) {
   // - If valid: redirect to dashboard
   // - If invalid: clear cookies and show login page
 
-  // For all requests, ensure consistent headers to prevent caching issues after deployment
-  const response = NextResponse.next();
-
-  // Add cache control headers to prevent stale auth state
-  if (isDashboardRoute(path) || path === ROUTES.AUTH.LOGIN || path === ROUTES.AUTH.REGISTER) {
-    response.headers.set("Cache-Control", "no-store, must-revalidate");
-    response.headers.set("Pragma", "no-cache");
-  }
-
-  return response;
+  return NextResponse.next();
 }
 
 export const config = {
