@@ -184,7 +184,11 @@ export default function TunnelDialog({ open, onClose, tunnel, onSuccess }: Tunne
                 value={formData.domain}
                 onChange={(e) => setFormData({ ...formData, domain: e.target.value })}
                 placeholder="example.com"
-                helperText="Enter your custom domain"
+                helperText={tunnel ? "Domain cannot be changed after creation" : "Enter your custom domain"}
+                disabled={!!tunnel}
+                InputProps={{
+                  readOnly: !!tunnel,
+                }}
               />
             )}
 
