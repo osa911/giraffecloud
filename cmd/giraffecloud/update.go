@@ -91,7 +91,7 @@ Examples:
 			logger.Info("Detected running service, stopping before update...")
 			if err := svcMgr.Stop(); err != nil {
 				logger.Warn("Failed to stop service: %v", err)
-				logger.Info("Tip: Try 'sudo giraffecloud service stop' and rerun update")
+				logger.Info("Tip: Try sudo giraffecloud service stop and rerun update")
 			} else {
 				logger.Info("Service stopped successfully")
 			}
@@ -184,13 +184,13 @@ Examples:
 			// Only attempt start if we actually manage a unit
 			if err := svcMgr.Start(); err != nil {
 				logger.Warn("Failed to start service after update: %v", err)
-				logger.Info("Tip: You may need elevated privileges: 'sudo giraffecloud service start'")
+				logger.Info("Tip: You may need elevated privileges: sudo giraffecloud service start")
 			}
 		}
 
 		logger.Info("✅ Update completed successfully!")
 		logger.Info("🎉 GiraffeCloud has been updated to version %s", updateInfo.Version)
-		logger.Info("💡 You may need to restart any running services: 'sudo giraffecloud service restart'")
+		logger.Info("💡 You may need to restart any running services: sudo giraffecloud service restart")
 
 		// Clean up old backups
 		if err := updater.CleanupOldBackups(); err != nil {
