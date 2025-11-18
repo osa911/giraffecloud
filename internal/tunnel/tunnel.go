@@ -374,7 +374,6 @@ func (t *Tunnel) attemptDualConnections(serverAddr string, tlsConfig *tls.Config
 			t.logger.Error("Failed to establish gRPC tunnel: %v", err)
 			t.grpcEnabled = false
 		} else {
-			t.logger.Info("✅ gRPC tunnel established successfully - unlimited HTTP concurrency enabled! Client ID: %s", t.grpcClient.GetClientID())
 			t.grpcEnabled = true
 		}
 	} else {
@@ -400,9 +399,6 @@ func (t *Tunnel) attemptDualConnections(serverAddr string, tlsConfig *tls.Config
 	if t.grpcEnabled {
 		// In hybrid mode: gRPC handles ALL HTTP traffic (including large files via chunked streaming)
 		// TCP tunnel will be established ON-DEMAND when WebSocket requests arrive
-		t.logger.Info("🎯 HYBRID MODE ACTIVE: gRPC (ALL HTTP + Chunked Streaming) + TCP (ON-DEMAND for WebSockets)")
-		t.logger.Info("🚀 PRODUCTION-GRADE: Unlimited concurrency + demand-based tunnel establishment!")
-		t.logger.Info("⚡ TCP tunnel will be established automatically when WebSocket requests arrive")
 		return nil
 	}
 

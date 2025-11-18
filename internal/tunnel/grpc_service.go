@@ -67,6 +67,9 @@ type GRPCTunnelServer struct {
 	// Usage aggregation
 	usage UsageRecorder
 	quota QuotaChecker
+
+	// Tunnel status cache (for fast active status checks)
+	statusCache *TunnelStatusCache
 }
 
 // SetUsageRecorder wires a usage recorder for accounting.
@@ -170,6 +173,7 @@ func NewGRPCTunnelServer(
 		config:        config,
 		rateLimiter:   NewRateLimiter(config.RateLimitRPM, config.RateLimitBurst),
 		security:      NewSecurityMiddleware(),
+		statusCache:   NewTunnelStatusCache(tunnelService, 5*time.Second), // Refresh every 5s
 	}
 
 	return server
@@ -252,6 +256,9 @@ func (s *GRPCTunnelServer) Start(addr string) error {
 	// Start metrics reporting
 	go s.reportMetrics()
 
+	// Start tunnel status cache for fast active checks
+	s.statusCache.Start()
+
 	s.logger.Info("gRPC Tunnel Server started successfully")
 	return nil
 }
@@ -276,6 +283,11 @@ func (s *GRPCTunnelServer) Stop() error {
 			s.logger.Warn("Force stopping gRPC server after timeout")
 			s.grpcServer.Stop()
 		}
+	}
+
+	// Stop tunnel status cache
+	if s.statusCache != nil {
+		s.statusCache.Stop()
 	}
 
 	return nil
@@ -539,20 +551,13 @@ func (s *GRPCTunnelServer) ProxyHTTPRequest(domain string, req *http.Request, cl
 		return nil, fmt.Errorf("no active tunnel for domain: %s", domain)
 	}
 
-	// CRITICAL: Check if tunnel is still active in database
+	// CRITICAL: Check if tunnel is still active (fast in-memory cache lookup)
 	// (User might have deactivated it via UI while CLI is still connected)
-	if s.tunnelService != nil {
-		tunnel, err := s.tunnelService.GetByDomain(context.Background(), domain)
-		if err != nil {
-			atomic.AddInt64(&s.totalErrors, 1)
-			s.logger.Warn("Failed to check tunnel status for domain %s: %v", domain, err)
-			return nil, fmt.Errorf("failed to verify tunnel status")
-		}
-		if !tunnel.IsActive {
-			atomic.AddInt64(&s.totalErrors, 1)
-			s.logger.Warn("Tunnel %s is inactive, rejecting request", domain)
-			return nil, fmt.Errorf("tunnel is inactive")
-		}
+	// Cache is refreshed every 5 seconds, providing near-instant validation
+	if s.statusCache != nil && !s.statusCache.IsActive(domain) {
+		atomic.AddInt64(&s.totalErrors, 1)
+		s.logger.Warn("Tunnel %s is inactive, rejecting request", domain)
+		return nil, fmt.Errorf("tunnel is inactive")
 	}
 
 	// Quota/Rate limiting check
