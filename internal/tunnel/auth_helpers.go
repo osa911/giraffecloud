@@ -75,4 +75,3 @@ func AuthenticateTunnelByToken(
 	// Single active tunnel case - use it automatically
 	return activeTunnels[0], nil
 }
-
