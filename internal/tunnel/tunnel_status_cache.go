@@ -117,8 +117,6 @@ func (c *TunnelStatusCache) refreshAll() {
 	c.cacheMu.Lock()
 	c.cache = newCache
 	c.cacheMu.Unlock()
-
-	c.logger.Debug("Tunnel status cache refreshed: %d active tunnels", len(newCache))
 }
 
 // refreshSingle updates the cache for a specific domain
