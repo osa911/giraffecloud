@@ -282,6 +282,12 @@ func (t *Tunnel) connectWithRetry(serverAddr string, tlsConfig *tls.Config) erro
 		t.lastError = err
 		t.retryCount++
 
+		// Check if this is an authentication error (should not retry)
+		if isAuthenticationError(err) {
+			t.setState(StateFailed)
+			return err // Return immediately without retrying
+		}
+
 		// Check if this is a maintenance mode error
 		if isMaintenanceError(err) {
 			t.setState(StateMaintenance)
@@ -1176,6 +1182,31 @@ func (t *Tunnel) calculateNextDelay(currentDelay time.Duration) time.Duration {
 }
 
 // isMaintenanceError checks if the error indicates server maintenance
+// isAuthenticationError checks if an error is authentication-related and should not be retried
+func isAuthenticationError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errStr := strings.ToLower(err.Error())
+	authErrorKeywords := []string{
+		"multiple active tunnels found",
+		"no active tunnels found",
+		"is inactive",
+		"authentication failed",
+		"unauthenticated",
+		"invalid token",
+		"no tunnel found for domain",
+	}
+
+	for _, keyword := range authErrorKeywords {
+		if strings.Contains(errStr, keyword) {
+			return true
+		}
+	}
+	return false
+}
+
 func isMaintenanceError(err error) bool {
 	// Check for specific maintenance-related error messages
 	errStr := err.Error()

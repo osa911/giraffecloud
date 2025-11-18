@@ -190,34 +190,45 @@ Examples:
 		s.Stop()
 
 		if err != nil {
+			fmt.Println("") // Add blank line for readability
+
 			// Check if error is about multiple tunnels
 			errMsg := err.Error()
 			if strings.Contains(errMsg, "multiple active tunnels found") {
-				logger.Error("❌ You have multiple active tunnels configured.")
-				logger.Info("")
-				logger.Info("Please specify which tunnel to connect to:")
-				logger.Info("  giraffecloud connect --domain YOUR_DOMAIN")
-				logger.Info("")
-				logger.Info("Your available active tunnels:")
+				fmt.Println("❌ You have multiple active tunnels configured.")
+				fmt.Println("")
+				fmt.Println("Please specify which tunnel to connect to:")
+				fmt.Println("  giraffecloud connect --domain YOUR_DOMAIN")
+				fmt.Println("")
+				fmt.Println("Your available active tunnels:")
 				// Extract domain list from error message
 				if strings.Contains(errMsg, "Available:") {
 					parts := strings.Split(errMsg, "Available:")
 					if len(parts) > 1 {
-						logger.Info("  %s", strings.TrimSpace(parts[1]))
+						// Parse and format the domain list
+						domainsStr := strings.TrimSpace(parts[1])
+						domainsStr = strings.Trim(domainsStr, "[]")
+						domains := strings.Split(domainsStr, " ")
+						for _, domain := range domains {
+							domain = strings.TrimSpace(domain)
+							if domain != "" {
+								fmt.Printf("  • %s\n", domain)
+							}
+						}
 					}
 				}
 			} else if strings.Contains(errMsg, "is inactive") {
-				logger.Error("❌ %v", err)
-				logger.Info("")
-				logger.Info("Please activate the tunnel at:")
-				logger.Info("  https://giraffecloud.xyz/dashboard/tunnels")
+				fmt.Printf("❌ %v\n", err)
+				fmt.Println("")
+				fmt.Println("Please activate the tunnel at:")
+				fmt.Println("  https://giraffecloud.xyz/dashboard/tunnels")
 			} else if strings.Contains(errMsg, "no active tunnels found") {
-				logger.Error("❌ %v", err)
-				logger.Info("")
-				logger.Info("Please activate a tunnel at:")
-				logger.Info("  https://giraffecloud.xyz/dashboard/tunnels")
+				fmt.Printf("❌ %v\n", err)
+				fmt.Println("")
+				fmt.Println("Please activate a tunnel at:")
+				fmt.Println("  https://giraffecloud.xyz/dashboard/tunnels")
 			} else {
-				logger.Error("Failed to connect to GiraffeCloud: %v", err)
+				fmt.Printf("❌ Failed to connect to GiraffeCloud: %v\n", err)
 			}
 			os.Exit(1)
 		}
