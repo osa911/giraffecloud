@@ -67,9 +67,14 @@ var connectCmd = &cobra.Command{
 	Long: `Connect to GiraffeCloud and establish a tunnel to expose your local service.
 The tunnel will forward requests from your assigned domain to your local service.
 
-Example:
-  giraffecloud connect                  # Use port configured on server
-  giraffecloud connect --local-port 3000  # Override with local port 3000`,
+Domain Selection:
+  - If you have only one tunnel, it will be used automatically
+  - If you have multiple tunnels, specify which one with --domain flag
+  - The last connected domain is saved for quick reconnect
+
+Examples:
+  giraffecloud connect                         # Connect to last used or first active tunnel
+  giraffecloud connect --domain example.com    # Connect to specific tunnel`,
 	Run: func(cmd *cobra.Command, args []string) {
 		// Check if user has logged in (config.json exists)
 		configPath, err := tunnel.GetConfigPath()
@@ -95,15 +100,16 @@ Example:
 		// Get tunnel host and port from flags if provided
 		tunnelHost, _ := cmd.Flags().GetString("tunnel-host")
 		tunnelPort, _ := cmd.Flags().GetInt("tunnel-port")
-		localPort, _ := cmd.Flags().GetInt("local-port")
+		domainFlag, _ := cmd.Flags().GetString("domain")
+
 		if tunnelHost != "" {
 			cfg.Server.Host = tunnelHost
 		}
 		if tunnelPort != 0 {
 			cfg.Server.Port = tunnelPort
 		}
-		if localPort != 0 {
-			cfg.LocalPort = localPort
+		if domainFlag != "" {
+			cfg.Domain = domainFlag
 		}
 
 		serverAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
@@ -153,10 +159,10 @@ Example:
 		}()
 
 		logger.Info("Starting tunnel connection to %s", serverAddr)
-		if cfg.LocalPort > 0 {
-			logger.Info("Will forward requests to localhost:%d (overridden by --local-port flag)", cfg.LocalPort)
+		if cfg.Domain != "" {
+			logger.Info("Connecting to tunnel: %s", cfg.Domain)
 		} else {
-			logger.Info("Will use port from server configuration")
+			logger.Info("No domain specified - server will select the first active tunnel")
 		}
 
 		t := tunnel.NewTunnel()
@@ -184,8 +190,45 @@ Example:
 		s.Stop()
 
 		if err != nil {
-			logger.Error("Failed to connect to GiraffeCloud: %v", err)
+			// Check if error is about multiple tunnels
+			errMsg := err.Error()
+			if strings.Contains(errMsg, "multiple active tunnels found") {
+				logger.Error("❌ You have multiple active tunnels configured.")
+				logger.Info("")
+				logger.Info("Please specify which tunnel to connect to:")
+				logger.Info("  giraffecloud connect --domain YOUR_DOMAIN")
+				logger.Info("")
+				logger.Info("Your available active tunnels:")
+				// Extract domain list from error message
+				if strings.Contains(errMsg, "Available:") {
+					parts := strings.Split(errMsg, "Available:")
+					if len(parts) > 1 {
+						logger.Info("  %s", strings.TrimSpace(parts[1]))
+					}
+				}
+			} else if strings.Contains(errMsg, "is inactive") {
+				logger.Error("❌ %v", err)
+				logger.Info("")
+				logger.Info("Please activate the tunnel at:")
+				logger.Info("  https://giraffecloud.xyz/dashboard/tunnels")
+			} else if strings.Contains(errMsg, "no active tunnels found") {
+				logger.Error("❌ %v", err)
+				logger.Info("")
+				logger.Info("Please activate a tunnel at:")
+				logger.Info("  https://giraffecloud.xyz/dashboard/tunnels")
+			} else {
+				logger.Error("Failed to connect to GiraffeCloud: %v", err)
+			}
 			os.Exit(1)
+		}
+
+		// Save the domain to config for future connections (if domain was specified)
+		if cfg.Domain != "" {
+			if err := tunnel.SaveConfig(cfg); err != nil {
+				logger.Warn("Failed to save config: %v", err)
+			} else {
+				logger.Info("Saved tunnel domain to config for quick reconnect")
+			}
 		}
 
 		logger.Info("Tunnel is running. Press Ctrl+C to stop.")
@@ -467,7 +510,7 @@ func init() {
 	// Add host flags to connect command
 	connectCmd.Flags().String("tunnel-host", "", "Tunnel host to connect to (default: tunnel.giraffecloud.xyz)")
 	connectCmd.Flags().Int("tunnel-port", 4443, "Tunnel port to connect to (default: 4443)")
-	connectCmd.Flags().Int("local-port", 0, "Local port to forward requests to (optional, defaults to port configured on server)")
+	connectCmd.Flags().String("domain", "", "Domain of the tunnel to connect to (required if you have multiple tunnels)")
 
 	// Global version flags on root: giraffecloud -v / --version
 	rootCmd.PersistentFlags().BoolVarP(&rootVersionFlag, "version", "v", false, "Print version information and exit")

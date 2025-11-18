@@ -24,6 +24,7 @@ import toast from "react-hot-toast";
 import type { Tunnel, TunnelFormData, TunnelCreateResponse } from "@/types/tunnel";
 import clientApi from "@/services/apiClient/clientApiClient";
 import { getFreeSubdomain } from "@/hooks/useTunnels";
+import { isReservedDomain, getReservedDomainError } from "@/config/domains";
 
 interface TunnelDialogProps {
   open: boolean;
@@ -48,6 +49,7 @@ export default function TunnelDialog({
   const [loadingFreeSubdomain, setLoadingFreeSubdomain] = useState(false);
   const [freeSubdomainError, setFreeSubdomainError] = useState<string>("");
   const [portError, setPortError] = useState<string>("");
+  const [domainError, setDomainError] = useState<string>("");
 
   const [formData, setFormData] = useState<TunnelFormData>(() => ({
     domain: tunnel?.domain || "",
@@ -74,6 +76,7 @@ export default function TunnelDialog({
         setFreeSubdomainAvailable(true);
         setFreeSubdomainError("");
         setPortError("");
+        setDomainError("");
         setFormData({
           domain: "",
           target_port: 80,
@@ -106,6 +109,16 @@ export default function TunnelDialog({
     } finally {
       setLoadingFreeSubdomain(false);
     }
+  };
+
+  const validateDomain = (domain: string): boolean => {
+    if (isReservedDomain(domain)) {
+      setDomainError(getReservedDomainError(domain));
+      return false;
+    }
+
+    setDomainError("");
+    return true;
   };
 
   const validatePort = (port: number): boolean => {
@@ -150,7 +163,10 @@ export default function TunnelDialog({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Validate port before submitting
+    // Validate domain and port before submitting
+    if (domainType === "custom" && !validateDomain(formData.domain)) {
+      return;
+    }
     if (!validatePort(formData.target_port)) {
       return;
     }
@@ -277,10 +293,19 @@ export default function TunnelDialog({
                 fullWidth
                 required
                 value={formData.domain}
-                onChange={(e) => setFormData({ ...formData, domain: e.target.value })}
+                onChange={(e) => {
+                  const domain = e.target.value;
+                  setFormData({ ...formData, domain });
+                  // Validate domain on change (only for new tunnels)
+                  if (!tunnel && domain) {
+                    validateDomain(domain);
+                  }
+                }}
                 placeholder="example.com"
+                error={!!domainError}
                 helperText={
-                  tunnel ? "Domain cannot be changed after creation" : "Enter your custom domain"
+                  domainError ||
+                  (tunnel ? "Domain cannot be changed after creation" : "Enter your custom domain")
                 }
                 disabled={!!tunnel}
                 InputProps={{

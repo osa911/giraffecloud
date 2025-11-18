@@ -383,6 +383,17 @@ export default function GettingStartedPage() {
                         </IconButton>
                       </Tooltip>
                     </Paper>
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      display="block"
+                      sx={{ mt: 1 }}
+                    >
+                      💡 <strong>Tip:</strong> If you have multiple tunnels, specify which one with{" "}
+                      <code style={{ fontSize: "0.75rem" }}>
+                        giraffecloud connect --domain your-domain.com
+                      </code>
+                    </Typography>
                   </Box>
 
                   {/* Option 2: Install as Service */}
@@ -506,15 +517,29 @@ export default function GettingStartedPage() {
                     >
                       giraffecloud connect
                     </Typography>
-                    <Typography variant="caption" color="text.secondary">
+                    <Typography variant="caption" color="text.secondary" display="block">
                       Connect to GiraffeCloud and establish a tunnel to expose your local service
+                    </Typography>
+                    <Typography
+                      variant="caption"
+                      display="block"
+                      color="text.secondary"
+                      sx={{ mt: 0.5 }}
+                    >
+                      • Single tunnel: Connects automatically
+                    </Typography>
+                    <Typography variant="caption" display="block" color="text.secondary">
+                      • Multiple tunnels: Use <code>--domain</code> to specify which one
+                    </Typography>
+                    <Typography variant="caption" display="block" color="text.secondary">
+                      • Last connected domain is saved for quick reconnect
                     </Typography>
                     <Typography
                       variant="caption"
                       display="block"
                       sx={{ fontFamily: "monospace", mt: 0.5 }}
                     >
-                      Options: --local-port &lt;port&gt;, --tunnel-host &lt;host&gt;, --tunnel-port
+                      Options: --domain &lt;domain&gt;, --tunnel-host &lt;host&gt;, --tunnel-port
                       &lt;port&gt;
                     </Typography>
                   </Box>

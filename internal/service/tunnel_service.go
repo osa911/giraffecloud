@@ -5,6 +5,8 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"os"
+
 	"giraffecloud/internal/db/ent"
 	"giraffecloud/internal/interfaces"
 	"giraffecloud/internal/logging"
@@ -59,9 +61,61 @@ func (s *tunnelService) GetFreeSubdomain(ctx context.Context, userID uint32) (do
 	return subdomain, true, nil
 }
 
+// isReservedDomain checks if the domain matches reserved system domains
+// Reserved domains are derived from CLIENT_URL environment variable
+func isReservedDomain(domain string) bool {
+	logger := logging.GetGlobalLogger()
+
+	// Get base domain from CLIENT_URL (e.g., "giraffecloud.xyz" from "https://giraffecloud.xyz")
+	clientURL := os.Getenv("CLIENT_URL")
+	if clientURL == "" {
+		logger.Warn("CLIENT_URL not set, using hardcoded reserved domains")
+		// Fallback to hardcoded domains if CLIENT_URL is not set
+		reservedDomains := []string{
+			"giraffecloud.xyz",
+			"www.giraffecloud.xyz",
+			"api.giraffecloud.xyz",
+			"tunnel.giraffecloud.xyz",
+		}
+		for _, reserved := range reservedDomains {
+			if domain == reserved {
+				return true
+			}
+		}
+		return false
+	}
+
+	baseDomain := utils.GetBaseDomain()
+	if baseDomain == "" || baseDomain == "localhost" {
+		logger.Warn("Failed to get base domain from CLIENT_URL: %s", clientURL)
+		return false
+	}
+
+	// Build reserved domains from base domain
+	reservedDomains := []string{
+		baseDomain,             // giraffecloud.xyz
+		"www." + baseDomain,    // www.giraffecloud.xyz
+		"api." + baseDomain,    // api.giraffecloud.xyz
+		"tunnel." + baseDomain, // tunnel.giraffecloud.xyz
+	}
+
+	for _, reserved := range reservedDomains {
+		if domain == reserved {
+			return true
+		}
+	}
+	return false
+}
+
 // CreateTunnel creates a new tunnel
 func (s *tunnelService) CreateTunnel(ctx context.Context, userID uint32, domain string, targetPort int) (*ent.Tunnel, error) {
 	logger := logging.GetGlobalLogger()
+
+	// Validate domain is not a reserved system domain
+	if isReservedDomain(domain) {
+		logger.Warn("User %d attempted to create tunnel with reserved domain: %s", userID, domain)
+		return nil, fmt.Errorf("domain '%s' is reserved for system use and cannot be used for tunnels", domain)
+	}
 
 	// Get all existing tunnels for this user
 	tunnels, err := s.repo.GetByUserID(ctx, userID)

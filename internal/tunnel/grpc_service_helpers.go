@@ -99,33 +99,52 @@ func (s *GRPCTunnelServer) authenticateTunnel(ctx context.Context, handshake *pr
 		return nil, fmt.Errorf("failed to get tunnels: %w", err)
 	}
 
-	// If client provided a domain, try to match it
+	// Filter for active tunnels only
+	activeTunnels := make([]*ent.Tunnel, 0)
+	for _, t := range tunnels {
+		if t.IsActive {
+			activeTunnels = append(activeTunnels, t)
+		}
+	}
+
+	// If client provided a domain, try to match it (must be active)
 	if handshake.Domain != "" {
-		for _, t := range tunnels {
+		for _, t := range activeTunnels {
 			if t.Domain == handshake.Domain {
+				s.logger.Info("[gRPC AUTH] Matched active tunnel: domain=%s, target_port=%d", t.Domain, t.TargetPort)
 				return t, nil
 			}
 		}
-		return nil, fmt.Errorf("no tunnel found for domain: %s", handshake.Domain)
+		// Check if domain exists but is inactive
+		for _, t := range tunnels {
+			if t.Domain == handshake.Domain && !t.IsActive {
+				return nil, fmt.Errorf("tunnel for domain '%s' exists but is inactive - please activate it in the web UI first", handshake.Domain)
+			}
+		}
+		return nil, fmt.Errorf("no active tunnel found for domain: %s", handshake.Domain)
 	}
 
-	// Proper fix: allow empty domain – resolve by token
-	// Prefer an active tunnel; fallback to the first available
-	var candidate *ent.Tunnel
-	for _, t := range tunnels {
-		if t.IsActive {
-			candidate = t
-			break
+	// If no domain specified, check if user has multiple active tunnels
+	if len(activeTunnels) > 1 {
+		// Build list of active domains for error message
+		domains := make([]string, len(activeTunnels))
+		for i, t := range activeTunnels {
+			domains[i] = t.Domain
 		}
-		if candidate == nil {
-			candidate = t
-		}
+		return nil, fmt.Errorf("multiple active tunnels found - please specify which domain to connect to using --domain flag. Available: %v", domains)
 	}
-	if candidate == nil {
-		return nil, fmt.Errorf("no tunnels available for user")
+
+	// Single active tunnel case - use it automatically
+	if len(activeTunnels) == 1 {
+		s.logger.Info("[gRPC AUTH] Single active tunnel found, using: domain=%s, target_port=%d", activeTunnels[0].Domain, activeTunnels[0].TargetPort)
+		return activeTunnels[0], nil
 	}
-	s.logger.Info("[gRPC AUTH] Resolved tunnel by token: domain=%s, target_port=%d", candidate.Domain, candidate.TargetPort)
-	return candidate, nil
+
+	// No active tunnels available
+	if len(tunnels) > 0 {
+		return nil, fmt.Errorf("no active tunnels found - please activate a tunnel in the web UI first")
+	}
+	return nil, fmt.Errorf("no tunnels configured - please create a tunnel in the web UI first")
 }
 
 // handleClientMessages handles incoming messages from the client tunnel
