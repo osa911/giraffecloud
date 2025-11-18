@@ -589,6 +589,12 @@ func (c *GRPCTunnelClient) saveHandshakeResponseToConfig(status *proto.TunnelSta
 		updated = true
 	}
 
+	// CRITICAL: Update client's targetPort if server provided one
+	if status.TargetPort != 0 && status.TargetPort != c.targetPort {
+		c.logger.Info("Updating client target port: %d -> %d", c.targetPort, status.TargetPort)
+		c.targetPort = status.TargetPort
+	}
+
 	// Save config if updated (like old handshake)
 	if updated {
 		if err := SaveConfig(cfg); err != nil {

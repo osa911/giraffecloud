@@ -182,7 +182,7 @@ Examples:
 		s.Start()
 
 		// Check version compatibility (respect test/beta channel if enabled)
-		checkVersionCompatibility(serverAddr)
+		checkVersionCompatibility(apiServerURL)
 
 		// Do not register extra on-connect hooks for update checks. Auto-update service will handle checks when enabled.
 
@@ -442,22 +442,13 @@ var statusCmd = &cobra.Command{
 	},
 }
 
-func checkVersionCompatibility(serverAddr string) {
-	// Extract base URL for version checking
-	parts := strings.Split(serverAddr, ":")
-	if len(parts) != 2 {
-		logger.Warn("Could not parse server address for version checking")
-		return
-	}
-
-	serverURL := fmt.Sprintf("https://%s", parts[0])
-
+func checkVersionCompatibility(apiServerURL string) {
 	logger.Info("🔍 Checking client version compatibility...")
 
 	// Respect channel from config (test-mode or auto-update channel override)
 	selectedChannel := tunnel.ResolveReleaseChannel()
 
-	versionInfo, err := version.CheckServerVersionWithChannel(serverURL, selectedChannel)
+	versionInfo, err := version.CheckServerVersionWithChannel(apiServerURL, selectedChannel)
 	if err != nil {
 		logger.Warn("Could not check server version: %v", err)
 		return
