@@ -177,31 +177,18 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 		return
 	}
 
-	// Find user by API token
-	token, err := s.tokenRepo.GetByToken(context.Background(), req.Token)
+	// Authenticate using shared authentication logic
+	tunnel, err := AuthenticateTunnelByToken(context.Background(), req.Token, req.Domain, s.tokenRepo, s.tunnelRepo)
 	if err != nil {
 		s.logger.Error("Failed to authenticate: %v", err)
 		encoder.Encode(TunnelHandshakeResponse{
 			Status:  "error",
-			Message: "Invalid token. Please login first.",
+			Message: err.Error(),
 		})
 		return
 	}
 
-	// Get user's first tunnel
-	tunnels, err := s.tunnelRepo.GetByUserID(context.Background(), token.UserID)
-	if err != nil || len(tunnels) == 0 {
-		s.logger.Error("No tunnels found for user: %v", err)
-		encoder.Encode(TunnelHandshakeResponse{
-			Status:  "error",
-			Message: "No tunnels found. Please create a tunnel first.",
-		})
-		return
-	}
-
-	tunnel := tunnels[0] // Use the first tunnel
-
-	s.logger.Info("User %d connected with token %s", tunnel.UserID, tunnel.Token)
+	s.logger.Info("User %d connected with token %s for domain %s", tunnel.UserID, tunnel.Token, tunnel.Domain)
 
 	// Get client IP from connection
 	clientIP, _, err := net.SplitHostPort(conn.RemoteAddr().String())

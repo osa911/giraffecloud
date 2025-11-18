@@ -1374,13 +1374,21 @@ func (c *GRPCTunnelClient) reconnect() {
 				continue
 			}
 
-			// Exponential backoff with maximum cap
-			time.Sleep(delay)
-			delay = time.Duration(float64(delay) * c.config.BackoffMultiplier)
-			if delay > 30*time.Second {
-				delay = 30 * time.Second
-			}
-			continue
+		// Exponential backoff with maximum cap
+		select {
+		case <-time.After(delay):
+			// Continue with backoff
+		case <-c.stopChan:
+			return
+		case <-c.ctx.Done():
+			return
+		}
+
+		delay = time.Duration(float64(delay) * c.config.BackoffMultiplier)
+		if delay > 30*time.Second {
+			delay = 30 * time.Second
+		}
+		continue
 		}
 
 		// SUCCESS: Reset failure counter

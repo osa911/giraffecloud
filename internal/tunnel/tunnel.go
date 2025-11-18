@@ -469,9 +469,10 @@ func (t *Tunnel) performHandshake(conn net.Conn, token, connType string) (*Tunne
 	encoder := json.NewEncoder(conn)
 	decoder := json.NewDecoder(conn)
 
-	// Send handshake request with connection type
+	// Send handshake request with connection type and domain (for multi-tunnel support)
 	req := TunnelHandshakeRequest{
 		Token:          token,
+		Domain:         t.domain, // Include domain so server knows which tunnel to match
 		ConnectionType: connType,
 	}
 

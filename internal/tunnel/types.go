@@ -9,6 +9,7 @@ import (
 // TunnelHandshakeRequest represents the initial handshake message
 type TunnelHandshakeRequest struct {
 	Token          string `json:"token"`
+	Domain         string `json:"domain,omitempty"`          // For multi-tunnel support
 	ConnectionType string `json:"connection_type,omitempty"` // "http" or "websocket"
 }
 
