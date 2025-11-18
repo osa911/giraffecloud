@@ -93,6 +93,89 @@ export default function InstallationPage() {
             </Button>
           </Stack>
         </Stack>
+
+        {/* Uninstall Section */}
+        <Box sx={{ mt: 6 }}>
+          <Typography variant="h4" gutterBottom>
+            Uninstall GiraffeCloud
+          </Typography>
+          <Typography variant="body1" color="text.secondary" sx={{ mb: 4 }}>
+            Remove GiraffeCloud from your system using our uninstall script.
+          </Typography>
+
+          <Stack spacing={3}>
+            <Card variant="outlined">
+              <CardContent>
+                <Typography variant="h6" gutterBottom>
+                  Linux/macOS - Quick Uninstall
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                  Remove binary and service (keeps configuration):
+                </Typography>
+                <Box
+                  component="pre"
+                  sx={{ p: 2, bgcolor: "background.paper", borderRadius: 1, overflow: "auto" }}
+                >
+                  {`curl -fsSL https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/uninstall.sh | bash`}
+                </Box>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 2, mb: 1 }}>
+                  Remove everything including configuration and data:
+                </Typography>
+                <Box
+                  component="pre"
+                  sx={{ p: 2, bgcolor: "background.paper", borderRadius: 1, overflow: "auto" }}
+                >
+                  {`curl -fsSL https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/uninstall.sh | bash -s -- --remove-data`}
+                </Box>
+              </CardContent>
+            </Card>
+
+            <Card variant="outlined">
+              <CardContent>
+                <Typography variant="h6" gutterBottom>
+                  Windows (PowerShell) - Run as Administrator
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                  Remove binary and service (keeps configuration):
+                </Typography>
+                <Box
+                  component="pre"
+                  sx={{ p: 2, bgcolor: "background.paper", borderRadius: 1, overflow: "auto" }}
+                >
+                  {`Invoke-WebRequest -Uri "https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/uninstall.ps1" -OutFile "$env:TEMP\\uninstall.ps1"; & "$env:TEMP\\uninstall.ps1"`}
+                </Box>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 2, mb: 1 }}>
+                  Remove everything including configuration and data:
+                </Typography>
+                <Box
+                  component="pre"
+                  sx={{ p: 2, bgcolor: "background.paper", borderRadius: 1, overflow: "auto" }}
+                >
+                  {`Invoke-WebRequest -Uri "https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/uninstall.ps1" -OutFile "$env:TEMP\\uninstall.ps1"; & "$env:TEMP\\uninstall.ps1" -RemoveData`}
+                </Box>
+              </CardContent>
+            </Card>
+
+            <Stack direction="row" spacing={2}>
+              <Button
+                variant="outlined"
+                href="https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/uninstall.sh"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                View uninstall.sh
+              </Button>
+              <Button
+                variant="outlined"
+                href="https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/uninstall.ps1"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                View uninstall.ps1
+              </Button>
+            </Stack>
+          </Stack>
+        </Box>
       </Box>
     </Container>
   );

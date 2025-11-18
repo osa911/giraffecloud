@@ -775,6 +775,177 @@ export default function GettingStartedPage() {
         </CardContent>
       </Card>
 
+      {/* Uninstall Section */}
+      <Card sx={{ mt: 3 }}>
+        <CardHeader
+          title="Uninstall GiraffeCloud"
+          subheader="Remove GiraffeCloud from your system"
+        />
+        <CardContent>
+          <Stack spacing={3}>
+            {/* Linux/macOS Uninstall */}
+            <Box>
+              <Typography variant="h6" gutterBottom>
+                Linux/macOS
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                Remove binary and service (keeps configuration):
+              </Typography>
+              <Paper
+                variant="outlined"
+                sx={{ p: 2, bgcolor: "background.default", position: "relative" }}
+              >
+                <Typography
+                  component="pre"
+                  sx={{
+                    fontFamily: "monospace",
+                    fontSize: "0.875rem",
+                    m: 0,
+                    overflow: "auto",
+                    pr: 5,
+                  }}
+                >
+                  {`curl -fsSL https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/uninstall.sh | bash`}
+                </Typography>
+                <Tooltip title={copiedStep === 10 ? "Copied!" : "Copy command"}>
+                  <IconButton
+                    size="small"
+                    onClick={() =>
+                      handleCopy(
+                        "curl -fsSL https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/uninstall.sh | bash",
+                        10,
+                      )
+                    }
+                    sx={{ position: "absolute", top: 8, right: 8 }}
+                    color={copiedStep === 10 ? "success" : "default"}
+                  >
+                    {copiedStep === 10 ? <CheckIcon /> : <ContentCopyIcon />}
+                  </IconButton>
+                </Tooltip>
+              </Paper>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 2, mb: 2 }}>
+                Remove everything including configuration and data:
+              </Typography>
+              <Paper
+                variant="outlined"
+                sx={{ p: 2, bgcolor: "background.default", position: "relative" }}
+              >
+                <Typography
+                  component="pre"
+                  sx={{
+                    fontFamily: "monospace",
+                    fontSize: "0.875rem",
+                    m: 0,
+                    overflow: "auto",
+                    pr: 5,
+                  }}
+                >
+                  {`curl -fsSL https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/uninstall.sh | bash -s -- --remove-data`}
+                </Typography>
+                <Tooltip title={copiedStep === 11 ? "Copied!" : "Copy command"}>
+                  <IconButton
+                    size="small"
+                    onClick={() =>
+                      handleCopy(
+                        "curl -fsSL https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/uninstall.sh | bash -s -- --remove-data",
+                        11,
+                      )
+                    }
+                    sx={{ position: "absolute", top: 8, right: 8 }}
+                    color={copiedStep === 11 ? "success" : "default"}
+                  >
+                    {copiedStep === 11 ? <CheckIcon /> : <ContentCopyIcon />}
+                  </IconButton>
+                </Tooltip>
+              </Paper>
+            </Box>
+
+            <Divider />
+
+            {/* Windows Uninstall */}
+            <Box>
+              <Typography variant="h6" gutterBottom>
+                Windows (PowerShell - Run as Administrator)
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                Remove binary and service (keeps configuration):
+              </Typography>
+              <Paper
+                variant="outlined"
+                sx={{ p: 2, bgcolor: "background.default", position: "relative" }}
+              >
+                <Typography
+                  component="pre"
+                  sx={{
+                    fontFamily: "monospace",
+                    fontSize: "0.875rem",
+                    m: 0,
+                    overflow: "auto",
+                    pr: 5,
+                    wordWrap: "break-word",
+                    whiteSpace: "pre-wrap",
+                  }}
+                >
+                  {`Invoke-WebRequest -Uri "https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/uninstall.ps1" -OutFile "$env:TEMP\\uninstall.ps1"; & "$env:TEMP\\uninstall.ps1"`}
+                </Typography>
+                <Tooltip title={copiedStep === 12 ? "Copied!" : "Copy command"}>
+                  <IconButton
+                    size="small"
+                    onClick={() =>
+                      handleCopy(
+                        `Invoke-WebRequest -Uri "https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/uninstall.ps1" -OutFile "$env:TEMP\\uninstall.ps1"; & "$env:TEMP\\uninstall.ps1"`,
+                        12,
+                      )
+                    }
+                    sx={{ position: "absolute", top: 8, right: 8 }}
+                    color={copiedStep === 12 ? "success" : "default"}
+                  >
+                    {copiedStep === 12 ? <CheckIcon /> : <ContentCopyIcon />}
+                  </IconButton>
+                </Tooltip>
+              </Paper>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 2, mb: 2 }}>
+                Remove everything including configuration and data:
+              </Typography>
+              <Paper
+                variant="outlined"
+                sx={{ p: 2, bgcolor: "background.default", position: "relative" }}
+              >
+                <Typography
+                  component="pre"
+                  sx={{
+                    fontFamily: "monospace",
+                    fontSize: "0.875rem",
+                    m: 0,
+                    overflow: "auto",
+                    pr: 5,
+                    wordWrap: "break-word",
+                    whiteSpace: "pre-wrap",
+                  }}
+                >
+                  {`Invoke-WebRequest -Uri "https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/uninstall.ps1" -OutFile "$env:TEMP\\uninstall.ps1"; & "$env:TEMP\\uninstall.ps1" -RemoveData`}
+                </Typography>
+                <Tooltip title={copiedStep === 13 ? "Copied!" : "Copy command"}>
+                  <IconButton
+                    size="small"
+                    onClick={() =>
+                      handleCopy(
+                        `Invoke-WebRequest -Uri "https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/uninstall.ps1" -OutFile "$env:TEMP\\uninstall.ps1"; & "$env:TEMP\\uninstall.ps1" -RemoveData`,
+                        13,
+                      )
+                    }
+                    sx={{ position: "absolute", top: 8, right: 8 }}
+                    color={copiedStep === 13 ? "success" : "default"}
+                  >
+                    {copiedStep === 13 ? <CheckIcon /> : <ContentCopyIcon />}
+                  </IconButton>
+                </Tooltip>
+              </Paper>
+            </Box>
+          </Stack>
+        </CardContent>
+      </Card>
+
       {/* Token Creation Dialog */}
       <TokenDialog
         open={tokenDialogOpen}
