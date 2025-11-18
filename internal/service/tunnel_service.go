@@ -278,6 +278,11 @@ func (s *tunnelService) GetByToken(ctx context.Context, token string) (*ent.Tunn
 	return s.repo.GetByToken(ctx, token)
 }
 
+// GetByDomain retrieves a tunnel by its domain
+func (s *tunnelService) GetByDomain(ctx context.Context, domain string) (*ent.Tunnel, error) {
+	return s.repo.GetByDomain(ctx, domain)
+}
+
 // UpdateClientIP updates a tunnel's client IP and configures Caddy route
 func (s *tunnelService) UpdateClientIP(ctx context.Context, id uint32, clientIP string) error {
 	logger := logging.GetGlobalLogger()

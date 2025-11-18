@@ -13,6 +13,7 @@ type TunnelService interface {
 	DeleteTunnel(ctx context.Context, userID uint32, tunnelID uint32) error
 	UpdateTunnel(ctx context.Context, userID uint32, tunnelID uint32, updates interface{}) (*ent.Tunnel, error)
 	GetByToken(ctx context.Context, token string) (*ent.Tunnel, error)
+	GetByDomain(ctx context.Context, domain string) (*ent.Tunnel, error)
 	UpdateClientIP(ctx context.Context, id uint32, clientIP string) error
 	GetActive(ctx context.Context) ([]*ent.Tunnel, error)
 	GetFreeSubdomain(ctx context.Context, userID uint32) (domain string, available bool, err error)

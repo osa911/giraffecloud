@@ -539,6 +539,22 @@ func (s *GRPCTunnelServer) ProxyHTTPRequest(domain string, req *http.Request, cl
 		return nil, fmt.Errorf("no active tunnel for domain: %s", domain)
 	}
 
+	// CRITICAL: Check if tunnel is still active in database
+	// (User might have deactivated it via UI while CLI is still connected)
+	if s.tunnelService != nil {
+		tunnel, err := s.tunnelService.GetByDomain(context.Background(), domain)
+		if err != nil {
+			atomic.AddInt64(&s.totalErrors, 1)
+			s.logger.Warn("Failed to check tunnel status for domain %s: %v", domain, err)
+			return nil, fmt.Errorf("failed to verify tunnel status")
+		}
+		if !tunnel.IsActive {
+			atomic.AddInt64(&s.totalErrors, 1)
+			s.logger.Warn("Tunnel %s is inactive, rejecting request", domain)
+			return nil, fmt.Errorf("tunnel is inactive")
+		}
+	}
+
 	// Quota/Rate limiting check
 	if s.quota != nil {
 		// Lookup stream to get user ID
