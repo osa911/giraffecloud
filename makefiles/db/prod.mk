@@ -122,3 +122,27 @@ db-restore-prod: validate-prod-env
 		echo "  make db-restore-prod BACKUP=$(BACKUP) FORCE=1"; \
 		exit 1; \
 	fi
+
+# Set minimum client version (shortcut for script)
+.PHONY: set-min-version set-min-version-prod
+set-min-version:
+	@if [ -z "$(VERSION)" ]; then \
+		echo "Error: VERSION is required"; \
+		echo "Usage: make set-min-version VERSION=v1.1.0 [CHANNEL=stable]"; \
+		echo ""; \
+		echo "For more options, use the script directly:"; \
+		echo "  ./scripts/set-minimum-version.sh --help"; \
+		exit 1; \
+	fi
+	@./scripts/set-minimum-version.sh -v $(VERSION) -c $(shell echo $${CHANNEL:-stable}) -e dev
+
+set-min-version-prod:
+	@if [ -z "$(VERSION)" ]; then \
+		echo "Error: VERSION is required"; \
+		echo "Usage: make set-min-version-prod VERSION=v1.1.0 [CHANNEL=stable]"; \
+		echo ""; \
+		echo "For more options, use the script directly:"; \
+		echo "  ./scripts/set-minimum-version.sh --help"; \
+		exit 1; \
+	fi
+	@./scripts/set-minimum-version.sh -v $(VERSION) -c $(shell echo $${CHANNEL:-stable}) -e prod
