@@ -75,16 +75,16 @@ func (tc *TunnelCreate) SetNillableClientIP(s *string) *TunnelCreate {
 	return tc
 }
 
-// SetIsActive sets the "is_active" field.
-func (tc *TunnelCreate) SetIsActive(b bool) *TunnelCreate {
-	tc.mutation.SetIsActive(b)
+// SetIsEnabled sets the "is_enabled" field.
+func (tc *TunnelCreate) SetIsEnabled(b bool) *TunnelCreate {
+	tc.mutation.SetIsEnabled(b)
 	return tc
 }
 
-// SetNillableIsActive sets the "is_active" field if the given value is not nil.
-func (tc *TunnelCreate) SetNillableIsActive(b *bool) *TunnelCreate {
+// SetNillableIsEnabled sets the "is_enabled" field if the given value is not nil.
+func (tc *TunnelCreate) SetNillableIsEnabled(b *bool) *TunnelCreate {
 	if b != nil {
-		tc.SetIsActive(*b)
+		tc.SetIsEnabled(*b)
 	}
 	return tc
 }
@@ -155,9 +155,9 @@ func (tc *TunnelCreate) defaults() {
 		v := tunnel.DefaultUpdatedAt()
 		tc.mutation.SetUpdatedAt(v)
 	}
-	if _, ok := tc.mutation.IsActive(); !ok {
-		v := tunnel.DefaultIsActive
-		tc.mutation.SetIsActive(v)
+	if _, ok := tc.mutation.IsEnabled(); !ok {
+		v := tunnel.DefaultIsEnabled
+		tc.mutation.SetIsEnabled(v)
 	}
 }
 
@@ -185,8 +185,8 @@ func (tc *TunnelCreate) check() error {
 			return &ValidationError{Name: "token", err: fmt.Errorf(`ent: validator failed for field "Tunnel.token": %w`, err)}
 		}
 	}
-	if _, ok := tc.mutation.IsActive(); !ok {
-		return &ValidationError{Name: "is_active", err: errors.New(`ent: missing required field "Tunnel.is_active"`)}
+	if _, ok := tc.mutation.IsEnabled(); !ok {
+		return &ValidationError{Name: "is_enabled", err: errors.New(`ent: missing required field "Tunnel.is_enabled"`)}
 	}
 	if _, ok := tc.mutation.TargetPort(); !ok {
 		return &ValidationError{Name: "target_port", err: errors.New(`ent: missing required field "Tunnel.target_port"`)}
@@ -248,9 +248,9 @@ func (tc *TunnelCreate) createSpec() (*Tunnel, *sqlgraph.CreateSpec) {
 		_spec.SetField(tunnel.FieldClientIP, field.TypeString, value)
 		_node.ClientIP = value
 	}
-	if value, ok := tc.mutation.IsActive(); ok {
-		_spec.SetField(tunnel.FieldIsActive, field.TypeBool, value)
-		_node.IsActive = value
+	if value, ok := tc.mutation.IsEnabled(); ok {
+		_spec.SetField(tunnel.FieldIsEnabled, field.TypeBool, value)
+		_node.IsEnabled = value
 	}
 	if value, ok := tc.mutation.TargetPort(); ok {
 		_spec.SetField(tunnel.FieldTargetPort, field.TypeInt, value)

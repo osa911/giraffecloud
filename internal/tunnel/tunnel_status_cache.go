@@ -9,10 +9,10 @@ import (
 	"giraffecloud/internal/logging"
 )
 
-// TunnelStatusCache provides fast in-memory lookup of tunnel active status
+// TunnelStatusCache provides fast in-memory lookup of tunnel enabled status
 // with periodic refresh to avoid per-request database queries
 type TunnelStatusCache struct {
-	// In-memory cache: domain -> isActive
+	// In-memory cache: domain -> isEnabled
 	cache   map[string]bool
 	cacheMu sync.RWMutex
 
@@ -57,9 +57,9 @@ func (c *TunnelStatusCache) Stop() {
 	c.logger.Info("Tunnel status cache stopped")
 }
 
-// IsActive returns whether a tunnel is active (fast in-memory lookup)
+// IsEnabled returns whether a tunnel is enabled (fast in-memory lookup)
 // Returns false if tunnel not found in cache
-func (c *TunnelStatusCache) IsActive(domain string) bool {
+func (c *TunnelStatusCache) IsEnabled(domain string) bool {
 	c.cacheMu.RLock()
 	defer c.cacheMu.RUnlock()
 	return c.cache[domain]
@@ -96,7 +96,7 @@ func (c *TunnelStatusCache) refreshLoop() {
 	}
 }
 
-// refreshAll updates the cache with all active tunnels
+// refreshAll updates the cache with all enabled tunnels
 func (c *TunnelStatusCache) refreshAll() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -110,7 +110,7 @@ func (c *TunnelStatusCache) refreshAll() {
 	// Build new cache
 	newCache := make(map[string]bool, len(tunnels))
 	for _, tunnel := range tunnels {
-		newCache[tunnel.Domain] = tunnel.IsActive
+		newCache[tunnel.Domain] = tunnel.IsEnabled
 	}
 
 	// Atomic swap
@@ -135,8 +135,8 @@ func (c *TunnelStatusCache) refreshSingle(domain string) {
 	}
 
 	c.cacheMu.Lock()
-	c.cache[domain] = tunnel.IsActive
+	c.cache[domain] = tunnel.IsEnabled
 	c.cacheMu.Unlock()
 
-	c.logger.Debug("Tunnel status cache updated for %s: active=%v", domain, tunnel.IsActive)
+	c.logger.Debug("Tunnel status cache updated for %s: enabled=%v", domain, tunnel.IsEnabled)
 }

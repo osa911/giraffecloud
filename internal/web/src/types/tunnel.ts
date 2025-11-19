@@ -3,7 +3,7 @@ export interface Tunnel {
   id: number;
   domain: string;
   target_port: number;
-  is_active: boolean;
+  is_enabled: boolean;
   client_ip?: string;
   created_at: string;
   updated_at: string;
@@ -15,7 +15,7 @@ export interface TunnelCreateResponse {
   domain: string;
   token: string;
   target_port: number;
-  is_active: boolean;
+  is_enabled: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -23,7 +23,7 @@ export interface TunnelCreateResponse {
 export interface TunnelFormData {
   domain: string;
   target_port: number;
-  is_active?: boolean;
+  is_enabled?: boolean;
 }
 
 export interface FreeSubdomainResponse {
@@ -47,7 +47,7 @@ export interface UsageData {
 
 export interface DashboardStats {
   totalTunnels: number;
-  activeTunnels: number;
+  enabledTunnels: number;
   totalTraffic: number;
 }
 

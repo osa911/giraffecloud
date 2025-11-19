@@ -113,7 +113,7 @@ var (
 		{Name: "domain", Type: field.TypeString, Unique: true},
 		{Name: "token", Type: field.TypeString, Unique: true},
 		{Name: "client_ip", Type: field.TypeString, Nullable: true},
-		{Name: "is_active", Type: field.TypeBool, Default: true},
+		{Name: "is_enabled", Type: field.TypeBool, Default: true},
 		{Name: "target_port", Type: field.TypeInt},
 		{Name: "user_id", Type: field.TypeUint32},
 	}

@@ -551,13 +551,13 @@ func (s *GRPCTunnelServer) ProxyHTTPRequest(domain string, req *http.Request, cl
 		return nil, fmt.Errorf("no active tunnel for domain: %s", domain)
 	}
 
-	// CRITICAL: Check if tunnel is still active (fast in-memory cache lookup)
-	// (User might have deactivated it via UI while CLI is still connected)
+	// CRITICAL: Check if tunnel is still enabled (fast in-memory cache lookup)
+	// (User might have disabled it via UI while CLI is still connected)
 	// Cache is refreshed every 5 seconds, providing near-instant validation
-	if s.statusCache != nil && !s.statusCache.IsActive(domain) {
+	if s.statusCache != nil && !s.statusCache.IsEnabled(domain) {
 		atomic.AddInt64(&s.totalErrors, 1)
-		s.logger.Warn("Tunnel %s is inactive, rejecting request", domain)
-		return nil, fmt.Errorf("tunnel is inactive")
+		s.logger.Warn("Tunnel %s is disabled, rejecting request", domain)
+		return nil, fmt.Errorf("tunnel is disabled")
 	}
 
 	// Quota/Rate limiting check

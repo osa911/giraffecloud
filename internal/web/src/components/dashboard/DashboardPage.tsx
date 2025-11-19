@@ -14,7 +14,7 @@ import { ROUTES } from "@/constants/routes";
 
 interface DashboardStats {
   totalTunnels: number;
-  activeTunnels: number;
+  enabledTunnels: number;
   totalTraffic: number;
 }
 
@@ -79,10 +79,10 @@ export default function DashboardPage({ initialStats }: DashboardPageProps) {
                   >
                     <PowerIcon color="success" />
                     <Typography variant="body2" color="text.secondary">
-                      Active
+                      Enabled
                     </Typography>
                   </Stack>
-                  <Typography variant="h3">{initialStats.activeTunnels}</Typography>
+                  <Typography variant="h3">{initialStats.enabledTunnels}</Typography>
                   <Divider sx={{ mt: 3, display: { xs: "block", sm: "none" } }} />
                 </Box>
                 <Box sx={{ flex: 1, textAlign: "center" }}>

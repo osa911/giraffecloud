@@ -54,7 +54,7 @@ export default function TunnelDialog({
   const [formData, setFormData] = useState<TunnelFormData>(() => ({
     domain: tunnel?.domain || "",
     target_port: tunnel?.target_port || 80,
-    is_active: tunnel?.is_active ?? true,
+    is_enabled: tunnel?.is_enabled ?? true,
   }));
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -67,7 +67,7 @@ export default function TunnelDialog({
         setFormData({
           domain: tunnel.domain,
           target_port: tunnel.target_port,
-          is_active: tunnel.is_active,
+          is_enabled: tunnel.is_enabled,
         });
       } else {
         // Creating new tunnel - reset to initial state
@@ -80,7 +80,7 @@ export default function TunnelDialog({
         setFormData({
           domain: "",
           target_port: 80,
-          is_active: true,
+          is_enabled: true,
         });
         // Load free subdomain
         loadFreeSubdomain();
@@ -330,16 +330,16 @@ export default function TunnelDialog({
               <FormControlLabel
                 control={
                   <Switch
-                    checked={formData.is_active}
+                    checked={formData.is_enabled}
                     onChange={(e) =>
                       setFormData({
                         ...formData,
-                        is_active: e.target.checked,
+                        is_enabled: e.target.checked,
                       })
                     }
                   />
                 }
-                label="Active"
+                label="Enabled"
               />
             )}
           </Stack>

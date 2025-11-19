@@ -24,8 +24,8 @@ const (
 	FieldToken = "token"
 	// FieldClientIP holds the string denoting the client_ip field in the database.
 	FieldClientIP = "client_ip"
-	// FieldIsActive holds the string denoting the is_active field in the database.
-	FieldIsActive = "is_active"
+	// FieldIsEnabled holds the string denoting the is_enabled field in the database.
+	FieldIsEnabled = "is_enabled"
 	// FieldTargetPort holds the string denoting the target_port field in the database.
 	FieldTargetPort = "target_port"
 	// FieldUserID holds the string denoting the user_id field in the database.
@@ -51,7 +51,7 @@ var Columns = []string{
 	FieldDomain,
 	FieldToken,
 	FieldClientIP,
-	FieldIsActive,
+	FieldIsEnabled,
 	FieldTargetPort,
 	FieldUserID,
 }
@@ -77,8 +77,8 @@ var (
 	DomainValidator func(string) error
 	// TokenValidator is a validator for the "token" field. It is called by the builders before save.
 	TokenValidator func(string) error
-	// DefaultIsActive holds the default value on creation for the "is_active" field.
-	DefaultIsActive bool
+	// DefaultIsEnabled holds the default value on creation for the "is_enabled" field.
+	DefaultIsEnabled bool
 	// TargetPortValidator is a validator for the "target_port" field. It is called by the builders before save.
 	TargetPortValidator func(int) error
 )
@@ -116,9 +116,9 @@ func ByClientIP(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldClientIP, opts...).ToFunc()
 }
 
-// ByIsActive orders the results by the is_active field.
-func ByIsActive(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldIsActive, opts...).ToFunc()
+// ByIsEnabled orders the results by the is_enabled field.
+func ByIsEnabled(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldIsEnabled, opts...).ToFunc()
 }
 
 // ByTargetPort orders the results by the target_port field.

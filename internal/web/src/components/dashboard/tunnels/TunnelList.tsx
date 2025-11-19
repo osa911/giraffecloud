@@ -42,7 +42,7 @@ export default function TunnelList() {
   const handleToggleActive = async (tunnel: Tunnel) => {
     try {
       await clientApi().put<Tunnel>(`/tunnels/${tunnel.id}`, {
-        is_active: !tunnel.is_active,
+        is_enabled: !tunnel.is_enabled,
       });
 
       mutate(); // Refresh the tunnels list
@@ -114,7 +114,7 @@ export default function TunnelList() {
                   <TableCell>{tunnel.target_port}</TableCell>
                   <TableCell>
                     <Switch
-                      checked={tunnel.is_active}
+                      checked={tunnel.is_enabled}
                       onChange={() => handleToggleActive(tunnel)}
                       color="primary"
                     />

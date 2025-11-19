@@ -83,16 +83,16 @@ func (tu *TunnelUpdate) ClearClientIP() *TunnelUpdate {
 	return tu
 }
 
-// SetIsActive sets the "is_active" field.
-func (tu *TunnelUpdate) SetIsActive(b bool) *TunnelUpdate {
-	tu.mutation.SetIsActive(b)
+// SetIsEnabled sets the "is_enabled" field.
+func (tu *TunnelUpdate) SetIsEnabled(b bool) *TunnelUpdate {
+	tu.mutation.SetIsEnabled(b)
 	return tu
 }
 
-// SetNillableIsActive sets the "is_active" field if the given value is not nil.
-func (tu *TunnelUpdate) SetNillableIsActive(b *bool) *TunnelUpdate {
+// SetNillableIsEnabled sets the "is_enabled" field if the given value is not nil.
+func (tu *TunnelUpdate) SetNillableIsEnabled(b *bool) *TunnelUpdate {
 	if b != nil {
-		tu.SetIsActive(*b)
+		tu.SetIsEnabled(*b)
 	}
 	return tu
 }
@@ -240,8 +240,8 @@ func (tu *TunnelUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if tu.mutation.ClientIPCleared() {
 		_spec.ClearField(tunnel.FieldClientIP, field.TypeString)
 	}
-	if value, ok := tu.mutation.IsActive(); ok {
-		_spec.SetField(tunnel.FieldIsActive, field.TypeBool, value)
+	if value, ok := tu.mutation.IsEnabled(); ok {
+		_spec.SetField(tunnel.FieldIsEnabled, field.TypeBool, value)
 	}
 	if value, ok := tu.mutation.TargetPort(); ok {
 		_spec.SetField(tunnel.FieldTargetPort, field.TypeInt, value)
@@ -352,16 +352,16 @@ func (tuo *TunnelUpdateOne) ClearClientIP() *TunnelUpdateOne {
 	return tuo
 }
 
-// SetIsActive sets the "is_active" field.
-func (tuo *TunnelUpdateOne) SetIsActive(b bool) *TunnelUpdateOne {
-	tuo.mutation.SetIsActive(b)
+// SetIsEnabled sets the "is_enabled" field.
+func (tuo *TunnelUpdateOne) SetIsEnabled(b bool) *TunnelUpdateOne {
+	tuo.mutation.SetIsEnabled(b)
 	return tuo
 }
 
-// SetNillableIsActive sets the "is_active" field if the given value is not nil.
-func (tuo *TunnelUpdateOne) SetNillableIsActive(b *bool) *TunnelUpdateOne {
+// SetNillableIsEnabled sets the "is_enabled" field if the given value is not nil.
+func (tuo *TunnelUpdateOne) SetNillableIsEnabled(b *bool) *TunnelUpdateOne {
 	if b != nil {
-		tuo.SetIsActive(*b)
+		tuo.SetIsEnabled(*b)
 	}
 	return tuo
 }
@@ -539,8 +539,8 @@ func (tuo *TunnelUpdateOne) sqlSave(ctx context.Context) (_node *Tunnel, err err
 	if tuo.mutation.ClientIPCleared() {
 		_spec.ClearField(tunnel.FieldClientIP, field.TypeString)
 	}
-	if value, ok := tuo.mutation.IsActive(); ok {
-		_spec.SetField(tunnel.FieldIsActive, field.TypeBool, value)
+	if value, ok := tuo.mutation.IsEnabled(); ok {
+		_spec.SetField(tunnel.FieldIsEnabled, field.TypeBool, value)
 	}
 	if value, ok := tuo.mutation.TargetPort(); ok {
 		_spec.SetField(tunnel.FieldTargetPort, field.TypeInt, value)

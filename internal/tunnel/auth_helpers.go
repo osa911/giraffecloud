@@ -32,46 +32,46 @@ func AuthenticateTunnelByToken(
 		return nil, fmt.Errorf("no tunnels configured - please create a tunnel in the web UI first")
 	}
 
-	// Filter for active tunnels only
-	activeTunnels := make([]*ent.Tunnel, 0)
+	// Filter for enabled tunnels only
+	enabledTunnels := make([]*ent.Tunnel, 0)
 	for _, t := range tunnels {
-		if t.IsActive {
-			activeTunnels = append(activeTunnels, t)
+		if t.IsEnabled {
+			enabledTunnels = append(enabledTunnels, t)
 		}
 	}
 
-	if len(activeTunnels) == 0 {
-		return nil, fmt.Errorf("no active tunnels found - please activate a tunnel in the web UI first")
+	if len(enabledTunnels) == 0 {
+		return nil, fmt.Errorf("no enabled tunnels found - please enable a tunnel in the web UI first")
 	}
 
-	// If client provided a domain, try to match it (must be active)
+	// If client provided a domain, try to match it (must be enabled)
 	if domain != "" {
-		for _, t := range activeTunnels {
+		for _, t := range enabledTunnels {
 			if t.Domain == domain {
 				return t, nil
 			}
 		}
 
-		// Check if domain exists but is inactive
+		// Check if domain exists but is disabled
 		for _, t := range tunnels {
-			if t.Domain == domain && !t.IsActive {
-				return nil, fmt.Errorf("tunnel for domain '%s' exists but is inactive - please activate it in the web UI first", domain)
+			if t.Domain == domain && !t.IsEnabled {
+				return nil, fmt.Errorf("tunnel for domain '%s' exists but is disabled - please enable it in the web UI first", domain)
 			}
 		}
 
-		return nil, fmt.Errorf("no active tunnel found for domain: %s", domain)
+		return nil, fmt.Errorf("no enabled tunnel found for domain: %s", domain)
 	}
 
-	// If no domain specified, check if user has multiple active tunnels
-	if len(activeTunnels) > 1 {
-		// Build list of active domains for error message
-		domains := make([]string, len(activeTunnels))
-		for i, t := range activeTunnels {
+	// If no domain specified, check if user has multiple enabled tunnels
+	if len(enabledTunnels) > 1 {
+		// Build list of enabled domains for error message
+		domains := make([]string, len(enabledTunnels))
+		for i, t := range enabledTunnels {
 			domains[i] = t.Domain
 		}
-		return nil, fmt.Errorf("multiple active tunnels found - please specify which domain to connect to using --domain flag. Available: %v", domains)
+		return nil, fmt.Errorf("multiple enabled tunnels found - please specify which domain to connect to using --domain flag. Available: %v", domains)
 	}
 
-	// Single active tunnel case - use it automatically
-	return activeTunnels[0], nil
+	// Single enabled tunnel case - use it automatically
+	return enabledTunnels[0], nil
 }

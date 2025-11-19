@@ -80,9 +80,9 @@ func ClientIP(v string) predicate.Tunnel {
 	return predicate.Tunnel(sql.FieldEQ(FieldClientIP, v))
 }
 
-// IsActive applies equality check predicate on the "is_active" field. It's identical to IsActiveEQ.
-func IsActive(v bool) predicate.Tunnel {
-	return predicate.Tunnel(sql.FieldEQ(FieldIsActive, v))
+// IsEnabled applies equality check predicate on the "is_enabled" field. It's identical to IsEnabledEQ.
+func IsEnabled(v bool) predicate.Tunnel {
+	return predicate.Tunnel(sql.FieldEQ(FieldIsEnabled, v))
 }
 
 // TargetPort applies equality check predicate on the "target_port" field. It's identical to TargetPortEQ.
@@ -380,14 +380,14 @@ func ClientIPContainsFold(v string) predicate.Tunnel {
 	return predicate.Tunnel(sql.FieldContainsFold(FieldClientIP, v))
 }
 
-// IsActiveEQ applies the EQ predicate on the "is_active" field.
-func IsActiveEQ(v bool) predicate.Tunnel {
-	return predicate.Tunnel(sql.FieldEQ(FieldIsActive, v))
+// IsEnabledEQ applies the EQ predicate on the "is_enabled" field.
+func IsEnabledEQ(v bool) predicate.Tunnel {
+	return predicate.Tunnel(sql.FieldEQ(FieldIsEnabled, v))
 }
 
-// IsActiveNEQ applies the NEQ predicate on the "is_active" field.
-func IsActiveNEQ(v bool) predicate.Tunnel {
-	return predicate.Tunnel(sql.FieldNEQ(FieldIsActive, v))
+// IsEnabledNEQ applies the NEQ predicate on the "is_enabled" field.
+func IsEnabledNEQ(v bool) predicate.Tunnel {
+	return predicate.Tunnel(sql.FieldNEQ(FieldIsEnabled, v))
 }
 
 // TargetPortEQ applies the EQ predicate on the "target_port" field.

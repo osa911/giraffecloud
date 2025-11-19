@@ -28,8 +28,8 @@ type Tunnel struct {
 	Token string `json:"token,omitempty"`
 	// ClientIP holds the value of the "client_ip" field.
 	ClientIP string `json:"client_ip,omitempty"`
-	// IsActive holds the value of the "is_active" field.
-	IsActive bool `json:"is_active"`
+	// IsEnabled holds the value of the "is_enabled" field.
+	IsEnabled bool `json:"is_enabled"`
 	// TargetPort holds the value of the "target_port" field.
 	TargetPort int `json:"target_port,omitempty"`
 	// UserID holds the value of the "user_id" field.
@@ -65,7 +65,7 @@ func (*Tunnel) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case tunnel.FieldIsActive:
+		case tunnel.FieldIsEnabled:
 			values[i] = new(sql.NullBool)
 		case tunnel.FieldID, tunnel.FieldTargetPort, tunnel.FieldUserID:
 			values[i] = new(sql.NullInt64)
@@ -124,11 +124,11 @@ func (t *Tunnel) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				t.ClientIP = value.String
 			}
-		case tunnel.FieldIsActive:
+		case tunnel.FieldIsEnabled:
 			if value, ok := values[i].(*sql.NullBool); !ok {
-				return fmt.Errorf("unexpected type %T for field is_active", values[i])
+				return fmt.Errorf("unexpected type %T for field is_enabled", values[i])
 			} else if value.Valid {
-				t.IsActive = value.Bool
+				t.IsEnabled = value.Bool
 			}
 		case tunnel.FieldTargetPort:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -198,8 +198,8 @@ func (t *Tunnel) String() string {
 	builder.WriteString("client_ip=")
 	builder.WriteString(t.ClientIP)
 	builder.WriteString(", ")
-	builder.WriteString("is_active=")
-	builder.WriteString(fmt.Sprintf("%v", t.IsActive))
+	builder.WriteString("is_enabled=")
+	builder.WriteString(fmt.Sprintf("%v", t.IsEnabled))
 	builder.WriteString(", ")
 	builder.WriteString("target_port=")
 	builder.WriteString(fmt.Sprintf("%v", t.TargetPort))

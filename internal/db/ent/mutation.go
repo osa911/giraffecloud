@@ -3236,7 +3236,7 @@ type TunnelMutation struct {
 	domain         *string
 	token          *string
 	client_ip      *string
-	is_active      *bool
+	is_enabled     *bool
 	target_port    *int
 	addtarget_port *int
 	clearedFields  map[string]struct{}
@@ -3538,40 +3538,40 @@ func (m *TunnelMutation) ResetClientIP() {
 	delete(m.clearedFields, tunnel.FieldClientIP)
 }
 
-// SetIsActive sets the "is_active" field.
-func (m *TunnelMutation) SetIsActive(b bool) {
-	m.is_active = &b
+// SetIsEnabled sets the "is_enabled" field.
+func (m *TunnelMutation) SetIsEnabled(b bool) {
+	m.is_enabled = &b
 }
 
-// IsActive returns the value of the "is_active" field in the mutation.
-func (m *TunnelMutation) IsActive() (r bool, exists bool) {
-	v := m.is_active
+// IsEnabled returns the value of the "is_enabled" field in the mutation.
+func (m *TunnelMutation) IsEnabled() (r bool, exists bool) {
+	v := m.is_enabled
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldIsActive returns the old "is_active" field's value of the Tunnel entity.
+// OldIsEnabled returns the old "is_enabled" field's value of the Tunnel entity.
 // If the Tunnel object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *TunnelMutation) OldIsActive(ctx context.Context) (v bool, err error) {
+func (m *TunnelMutation) OldIsEnabled(ctx context.Context) (v bool, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldIsActive is only allowed on UpdateOne operations")
+		return v, errors.New("OldIsEnabled is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldIsActive requires an ID field in the mutation")
+		return v, errors.New("OldIsEnabled requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldIsActive: %w", err)
+		return v, fmt.Errorf("querying old value for OldIsEnabled: %w", err)
 	}
-	return oldValue.IsActive, nil
+	return oldValue.IsEnabled, nil
 }
 
-// ResetIsActive resets all changes to the "is_active" field.
-func (m *TunnelMutation) ResetIsActive() {
-	m.is_active = nil
+// ResetIsEnabled resets all changes to the "is_enabled" field.
+func (m *TunnelMutation) ResetIsEnabled() {
+	m.is_enabled = nil
 }
 
 // SetTargetPort sets the "target_port" field.
@@ -3756,8 +3756,8 @@ func (m *TunnelMutation) Fields() []string {
 	if m.client_ip != nil {
 		fields = append(fields, tunnel.FieldClientIP)
 	}
-	if m.is_active != nil {
-		fields = append(fields, tunnel.FieldIsActive)
+	if m.is_enabled != nil {
+		fields = append(fields, tunnel.FieldIsEnabled)
 	}
 	if m.target_port != nil {
 		fields = append(fields, tunnel.FieldTargetPort)
@@ -3783,8 +3783,8 @@ func (m *TunnelMutation) Field(name string) (ent.Value, bool) {
 		return m.Token()
 	case tunnel.FieldClientIP:
 		return m.ClientIP()
-	case tunnel.FieldIsActive:
-		return m.IsActive()
+	case tunnel.FieldIsEnabled:
+		return m.IsEnabled()
 	case tunnel.FieldTargetPort:
 		return m.TargetPort()
 	case tunnel.FieldUserID:
@@ -3808,8 +3808,8 @@ func (m *TunnelMutation) OldField(ctx context.Context, name string) (ent.Value, 
 		return m.OldToken(ctx)
 	case tunnel.FieldClientIP:
 		return m.OldClientIP(ctx)
-	case tunnel.FieldIsActive:
-		return m.OldIsActive(ctx)
+	case tunnel.FieldIsEnabled:
+		return m.OldIsEnabled(ctx)
 	case tunnel.FieldTargetPort:
 		return m.OldTargetPort(ctx)
 	case tunnel.FieldUserID:
@@ -3858,12 +3858,12 @@ func (m *TunnelMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetClientIP(v)
 		return nil
-	case tunnel.FieldIsActive:
+	case tunnel.FieldIsEnabled:
 		v, ok := value.(bool)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetIsActive(v)
+		m.SetIsEnabled(v)
 		return nil
 	case tunnel.FieldTargetPort:
 		v, ok := value.(int)
@@ -3967,8 +3967,8 @@ func (m *TunnelMutation) ResetField(name string) error {
 	case tunnel.FieldClientIP:
 		m.ResetClientIP()
 		return nil
-	case tunnel.FieldIsActive:
-		m.ResetIsActive()
+	case tunnel.FieldIsEnabled:
+		m.ResetIsEnabled()
 		return nil
 	case tunnel.FieldTargetPort:
 		m.ResetTargetPort()

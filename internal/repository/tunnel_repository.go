@@ -35,7 +35,7 @@ func (r *tunnelRepository) Create(ctx context.Context, t *ent.Tunnel) (*ent.Tunn
 		SetDomain(t.Domain).
 		SetToken(t.Token).
 		SetTargetPort(t.TargetPort).
-		SetIsActive(t.IsActive).
+		SetIsEnabled(t.IsEnabled).
 		SetUserID(t.UserID).
 		Save(ctx)
 }
@@ -72,7 +72,7 @@ func (r *tunnelRepository) GetByDomain(ctx context.Context, domain string) (*ent
 // TunnelUpdate represents the fields that can be updated
 // Domain is intentionally excluded - domains cannot be changed after creation
 type TunnelUpdate struct {
-	IsActive   *bool
+	IsEnabled  *bool
 	TargetPort *int
 }
 
@@ -84,8 +84,8 @@ func (r *tunnelRepository) Update(ctx context.Context, id uint32, updates interf
 	}
 
 	update := r.client.Tunnel.UpdateOneID(int(id))
-	if u.IsActive != nil {
-		update.SetIsActive(*u.IsActive)
+	if u.IsEnabled != nil {
+		update.SetIsEnabled(*u.IsEnabled)
 	}
 	if u.TargetPort != nil {
 		update.SetTargetPort(*u.TargetPort)
@@ -109,6 +109,6 @@ func (r *tunnelRepository) UpdateClientIP(ctx context.Context, id uint32, client
 // GetActive retrieves all active tunnels
 func (r *tunnelRepository) GetActive(ctx context.Context) ([]*ent.Tunnel, error) {
 	return r.client.Tunnel.Query().
-		Where(tunnel.IsActiveEQ(true)).
+		Where(tunnel.IsEnabledEQ(true)).
 		All(ctx)
 }

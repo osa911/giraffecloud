@@ -14,7 +14,7 @@ type CreateResponse struct {
 	Domain     string    `json:"domain"`
 	Token      string    `json:"token"` // ⚠️ Only included on creation
 	TargetPort int       `json:"target_port"`
-	IsActive   bool      `json:"is_active"`
+	IsEnabled  bool      `json:"is_enabled"`
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
 }
@@ -24,7 +24,7 @@ type Response struct {
 	ID         int       `json:"id"`
 	Domain     string    `json:"domain"`
 	TargetPort int       `json:"target_port"`
-	IsActive   bool      `json:"is_active"`
+	IsEnabled  bool      `json:"is_enabled"`
 	ClientIP   string    `json:"client_ip,omitempty"` // Empty if not connected
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
@@ -32,7 +32,7 @@ type Response struct {
 
 // UpdateRequest represents the request for updating a tunnel
 type UpdateRequest struct {
-	IsActive   *bool `json:"is_active,omitempty"`
+	IsEnabled  *bool `json:"is_enabled,omitempty"`
 	TargetPort *int  `json:"target_port,omitempty" binding:"omitempty,min=1,max=65535"`
 }
 

@@ -24,7 +24,7 @@ async function fetchDashboardStats(): Promise<DashboardStats> {
 
     // Calculate tunnel statistics
     const totalTunnels = tunnels.length;
-    const activeTunnels = tunnels.filter((tunnel) => tunnel.is_active).length;
+    const enabledTunnels = tunnels.filter((tunnel) => tunnel.is_enabled).length;
 
     // Fetch usage data for traffic statistics
     let totalTraffic = 0;
@@ -41,7 +41,7 @@ async function fetchDashboardStats(): Promise<DashboardStats> {
 
     return {
       totalTunnels,
-      activeTunnels,
+      enabledTunnels,
       totalTraffic,
     };
   } catch (error) {
@@ -49,7 +49,7 @@ async function fetchDashboardStats(): Promise<DashboardStats> {
     // Return default values if API calls fail
     return {
       totalTunnels: 0,
-      activeTunnels: 0,
+      enabledTunnels: 0,
       totalTraffic: 0,
     };
   }

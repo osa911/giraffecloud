@@ -215,7 +215,7 @@ func (h *TunnelHandler) UpdateTunnel(c *gin.Context) {
 
 	// Convert to repository.TunnelUpdate type
 	updates := &repository.TunnelUpdate{
-		IsActive:   req.IsActive,
+		IsEnabled:  req.IsEnabled,
 		TargetPort: req.TargetPort,
 	}
 
