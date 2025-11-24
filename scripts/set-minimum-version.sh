@@ -269,15 +269,27 @@ if [ $? -eq 0 ]; then
     echo ""
 
     # Verify the update by fetching the record
-    print_info "Verifying database update..."
+    print_info "Verifying updated record..."
     echo ""
-
+    
     VERIFY_SQL="SELECT channel, platform, arch, minimum_version, latest_version, force_update, auto_update_enabled, updated_at FROM client_versions WHERE channel = '$CHANNEL' AND platform = '$PLATFORM' AND arch = '$ARCH';"
-
+    
     if [ "$ENV" = "prod" ]; then
         docker exec -i "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" -c "$VERIFY_SQL"
     else
         PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "$VERIFY_SQL"
+    fi
+    
+    echo ""
+    print_info "All versions in database:"
+    echo ""
+    
+    ALL_VERSIONS_SQL="SELECT channel, platform, arch, minimum_version, latest_version, force_update, auto_update_enabled, LEFT(updated_at::text, 19) as updated_at FROM client_versions ORDER BY channel, platform, arch;"
+    
+    if [ "$ENV" = "prod" ]; then
+        docker exec -i "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" -c "$ALL_VERSIONS_SQL"
+    else
+        PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "$ALL_VERSIONS_SQL"
     fi
 
     echo ""
