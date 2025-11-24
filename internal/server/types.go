@@ -52,5 +52,3 @@ func (a quotaAdapter) CheckUser(ctx context.Context, userID uint32) (tunnel.Quot
 	}
 	return tunnel.QuotaResult{Decision: d, UsedBytes: res.UsedBytes, LimitBytes: res.LimitBytes}, nil
 }
-
-
