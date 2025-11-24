@@ -267,19 +267,19 @@ if [ $? -eq 0 ]; then
     echo ""
     print_success "Minimum version updated successfully!"
     echo ""
-    
+
     # Verify the update by fetching the record
     print_info "Verifying database update..."
     echo ""
-    
+
     VERIFY_SQL="SELECT channel, platform, arch, minimum_version, latest_version, force_update, auto_update_enabled, updated_at FROM client_versions WHERE channel = '$CHANNEL' AND platform = '$PLATFORM' AND arch = '$ARCH';"
-    
+
     if [ "$ENV" = "prod" ]; then
         docker exec -i "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" -c "$VERIFY_SQL"
     else
         PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "$VERIFY_SQL"
     fi
-    
+
     echo ""
     print_info "Next steps:"
     echo "  1. Test with a client:"
