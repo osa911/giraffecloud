@@ -26,27 +26,27 @@ LDFLAGS="-s -w -X giraffecloud/internal/version.Version=${VERSION} -X giraffeclo
 
 # Build for multiple platforms
 echo "Building darwin/amd64..."
-GOOS=darwin GOARCH=amd64 go build -v -ldflags="${LDFLAGS}" -o bin/giraffecloud-darwin-amd64 ./cmd/giraffecloud
+GOOS=darwin GOARCH=amd64 go build -ldflags="${LDFLAGS}" -o bin/giraffecloud-darwin-amd64 ./cmd/giraffecloud
 echo "✓ darwin/amd64 complete"
 
 echo "Building darwin/arm64..."
-GOOS=darwin GOARCH=arm64 go build -v -ldflags="${LDFLAGS}" -o bin/giraffecloud-darwin-arm64 ./cmd/giraffecloud
+GOOS=darwin GOARCH=arm64 go build -ldflags="${LDFLAGS}" -o bin/giraffecloud-darwin-arm64 ./cmd/giraffecloud
 echo "✓ darwin/arm64 complete"
 
 echo "Building linux/amd64..."
-GOOS=linux GOARCH=amd64 go build -v -ldflags="${LDFLAGS}" -o bin/giraffecloud-linux-amd64 ./cmd/giraffecloud
+GOOS=linux GOARCH=amd64 go build -ldflags="${LDFLAGS}" -o bin/giraffecloud-linux-amd64 ./cmd/giraffecloud
 echo "✓ linux/amd64 complete"
 
 echo "Building linux/arm64..."
-GOOS=linux GOARCH=arm64 go build -v -ldflags="${LDFLAGS}" -o bin/giraffecloud-linux-arm64 ./cmd/giraffecloud
+GOOS=linux GOARCH=arm64 go build -ldflags="${LDFLAGS}" -o bin/giraffecloud-linux-arm64 ./cmd/giraffecloud
 echo "✓ linux/arm64 complete"
 
 echo "Building windows/amd64..."
-GOOS=windows GOARCH=amd64 go build -v -ldflags="${LDFLAGS}" -o bin/giraffecloud-windows-amd64.exe ./cmd/giraffecloud
+GOOS=windows GOARCH=amd64 go build -ldflags="${LDFLAGS}" -o bin/giraffecloud-windows-amd64.exe ./cmd/giraffecloud
 echo "✓ windows/amd64 complete"
 
 echo "Building windows/arm64..."
-GOOS=windows GOARCH=arm64 go build -v -ldflags="${LDFLAGS}" -o bin/giraffecloud-windows-arm64.exe ./cmd/giraffecloud
+GOOS=windows GOARCH=arm64 go build -ldflags="${LDFLAGS}" -o bin/giraffecloud-windows-arm64.exe ./cmd/giraffecloud
 echo "✓ windows/arm64 complete"
 
 # Create checksums
