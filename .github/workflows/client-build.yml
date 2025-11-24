@@ -151,6 +151,7 @@ jobs:
     needs: determine-channel
     if: needs.determine-channel.outputs.should_release == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -161,6 +162,14 @@ jobs:
         uses: actions/setup-go@v4
         with:
           go-version: "1.21"
+          cache: true
+
+      - name: Download dependencies
+        run: |
+          echo "Downloading Go dependencies..."
+          go mod download
+          go mod verify
+          echo "✓ Dependencies ready"
 
       - name: Verify formatting
         run: |
@@ -175,8 +184,19 @@ jobs:
           VERSION: ${{ needs.determine-channel.outputs.version }}
           CHANNEL: ${{ needs.determine-channel.outputs.channel }}
         run: |
+          echo "Starting build process..."
+          echo "VERSION: $VERSION"
+          echo "CHANNEL: $CHANNEL"
+          echo "Go version: $(go version)"
+          echo "Working directory: $(pwd)"
+          echo "Disk space:"
+          df -h
+
           chmod +x ./scripts/build-cli.sh
           ./scripts/build-cli.sh
+
+          echo "Build completed. Checking binaries..."
+          ls -lah bin/
 
       - name: Create archives
         env:
