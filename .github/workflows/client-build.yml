@@ -64,11 +64,15 @@ jobs:
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             # For pull requests, use the head branch name
             BRANCH_NAME="${{ github.head_ref }}"
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            # For manual triggers, use the branch the workflow is running on
+            BRANCH_NAME=${GITHUB_REF#refs/heads/}
           else
             # For pushes, use the regular branch name
             BRANCH_NAME=${GITHUB_REF#refs/heads/}
           fi
           echo "Branch: $BRANCH_NAME"
+          echo "Event: ${{ github.event_name }}"
 
           # Determine channel based on branch
           if [[ "$BRANCH_NAME" == "main" ]]; then
@@ -256,7 +260,7 @@ jobs:
           CHANNEL: ${{ needs.determine-channel.outputs.channel }}
           RELEASE_TAG: ${{ needs.determine-channel.outputs.release_tag }}
         run: |
-          # Resolve branch name (use head_ref for PRs)
+          # Resolve branch name (use head_ref for PRs, GITHUB_REF for others)
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             BRANCH_NAME="${{ github.head_ref }}"
           else
@@ -321,7 +325,7 @@ jobs:
           # Get short commit hash
           COMMIT_SHORT=$(git rev-parse --short HEAD)
 
-          # Resolve branch name (use head_ref for PRs)
+          # Resolve branch name (use head_ref for PRs, GITHUB_REF for others)
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             BRANCH_NAME="${{ github.head_ref }}"
           else
