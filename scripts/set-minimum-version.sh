@@ -186,9 +186,13 @@ if [ ! -f "$ENV_FILE" ]; then
 fi
 
 # Load environment variables
+# Save ENV before sourcing to prevent it being overwritten
+SCRIPT_ENV="$ENV"
 set -a
 source "$ENV_FILE"
 set +a
+# Restore ENV variable
+ENV="$SCRIPT_ENV"
 
 # Set default release notes if not provided
 if [ -z "$NOTES" ]; then
