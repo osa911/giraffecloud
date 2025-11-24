@@ -25,9 +25,9 @@ dev-hot: validate-dev-env caddy-start
 	@./scripts/hot-reload.sh
 
 # Production commands
-prod: validate-prod-env
+prod: validate-prod-env build
 	@echo "Starting production server..."
-	@set -a && source $(PROD_ENV) && set +a && go run cmd/server/main.go
+	@set -a && source $(PROD_ENV) && set +a && ./bin/giraffecloud
 
 # Build commands
 build: ## Build application with hybrid tunnel support
