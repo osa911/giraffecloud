@@ -19,8 +19,6 @@ NC='\033[0m' # No Color
 # Default values
 VERSION=""
 CHANNEL="stable"
-PLATFORM="all"
-ARCH="all"
 FORCE_UPDATE="true"
 ENV="dev"
 NOTES=""
@@ -61,10 +59,6 @@ ${GREEN}OPTIONS:${NC}
     -v, --version VERSION       Set minimum version (required)
     -c, --channel CHANNEL       Target channel (default: stable)
                                 Options: stable, beta, test
-    -p, --platform PLATFORM     Target platform (default: all)
-                                Options: all, linux, darwin, windows
-    -a, --arch ARCH            Target architecture (default: all)
-                                Options: all, amd64, arm64
     -f, --force-update         Force update even if auto-update disabled (default: true)
     --no-force-update          Don't force update
     -e, --env ENV              Environment (default: dev)
@@ -86,9 +80,6 @@ ${GREEN}EXAMPLES:${NC}
     # Set for test channel only
     $0 -v v0.0.0-test.abc123 -c test -e dev
 
-    # Set for specific platform
-    $0 -v v1.1.0 -p darwin -a arm64 -e prod
-
 ${GREEN}WORKFLOW:${NC}
     1. Test in dev environment first
     2. Use --dry-run to verify the changes
@@ -97,6 +88,7 @@ ${GREEN}WORKFLOW:${NC}
 ${YELLOW}IMPORTANT:${NC}
     - Always test in dev environment first
     - Production updates require confirmation
+    - Updates ALL platform/arch combinations for the channel (darwin, linux, windows)
     - Old clients will be forced to update immediately
     - Make sure new version is released before setting as required
 
@@ -112,14 +104,6 @@ while [[ $# -gt 0 ]]; do
             ;;
         -c|--channel)
             CHANNEL="$2"
-            shift 2
-            ;;
-        -p|--platform)
-            PLATFORM="$2"
-            shift 2
-            ;;
-        -a|--arch)
-            ARCH="$2"
             shift 2
             ;;
         -f|--force-update)
@@ -205,14 +189,15 @@ print_info "Configuration:"
 echo "  Environment:    $ENV"
 echo "  Version:        $VERSION"
 echo "  Channel:        $CHANNEL"
-echo "  Platform:       $PLATFORM"
-echo "  Architecture:   $ARCH"
+echo "  Platforms:      ALL (darwin, linux, windows - all architectures)"
 echo "  Force Update:   $FORCE_UPDATE"
 echo "  Release Notes:  $NOTES"
 echo "  Database:       $DB_NAME@$DB_HOST:$DB_PORT"
 echo ""
 
 # Prepare SQL command
+# Update ALL platform/arch combinations for this channel
+# This ensures all platform-specific entries are updated together
 SQL_COMMAND="UPDATE client_versions
 SET
   minimum_version = '$VERSION',
@@ -220,9 +205,11 @@ SET
   release_notes = '$NOTES',
   updated_at = NOW()
 WHERE
-  channel = '$CHANNEL'
-  AND platform = '$PLATFORM'
-  AND arch = '$ARCH';"
+  channel = '$CHANNEL';"
+
+echo ""
+print_info "Updating ALL platform/arch combinations for channel '$CHANNEL'"
+print_info "This includes: darwin (amd64, arm64), linux (amd64, arm64), windows (amd64, arm64)"
 
 # Show SQL that will be executed
 print_info "SQL to be executed:"
@@ -268,28 +255,16 @@ if [ $? -eq 0 ]; then
     print_success "Minimum version updated successfully!"
     echo ""
 
-    # Verify the update by fetching the record
-    print_info "Verifying updated record..."
+    # Verify the update by fetching all records for this channel
+    print_info "Verifying all updated entries for channel '$CHANNEL'..."
     echo ""
 
-    VERIFY_SQL="SELECT channel, platform, arch, minimum_version, latest_version, force_update, auto_update_enabled, updated_at FROM client_versions WHERE channel = '$CHANNEL' AND platform = '$PLATFORM' AND arch = '$ARCH';"
+    VERIFY_SQL="SELECT channel, platform, arch, minimum_version, latest_version, force_update, LEFT(updated_at::text, 19) as updated_at FROM client_versions WHERE channel = '$CHANNEL' ORDER BY platform, arch;"
 
     if [ "$ENV" = "prod" ]; then
         docker exec -i "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" -c "$VERIFY_SQL"
     else
         PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "$VERIFY_SQL"
-    fi
-
-    echo ""
-    print_info "All versions in database:"
-    echo ""
-
-    ALL_VERSIONS_SQL="SELECT channel, platform, arch, minimum_version, latest_version, force_update, auto_update_enabled, LEFT(updated_at::text, 19) as updated_at FROM client_versions ORDER BY channel, platform, arch;"
-
-    if [ "$ENV" = "prod" ]; then
-        docker exec -i "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" -c "$ALL_VERSIONS_SQL"
-    else
-        PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "$ALL_VERSIONS_SQL"
     fi
 
     echo ""
