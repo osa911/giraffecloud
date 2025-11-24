@@ -8,8 +8,8 @@
 .env.local
 internal/config/env/.env.*
 !internal/config/env/.env.example
-!internal/web/.env.example
-internal/web/.env.local
+!apps/web/.env.example
+apps/web/.env.local
 certs/
 
 # Database backups
@@ -42,10 +42,10 @@ go.work.sum
 .vscode/
 
 # web
-internal/web/node_modules/
-internal/web/.next/
-internal/web/.yarn/
-internal/web/.pnp*
+apps/web/node_modules/
+apps/web/.next/
+apps/web/.yarn/
+apps/web/.pnp*
 
 # IDE specific files
 .idea/
