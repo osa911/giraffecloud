@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -77,6 +78,7 @@ type LogConfig struct {
 	MaxBackups int    // Maximum number of old log files to retain
 	MaxAge     int    // Maximum number of days to retain old log files
 	Level      string // Log level (debug, info, warn, error)
+	Format     string // Log format (text, json)
 }
 
 // colorStripper is a custom writer that strips ANSI color codes
@@ -105,6 +107,7 @@ type Logger struct {
 	multiWriter  io.Writer
 	useColors    bool
 	level        LogLevel
+	slogLogger   *slog.Logger
 }
 
 // Singleton pattern variables
@@ -190,6 +193,26 @@ func newLogger(config *LogConfig) (*Logger, error) {
 	// Create logger with timestamp and microseconds
 	logger := log.New(multiWriter, "", log.LstdFlags|log.Lmicroseconds)
 
+	var slogLogger *slog.Logger
+	if config.Format == "json" {
+		opts := &slog.HandlerOptions{
+			Level: slog.LevelInfo, // Default, will be filtered by wrapper methods anyway or we can map it
+		}
+		// Map LogLevel to slog.Level
+		switch level {
+		case LogLevelDebug:
+			opts.Level = slog.LevelDebug
+		case LogLevelInfo:
+			opts.Level = slog.LevelInfo
+		case LogLevelWarn:
+			opts.Level = slog.LevelWarn
+		case LogLevelError:
+			opts.Level = slog.LevelError
+		}
+
+		slogLogger = slog.New(slog.NewJSONHandler(multiWriter, opts))
+	}
+
 	return &Logger{
 		Logger:       logger,
 		fileWriter:   fileWriter,
@@ -197,6 +220,7 @@ func newLogger(config *LogConfig) (*Logger, error) {
 		multiWriter:  multiWriter,
 		useColors:    true, // Always enable colors since we strip them for file output
 		level:        level,
+		slogLogger:   slogLogger,
 	}, nil
 }
 
@@ -229,6 +253,10 @@ func (l *Logger) Debug(format string, v ...interface{}) {
 	if !l.shouldLog(LogLevelDebug) {
 		return
 	}
+	if l.slogLogger != nil {
+		l.slogLogger.Debug(fmt.Sprintf(format, v...))
+		return
+	}
 	prefix := "[DEBUG]"
 	if l.useColors {
 		prefix = colorBlue + prefix + colorReset
@@ -238,6 +266,10 @@ func (l *Logger) Debug(format string, v ...interface{}) {
 
 func (l *Logger) Info(format string, v ...interface{}) {
 	if !l.shouldLog(LogLevelInfo) {
+		return
+	}
+	if l.slogLogger != nil {
+		l.slogLogger.Info(fmt.Sprintf(format, v...))
 		return
 	}
 	prefix := "[INFO]"
@@ -251,6 +283,10 @@ func (l *Logger) Warn(format string, v ...interface{}) {
 	if !l.shouldLog(LogLevelWarn) {
 		return
 	}
+	if l.slogLogger != nil {
+		l.slogLogger.Warn(fmt.Sprintf(format, v...))
+		return
+	}
 	prefix := "[WARN]"
 	if l.useColors {
 		prefix = colorYellow + prefix + colorReset
@@ -260,6 +296,10 @@ func (l *Logger) Warn(format string, v ...interface{}) {
 
 func (l *Logger) Error(format string, v ...interface{}) {
 	if !l.shouldLog(LogLevelError) {
+		return
+	}
+	if l.slogLogger != nil {
+		l.slogLogger.Error(fmt.Sprintf(format, v...))
 		return
 	}
 	prefix := "[ERROR]"
@@ -384,6 +424,41 @@ func FormatLatency(duration time.Duration) string {
 
 // GinLoggerConfig returns a Gin logger middleware with our custom format
 func (l *Logger) GinLoggerConfig() gin.HandlerFunc {
+	if l.slogLogger != nil {
+		return func(c *gin.Context) {
+			start := time.Now()
+			path := c.Request.URL.Path
+			query := c.Request.URL.RawQuery
+
+			c.Next()
+
+			end := time.Now()
+			latency := end.Sub(start)
+
+			attributes := []any{
+				slog.Int("status", c.Writer.Status()),
+				slog.String("method", c.Request.Method),
+				slog.String("path", path),
+				slog.String("ip", c.ClientIP()),
+				slog.Duration("latency", latency),
+				slog.String("user-agent", c.Request.UserAgent()),
+			}
+
+			if query != "" {
+				attributes = append(attributes, slog.String("query", query))
+			}
+
+			if len(c.Errors) > 0 {
+				for _, e := range c.Errors.Errors() {
+					attributes = append(attributes, slog.String("error", e))
+				}
+				l.slogLogger.Error("HTTP Request Failed", attributes...)
+			} else {
+				l.slogLogger.Info("HTTP Request", attributes...)
+			}
+		}
+	}
+
 	return gin.LoggerWithConfig(gin.LoggerConfig{
 		Output: l.multiWriter,
 		Formatter: func(param gin.LogFormatterParams) string {

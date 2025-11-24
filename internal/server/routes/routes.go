@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 )
 
 // Setup configures all route groups
@@ -42,27 +43,8 @@ func Setup(router *gin.Engine, h *Handlers, m *Middleware) {
 // SetupGlobalMiddleware configures middleware that applies to all routes
 func SetupGlobalMiddleware(router *gin.Engine, logger *logging.Logger) {
 	router.Use(gin.Recovery())
-	router.Use(func(c *gin.Context) {
-		// Log request details
-		logger.Info("=== Incoming Request ===")
-		logger.Info("RemoteAddr: %s", c.Request.RemoteAddr)
-		logger.Info("ClientIP: %s", c.ClientIP())
-		logger.Info("RequestURI: %s", c.Request.RequestURI)
-		logger.Info("Method: %s", c.Request.Method)
-		logger.Info("UserAgent: %s", c.Request.UserAgent())
-		logger.Info("Referer: %s", c.Request.Referer())
-		logger.Info("Authorization: %s", maskAuthHeader(c.Request.Header.Get("Authorization")))
-		logger.Info("Origin: %s", c.Request.Header.Get("Origin"))
-		logger.Info("X-CSRF-Token: %s", c.Request.Header.Get("X-CSRF-Token"))
-		logger.Info("X-Forwarded-For: %s", c.Request.Header.Get("X-Forwarded-For"))
-		logger.Info("X-Real-IP: %s", c.Request.Header.Get("X-Real-IP"))
-		logger.Info("======================")
-		c.Next()
-		// Log response details
-		logger.Info("=== Response ===")
-		logger.Info("Status: %d", c.Writer.Status())
-		logger.Info("======================")
-	})
+	router.Use(otelgin.Middleware("giraffecloud-api"))
+
 	router.Use(middleware.RequestLogger(logger))
 	router.Use(middleware.CORS())
 	router.Use(middleware.SecurityHeaders())

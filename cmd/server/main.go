@@ -1,16 +1,18 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"runtime/debug"
 
+	"giraffecloud/internal/config"
 	"giraffecloud/internal/config/firebase"
 	"giraffecloud/internal/db"
 	"giraffecloud/internal/logging"
 	"giraffecloud/internal/server"
 	"giraffecloud/internal/tasks"
+	"giraffecloud/internal/telemetry"
 )
 
 func main() {
@@ -21,32 +23,21 @@ func main() {
 		}
 	}()
 
-	// Set development environment variables
-	if os.Getenv("ENV") != "production" {
-		os.Setenv("ENV", "development")
+	// Load configuration
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Printf("Failed to load configuration: %v\n", err)
+		os.Exit(1)
 	}
 
 	// Initialize logger configuration
 	logConfig := &logging.LogConfig{
-		File:       os.Getenv("LOG_FILE"),
-		MaxSize:    100,                    // 100MB
-		MaxBackups: 10,                     // Keep 10 backups
-		MaxAge:     30,                     // Keep logs for 30 days
-		Level:      os.Getenv("LOG_LEVEL"), // Default to empty string, will use INFO level
-	}
-
-	// Use environment-specific log file paths
-	if logConfig.File == "" {
-		if os.Getenv("ENV") == "production" {
-			logConfig.File = "/app/logs/api.log"
-		} else {
-			logConfig.File = "./logs/api.log"
-		}
-	}
-
-	// Ensure log directory exists
-	if err := os.MkdirAll(filepath.Dir(logConfig.File), 0755); err != nil {
-		panic(fmt.Sprintf("Failed to create log directory: %v", err))
+		File:       cfg.LogFile,
+		MaxSize:    100,          // 100MB
+		MaxBackups: 10,           // Keep 10 backups
+		MaxAge:     30,           // Keep logs for 30 days
+		Level:      cfg.LogLevel, // Default to empty string, will use INFO level
+		Format:     cfg.LogFormat,
 	}
 
 	// Configure and get logger
@@ -56,12 +47,29 @@ func main() {
 	logger := logging.GetGlobalLogger()
 	defer logger.Close()
 
-	logger.Info("Starting server in %s mode", os.Getenv("ENV"))
-	logger.Info("Log file location: %s", logConfig.File)
+	logger.Info("Starting server in %s mode", cfg.Environment)
+	logger.Info("Log file location: %s", cfg.LogFile)
+
+	// Initialize Tracing
+	if cfg.OTLPEndpoint != "" {
+		logger.Info("Initializing OpenTelemetry tracing...")
+		shutdown, err := telemetry.InitTracer(context.Background(), "giraffecloud-api", cfg.OTLPEndpoint)
+		if err != nil {
+			logger.Error("Failed to initialize tracing: %v", err)
+		} else {
+			defer func() {
+				if err := shutdown(context.Background()); err != nil {
+					logger.Error("Failed to shutdown tracer: %v", err)
+				}
+			}()
+			logger.Info("OpenTelemetry tracing initialized")
+		}
+	}
 
 	// Initialize database connection
 	logger.Info("Initializing database connection...")
-	entClient, err := db.Initialize()
+	dbURL := db.GetDatabaseURL()
+	entClient, err := db.Initialize(dbURL)
 	if err != nil {
 		logger.Error("Failed to initialize database: %v\nStack trace:\n%s", err, debug.Stack())
 		os.Exit(1)
@@ -88,27 +96,9 @@ func main() {
 	defer sessionCleanup.Stop()
 	logger.Info("Session cleanup task started successfully")
 
-	// Initialize server
-	cfg := &server.Config{
-		Port: os.Getenv("API_PORT"),
-	}
-
-	// Use default values if not set
-	if cfg.Port == "" {
-		cfg.Port = "8080"
-	}
-
-	// Log important environment variables
-	logger.Info("Server configuration:")
-	logger.Info("- Port: %s", cfg.Port)
-	logger.Info("- Environment: %s", os.Getenv("ENV"))
-	logger.Info("- Database URL: %s", os.Getenv("DATABASE_URL"))
-	logger.Info("- Log File: %s", logConfig.File)
-	logger.Info("- Caddy Admin API: %s", os.Getenv("CADDY_ADMIN_API"))
-
 	// Create and start server
 	logger.Info("Creating server instance...")
-	srv, err := server.NewServer(database)
+	srv, err := server.NewServer(cfg, database)
 	if err != nil {
 		logger.Error("Failed to create server: %v\nStack trace:\n%s", err, debug.Stack())
 		os.Exit(1)
@@ -124,7 +114,7 @@ func main() {
 	logger.Info("Server initialized successfully")
 
 	logger.Info("Starting server on port %s...", cfg.Port)
-	if err := srv.Start(cfg); err != nil {
+	if err := srv.Start(); err != nil {
 		logger.Error("Server failed to start: %v\nStack trace:\n%s", err, debug.Stack())
 		os.Exit(1)
 	}

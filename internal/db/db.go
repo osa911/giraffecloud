@@ -16,14 +16,9 @@ import (
 var Client *ent.Client
 
 // Initialize sets up the Ent client
-func Initialize() (*ent.Client, error) {
-	dbURL := os.Getenv("DATABASE_URL")
+func Initialize(dbURL string) (*ent.Client, error) {
 	if dbURL == "" {
-		config := NewConfig()
-		dbURL = fmt.Sprintf(
-			"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
-			config.Host, config.Port, config.User, config.Password, config.DBName, config.SSLMode,
-		)
+		return nil, fmt.Errorf("database URL cannot be empty")
 	}
 
 	// Create an Ent client
@@ -64,6 +59,7 @@ type Config struct {
 }
 
 // NewConfig creates a new database configuration from environment variables
+// It first checks for DATABASE_URL, and if not present, falls back to individual parameters
 func NewConfig() *Config {
 	return &Config{
 		Host:     getEnvOrDefault("DB_HOST", "localhost"),
@@ -73,6 +69,26 @@ func NewConfig() *Config {
 		DBName:   getEnvOrDefault("DB_NAME", "db_name"),
 		SSLMode:  getEnvOrDefault("DB_SSL_MODE", "disable"),
 	}
+}
+
+// ToURL converts the config to a PostgreSQL connection URL
+func (c *Config) ToURL() string {
+	return fmt.Sprintf(
+		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
+		c.Host, c.Port, c.User, c.Password, c.DBName, c.SSLMode,
+	)
+}
+
+// GetDatabaseURL returns DATABASE_URL if set, otherwise generates it from individual parameters
+func GetDatabaseURL() string {
+	// Check if DATABASE_URL is set
+	if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
+		return dbURL
+	}
+
+	// Fall back to generating URL from individual parameters
+	config := NewConfig()
+	return config.ToURL()
 }
 
 // Helper functions for environment variables

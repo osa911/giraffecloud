@@ -14,6 +14,7 @@ import (
 	"giraffecloud/internal/api/handlers"
 	"giraffecloud/internal/api/middleware"
 	"giraffecloud/internal/caddy"
+	"giraffecloud/internal/config"
 	"giraffecloud/internal/db"
 	"giraffecloud/internal/logging"
 	"giraffecloud/internal/repository"
@@ -28,10 +29,11 @@ import (
 type serverManager struct {
 	httpServer   *http.Server
 	tunnelRouter *tunnel.HybridTunnelRouter // Changed from TunnelServer to HybridTunnelRouter
+	usageService service.UsageService
 }
 
 // newServerManager creates a new server manager
-func newServerManager(router *gin.Engine, tunnelRouter *tunnel.HybridTunnelRouter, port string) *serverManager {
+func newServerManager(router *gin.Engine, tunnelRouter *tunnel.HybridTunnelRouter, usageService service.UsageService, port string) *serverManager {
 	// Configure http.Server with environment-specific settings
 	httpServer := &http.Server{
 		Addr:    ":" + port,
@@ -57,6 +59,7 @@ func newServerManager(router *gin.Engine, tunnelRouter *tunnel.HybridTunnelRoute
 	return &serverManager{
 		httpServer:   httpServer,
 		tunnelRouter: tunnelRouter, // Changed from tunnelServer
+		usageService: usageService,
 	}
 }
 
@@ -102,12 +105,19 @@ func (sm *serverManager) shutdown() error {
 		}
 	}
 
+	// Shutdown usage service
+	if sm.usageService != nil {
+		if err := sm.usageService.Stop(ctx); err != nil {
+			logger.Error("Usage service shutdown error: %v", err)
+		}
+	}
+
 	logger.Info("Servers shutdown complete")
 	return nil
 }
 
 // NewServer creates a new server instance
-func NewServer(db *db.Database) (*Server, error) {
+func NewServer(cfg *config.Config, db *db.Database) (*Server, error) {
 	logger := logging.GetGlobalLogger()
 
 	if db == nil {
@@ -115,7 +125,7 @@ func NewServer(db *db.Database) (*Server, error) {
 	}
 
 	// Set Gin mode based on environment
-	if os.Getenv("ENV") == "production" {
+	if cfg.Environment == "production" {
 		gin.SetMode(gin.ReleaseMode)
 		logger.Info("Server initializing in PRODUCTION mode")
 	} else {
@@ -141,6 +151,7 @@ func NewServer(db *db.Database) (*Server, error) {
 	return &Server{
 		router: engine,
 		db:     db,
+		config: cfg,
 	}, nil
 }
 
@@ -241,16 +252,11 @@ func (s *Server) Init() error {
 	// Adapt service.QuotaService to tunnel.QuotaChecker
 	s.tunnelRouter.SetQuotaChecker(quotaAdapter{q: quotaService})
 
-	// Periodically flush usage to DB (every 1 minute)
-	go func() {
-		ticker := time.NewTicker(1 * time.Minute)
-		defer ticker.Stop()
-		for range ticker.C {
-			if err := usageService.FlushToDB(context.Background(), s.db.DB); err != nil {
-				logger.Warn("Failed to flush usage to DB: %v", err)
-			}
-		}
-	}()
+	// Store usage service for lifecycle management
+	s.usageService = usageService
+
+	// Start usage service background task
+	s.usageService.Start(context.Background())
 
 	// Start the hybrid tunnel router
 	if err := s.tunnelRouter.Start(); err != nil {
@@ -326,8 +332,9 @@ func (s *Server) initializeRepositories() *Repositories {
 }
 
 // Start starts the server
-func (s *Server) Start(cfg *Config) error {
+func (s *Server) Start() error {
 	logger := logging.GetGlobalLogger()
+	cfg := s.config
 
 	// Log configuration
 	logger.Info("Server configuration:")
@@ -434,7 +441,7 @@ func (s *Server) Start(cfg *Config) error {
 	}()
 
 	// Create server manager for the main Gin HTTP API (if needed)
-	manager := newServerManager(s.router, s.tunnelRouter, cfg.Port)
+	manager := newServerManager(s.router, s.tunnelRouter, s.usageService, cfg.Port)
 
 	// Start servers
 	return manager.start()

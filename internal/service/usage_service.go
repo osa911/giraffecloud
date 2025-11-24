@@ -27,6 +27,8 @@ type UsageService interface {
 	Increment(userID uint32, tunnelID uint32, domain string, bytesIn int64, bytesOut int64, requests int64)
 	SnapshotAndReset() []UsageRecord
 	FlushToDB(ctx context.Context, client *ent.Client) error
+	Start(ctx context.Context)
+	Stop(ctx context.Context) error
 }
 
 type usageService struct {
@@ -40,6 +42,10 @@ type usageService struct {
 
 	// Database client for background flushes
 	dbClient *ent.Client
+
+	// Lifecycle management
+	stopChan chan struct{}
+	wg       sync.WaitGroup
 }
 
 func NewUsageService() UsageService {
@@ -48,6 +54,7 @@ func NewUsageService() UsageService {
 		flushInterval: 30 * time.Second, // Flush every 30 seconds for better performance
 		lastFlush:     time.Now(),
 		batchSize:     1000, // Process 1000 records at a time
+		stopChan:      make(chan struct{}),
 	}
 }
 
@@ -59,6 +66,7 @@ func NewUsageServiceWithDB(dbClient *ent.Client) UsageService {
 		lastFlush:     time.Now(),
 		batchSize:     1000,
 		dbClient:      dbClient,
+		stopChan:      make(chan struct{}),
 	}
 }
 
@@ -226,10 +234,48 @@ func (s *usageService) triggerBackgroundFlush() {
 			// In production, you'd use a proper logger
 			fmt.Printf("Background usage flush failed: %v\n", err)
 		}
+
 	}
 
 	// Update the last flush time to prevent immediate re-triggering
 	s.mu.Lock()
 	s.lastFlush = time.Now()
 	s.mu.Unlock()
+}
+
+// Start starts the background flush task
+func (s *usageService) Start(ctx context.Context) {
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		ticker := time.NewTicker(s.flushInterval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				if s.dbClient != nil {
+					if err := s.FlushToDB(context.Background(), s.dbClient); err != nil {
+						fmt.Printf("Periodic usage flush failed: %v\n", err)
+					}
+				}
+			case <-s.stopChan:
+				return
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+}
+
+// Stop stops the background flush task and performs a final flush
+func (s *usageService) Stop(ctx context.Context) error {
+	close(s.stopChan)
+	s.wg.Wait()
+
+	// Final flush
+	if s.dbClient != nil {
+		return s.FlushToDB(ctx, s.dbClient)
+	}
+	return nil
 }

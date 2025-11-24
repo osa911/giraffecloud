@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"giraffecloud/internal/config"
 	"giraffecloud/internal/db"
 	"giraffecloud/internal/repository"
 	"giraffecloud/internal/service"
@@ -15,6 +16,8 @@ type Server struct {
 	router       *gin.Engine
 	db           *db.Database
 	tunnelRouter *tunnel.HybridTunnelRouter // Changed from TunnelServer to HybridTunnelRouter
+	config       *config.Config
+	usageService service.UsageService
 }
 
 // Repositories holds all repository instances
@@ -49,8 +52,4 @@ func (a quotaAdapter) CheckUser(ctx context.Context, userID uint32) (tunnel.Quot
 	return tunnel.QuotaResult{Decision: d, UsedBytes: res.UsedBytes, LimitBytes: res.LimitBytes}, nil
 }
 
-// Config holds the server configuration
-type Config struct {
-	// Port is the server port number (e.g. "8080")
-	Port string
-}
+
