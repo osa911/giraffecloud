@@ -65,6 +65,6 @@ fi
 mkdir -p /app/logs
 echo "Log directory created at /app/logs"
 
-# Run the production server using the Makefile and host's Go
-echo "Starting server with host's Go installation..."
-cd /app && GOPATH=/go exec make prod
+# Run the production server using the pre-built binary
+echo "Starting production server..."
+cd /app && exec /app/bin/giraffecloud
