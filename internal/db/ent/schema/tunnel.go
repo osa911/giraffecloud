@@ -20,12 +20,12 @@ func (Tunnel) Fields() []ent.Field {
 		field.String("token").
 			NotEmpty().
 			Unique(),
-	field.String("client_ip").
-		Optional(),
-	field.Bool("is_enabled").
-		Default(true).
-		StructTag(`json:"is_enabled"`),
-	field.Int("target_port").
+		field.String("client_ip").
+			Optional(),
+		field.Bool("is_enabled").
+			Default(true).
+			StructTag(`json:"is_enabled"`),
+		field.Int("target_port").
 			Positive(),
 		field.Uint32("user_id"),
 	}
