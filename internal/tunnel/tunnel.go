@@ -7,8 +7,6 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
-	"giraffecloud/internal/logging"
-	"giraffecloud/internal/tunnel/proto"
 	"io"
 	"math/rand"
 	"net"
@@ -19,6 +17,9 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/osa911/giraffecloud/internal/logging"
+	"github.com/osa911/giraffecloud/internal/tunnel/proto"
 )
 
 // ConnectionState represents the current state of the tunnel connection

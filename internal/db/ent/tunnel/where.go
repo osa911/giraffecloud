@@ -3,8 +3,9 @@
 package tunnel
 
 import (
-	"giraffecloud/internal/db/ent/predicate"
 	"time"
+
+	"github.com/osa911/giraffecloud/internal/db/ent/predicate"
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"

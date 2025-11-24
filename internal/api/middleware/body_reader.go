@@ -5,7 +5,7 @@ import (
 	"io"
 	"net/http"
 
-	"giraffecloud/internal/api/constants"
+	"github.com/osa911/giraffecloud/internal/api/constants"
 
 	"github.com/gin-gonic/gin"
 )

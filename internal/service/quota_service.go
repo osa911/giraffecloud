@@ -7,10 +7,10 @@ import (
 	"sync"
 	"time"
 
-	"giraffecloud/internal/db/ent"
-	entplan "giraffecloud/internal/db/ent/plan"
-	entusage "giraffecloud/internal/db/ent/usage"
-	entuser "giraffecloud/internal/db/ent/user"
+	"github.com/osa911/giraffecloud/internal/db/ent"
+	entplan "github.com/osa911/giraffecloud/internal/db/ent/plan"
+	entusage "github.com/osa911/giraffecloud/internal/db/ent/usage"
+	entuser "github.com/osa911/giraffecloud/internal/db/ent/user"
 )
 
 type QuotaDecision string

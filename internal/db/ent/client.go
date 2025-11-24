@@ -9,15 +9,15 @@ import (
 	"log"
 	"reflect"
 
-	"giraffecloud/internal/db/ent/migrate"
+	"github.com/osa911/giraffecloud/internal/db/ent/migrate"
 
-	"giraffecloud/internal/db/ent/clientversion"
-	"giraffecloud/internal/db/ent/plan"
-	"giraffecloud/internal/db/ent/session"
-	"giraffecloud/internal/db/ent/token"
-	"giraffecloud/internal/db/ent/tunnel"
-	"giraffecloud/internal/db/ent/usage"
-	"giraffecloud/internal/db/ent/user"
+	"github.com/osa911/giraffecloud/internal/db/ent/clientversion"
+	"github.com/osa911/giraffecloud/internal/db/ent/plan"
+	"github.com/osa911/giraffecloud/internal/db/ent/session"
+	"github.com/osa911/giraffecloud/internal/db/ent/token"
+	"github.com/osa911/giraffecloud/internal/db/ent/tunnel"
+	"github.com/osa911/giraffecloud/internal/db/ent/usage"
+	"github.com/osa911/giraffecloud/internal/db/ent/user"
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect"

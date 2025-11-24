@@ -1,9 +1,10 @@
 package routes
 
 import (
-	"giraffecloud/internal/api/middleware"
-	"giraffecloud/internal/logging"
 	"strings"
+
+	"github.com/osa911/giraffecloud/internal/api/middleware"
+	"github.com/osa911/giraffecloud/internal/logging"
 
 	"github.com/gin-gonic/gin"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"

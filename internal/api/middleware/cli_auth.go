@@ -2,8 +2,9 @@ package middleware
 
 import (
 	"fmt"
-	"giraffecloud/internal/api/constants"
-	"giraffecloud/internal/tunnel"
+
+	"github.com/osa911/giraffecloud/internal/api/constants"
+	"github.com/osa911/giraffecloud/internal/tunnel"
 
 	"github.com/gin-gonic/gin"
 )

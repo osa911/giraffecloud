@@ -1,12 +1,13 @@
 package middleware
 
 import (
-	"giraffecloud/internal/api/constants"
-	"giraffecloud/internal/api/dto/common"
-	"giraffecloud/internal/service"
-	"giraffecloud/internal/utils"
 	"net/http"
 	"strings"
+
+	"github.com/osa911/giraffecloud/internal/api/constants"
+	"github.com/osa911/giraffecloud/internal/api/dto/common"
+	"github.com/osa911/giraffecloud/internal/service"
+	"github.com/osa911/giraffecloud/internal/utils"
 
 	"github.com/gin-gonic/gin"
 )

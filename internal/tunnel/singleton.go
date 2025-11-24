@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"time"
 
-	"giraffecloud/internal/logging"
+	"github.com/osa911/giraffecloud/internal/logging"
 )
 
 // SingletonManager prevents multiple tunnel instances from running simultaneously

@@ -1,9 +1,10 @@
 package handlers
 
 import (
-	"giraffecloud/internal/logging"
-	"giraffecloud/internal/service"
 	"net/http"
+
+	"github.com/osa911/giraffecloud/internal/logging"
+	"github.com/osa911/giraffecloud/internal/service"
 
 	"github.com/gin-gonic/gin"
 )

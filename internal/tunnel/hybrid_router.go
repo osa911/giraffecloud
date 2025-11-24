@@ -3,10 +3,6 @@ package tunnel
 import (
 	"bufio"
 	"fmt"
-	"giraffecloud/internal/interfaces"
-	"giraffecloud/internal/logging"
-	"giraffecloud/internal/repository"
-	"giraffecloud/internal/tunnel/proto"
 	"io"
 	"net"
 	"net/http"
@@ -14,6 +10,11 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/osa911/giraffecloud/internal/interfaces"
+	"github.com/osa911/giraffecloud/internal/logging"
+	"github.com/osa911/giraffecloud/internal/repository"
+	"github.com/osa911/giraffecloud/internal/tunnel/proto"
 )
 
 // HybridTunnelRouter provides intelligent routing between gRPC and TCP tunnels

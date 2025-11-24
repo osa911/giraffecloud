@@ -6,8 +6,8 @@ import (
 	"os"
 	"strings"
 
-	"giraffecloud/internal/api/constants"
-	"giraffecloud/internal/logging"
+	"github.com/osa911/giraffecloud/internal/api/constants"
+	"github.com/osa911/giraffecloud/internal/logging"
 
 	"github.com/gin-gonic/gin"
 )

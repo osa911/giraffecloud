@@ -6,9 +6,9 @@ import (
 	"encoding/hex"
 	"time"
 
-	"giraffecloud/internal/api/mapper"
-	"giraffecloud/internal/db/ent"
-	"giraffecloud/internal/db/ent/token"
+	"github.com/osa911/giraffecloud/internal/api/mapper"
+	"github.com/osa911/giraffecloud/internal/db/ent"
+	"github.com/osa911/giraffecloud/internal/db/ent/token"
 
 	"github.com/google/uuid"
 )

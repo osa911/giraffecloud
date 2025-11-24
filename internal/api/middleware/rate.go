@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"giraffecloud/internal/api/dto/common"
-	"giraffecloud/internal/utils"
+	"github.com/osa911/giraffecloud/internal/api/dto/common"
+	"github.com/osa911/giraffecloud/internal/utils"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/time/rate"

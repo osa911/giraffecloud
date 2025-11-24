@@ -2,10 +2,11 @@ package main
 
 import (
 	"fmt"
-	"giraffecloud/internal/tunnel"
 	"net"
 	"os"
 	"time"
+
+	"github.com/osa911/giraffecloud/internal/tunnel"
 
 	"github.com/spf13/cobra"
 )

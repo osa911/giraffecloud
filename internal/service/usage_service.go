@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"giraffecloud/internal/db/ent"
-	entusage "giraffecloud/internal/db/ent/usage"
+	"github.com/osa911/giraffecloud/internal/db/ent"
+	entusage "github.com/osa911/giraffecloud/internal/db/ent/usage"
 )
 
 // UsageRecord represents aggregated usage for a period.

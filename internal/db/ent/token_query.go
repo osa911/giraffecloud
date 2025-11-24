@@ -5,10 +5,11 @@ package ent
 import (
 	"context"
 	"fmt"
-	"giraffecloud/internal/db/ent/predicate"
-	"giraffecloud/internal/db/ent/token"
-	"giraffecloud/internal/db/ent/user"
 	"math"
+
+	"github.com/osa911/giraffecloud/internal/db/ent/predicate"
+	"github.com/osa911/giraffecloud/internal/db/ent/token"
+	"github.com/osa911/giraffecloud/internal/db/ent/user"
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"

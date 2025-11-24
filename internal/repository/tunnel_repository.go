@@ -3,8 +3,9 @@ package repository
 import (
 	"context"
 	"fmt"
-	"giraffecloud/internal/db/ent"
-	"giraffecloud/internal/db/ent/tunnel"
+
+	"github.com/osa911/giraffecloud/internal/db/ent"
+	"github.com/osa911/giraffecloud/internal/db/ent/tunnel"
 )
 
 // TunnelRepository handles tunnel-related database operations

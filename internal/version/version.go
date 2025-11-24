@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"giraffecloud/internal/logging"
+	"github.com/osa911/giraffecloud/internal/logging"
 )
 
 // These variables are set at build time via -ldflags

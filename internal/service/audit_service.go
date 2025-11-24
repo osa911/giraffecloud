@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"giraffecloud/internal/db/ent"
-	"giraffecloud/internal/logging"
-	"giraffecloud/internal/utils"
+	"github.com/osa911/giraffecloud/internal/db/ent"
+	"github.com/osa911/giraffecloud/internal/logging"
+	"github.com/osa911/giraffecloud/internal/utils"
 
 	"github.com/gin-gonic/gin"
 )

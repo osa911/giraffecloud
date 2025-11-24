@@ -1,12 +1,12 @@
 package middleware
 
 import (
-	"giraffecloud/internal/api/constants"
-	"giraffecloud/internal/api/dto/common"
-	"giraffecloud/internal/api/dto/v1/auth"
-	"giraffecloud/internal/api/dto/v1/contact"
-	"giraffecloud/internal/api/dto/v1/user"
-	"giraffecloud/internal/utils"
+	"github.com/osa911/giraffecloud/internal/api/constants"
+	"github.com/osa911/giraffecloud/internal/api/dto/common"
+	"github.com/osa911/giraffecloud/internal/api/dto/v1/auth"
+	"github.com/osa911/giraffecloud/internal/api/dto/v1/contact"
+	"github.com/osa911/giraffecloud/internal/api/dto/v1/user"
+	"github.com/osa911/giraffecloud/internal/utils"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"

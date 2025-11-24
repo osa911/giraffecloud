@@ -3,15 +3,16 @@
 package ent
 
 import (
-	"giraffecloud/internal/db/ent/clientversion"
-	"giraffecloud/internal/db/ent/plan"
-	"giraffecloud/internal/db/ent/schema"
-	"giraffecloud/internal/db/ent/session"
-	"giraffecloud/internal/db/ent/token"
-	"giraffecloud/internal/db/ent/tunnel"
-	"giraffecloud/internal/db/ent/usage"
-	"giraffecloud/internal/db/ent/user"
 	"time"
+
+	"github.com/osa911/giraffecloud/internal/db/ent/clientversion"
+	"github.com/osa911/giraffecloud/internal/db/ent/plan"
+	"github.com/osa911/giraffecloud/internal/db/ent/schema"
+	"github.com/osa911/giraffecloud/internal/db/ent/session"
+	"github.com/osa911/giraffecloud/internal/db/ent/token"
+	"github.com/osa911/giraffecloud/internal/db/ent/tunnel"
+	"github.com/osa911/giraffecloud/internal/db/ent/usage"
+	"github.com/osa911/giraffecloud/internal/db/ent/user"
 
 	"github.com/google/uuid"
 )

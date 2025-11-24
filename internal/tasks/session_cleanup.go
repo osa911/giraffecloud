@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"giraffecloud/internal/db/ent"
-	"giraffecloud/internal/db/ent/session"
+	"github.com/osa911/giraffecloud/internal/db/ent"
+	"github.com/osa911/giraffecloud/internal/db/ent/session"
 )
 
 // SessionCleanup handles periodic cleaning of expired sessions

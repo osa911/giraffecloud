@@ -1,8 +1,8 @@
 package mapper
 
 import (
-	"giraffecloud/internal/api/dto/v1/tunnel"
-	"giraffecloud/internal/db/ent"
+	"github.com/osa911/giraffecloud/internal/api/dto/v1/tunnel"
+	"github.com/osa911/giraffecloud/internal/db/ent"
 )
 
 // TunnelToCreateResponse converts an ent.Tunnel to a CreateResponse DTO (includes token)

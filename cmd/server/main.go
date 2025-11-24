@@ -6,13 +6,13 @@ import (
 	"os"
 	"runtime/debug"
 
-	"giraffecloud/internal/config"
-	"giraffecloud/internal/config/firebase"
-	"giraffecloud/internal/db"
-	"giraffecloud/internal/logging"
-	"giraffecloud/internal/server"
-	"giraffecloud/internal/tasks"
-	"giraffecloud/internal/telemetry"
+	"github.com/osa911/giraffecloud/internal/config"
+	"github.com/osa911/giraffecloud/internal/config/firebase"
+	"github.com/osa911/giraffecloud/internal/db"
+	"github.com/osa911/giraffecloud/internal/logging"
+	"github.com/osa911/giraffecloud/internal/server"
+	"github.com/osa911/giraffecloud/internal/tasks"
+	"github.com/osa911/giraffecloud/internal/telemetry"
 )
 
 func main() {

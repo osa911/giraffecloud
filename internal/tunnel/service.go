@@ -2,7 +2,6 @@ package tunnel
 
 import (
 	"fmt"
-	"giraffecloud/internal/logging"
 	"os"
 	"os/exec"
 	"os/user"
@@ -10,6 +9,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/osa911/giraffecloud/internal/logging"
 )
 
 type ServiceManager struct {

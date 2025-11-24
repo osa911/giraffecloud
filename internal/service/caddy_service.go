@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"giraffecloud/internal/logging"
-	"giraffecloud/internal/tunnel"
 	"io"
 	"net/http"
 	"sync"
+
+	"github.com/osa911/giraffecloud/internal/logging"
+	"github.com/osa911/giraffecloud/internal/tunnel"
 )
 
 // CaddyService defines the interface for Caddy operations

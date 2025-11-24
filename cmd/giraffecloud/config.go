@@ -3,9 +3,10 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"giraffecloud/internal/tunnel"
 	"os"
 	"path/filepath"
+
+	"github.com/osa911/giraffecloud/internal/tunnel"
 
 	"github.com/spf13/cobra"
 )

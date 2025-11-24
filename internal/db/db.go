@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"giraffecloud/internal/db/ent"
+	"github.com/osa911/giraffecloud/internal/db/ent"
 
 	"entgo.io/ent/dialect"
 

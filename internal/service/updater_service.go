@@ -7,9 +7,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"giraffecloud/internal/logging"
-	"giraffecloud/internal/tunnel"
-	"giraffecloud/internal/version"
 	"io"
 	"net/http"
 	"os"
@@ -18,6 +15,10 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/osa911/giraffecloud/internal/logging"
+	"github.com/osa911/giraffecloud/internal/tunnel"
+	"github.com/osa911/giraffecloud/internal/version"
 )
 
 // UpdaterService handles client auto-updates

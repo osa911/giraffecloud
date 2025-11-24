@@ -1,7 +1,7 @@
 package routes
 
 import (
-	"giraffecloud/internal/api/handlers"
+	"github.com/osa911/giraffecloud/internal/api/handlers"
 
 	"github.com/gin-gonic/gin"
 )

@@ -10,10 +10,10 @@ import (
 	"fmt"
 	"time"
 
-	"giraffecloud/internal/api/dto/v1/token"
-	"giraffecloud/internal/api/mapper"
-	"giraffecloud/internal/logging"
-	"giraffecloud/internal/repository"
+	"github.com/osa911/giraffecloud/internal/api/dto/v1/token"
+	"github.com/osa911/giraffecloud/internal/api/mapper"
+	"github.com/osa911/giraffecloud/internal/logging"
+	"github.com/osa911/giraffecloud/internal/repository"
 
 	"github.com/google/uuid"
 )

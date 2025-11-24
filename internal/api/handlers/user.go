@@ -4,13 +4,13 @@ import (
 	"context"
 	"strconv"
 
-	"giraffecloud/internal/api/constants"
-	"giraffecloud/internal/api/dto/common"
-	"giraffecloud/internal/api/dto/v1/user"
-	"giraffecloud/internal/api/mapper"
-	"giraffecloud/internal/db/ent"
-	"giraffecloud/internal/repository"
-	"giraffecloud/internal/utils"
+	"github.com/osa911/giraffecloud/internal/api/constants"
+	"github.com/osa911/giraffecloud/internal/api/dto/common"
+	"github.com/osa911/giraffecloud/internal/api/dto/v1/user"
+	"github.com/osa911/giraffecloud/internal/api/mapper"
+	"github.com/osa911/giraffecloud/internal/db/ent"
+	"github.com/osa911/giraffecloud/internal/repository"
+	"github.com/osa911/giraffecloud/internal/utils"
 
 	"github.com/gin-gonic/gin"
 )

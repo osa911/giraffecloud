@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"giraffecloud/internal/db/ent"
-	"giraffecloud/internal/db/ent/session"
-	"giraffecloud/internal/db/ent/user"
+	"github.com/osa911/giraffecloud/internal/db/ent"
+	"github.com/osa911/giraffecloud/internal/db/ent/session"
+	"github.com/osa911/giraffecloud/internal/db/ent/user"
 )
 
 // sessionRepository implements SessionRepository interface

@@ -5,7 +5,8 @@ package hook
 import (
 	"context"
 	"fmt"
-	"giraffecloud/internal/db/ent"
+
+	"github.com/osa911/giraffecloud/internal/db/ent"
 )
 
 // The ClientVersionFunc type is an adapter to allow the use of ordinary

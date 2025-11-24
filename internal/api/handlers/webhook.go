@@ -5,12 +5,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"giraffecloud/internal/logging"
 	"io"
 	"net/http"
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/osa911/giraffecloud/internal/logging"
 
 	"github.com/gin-gonic/gin"
 )

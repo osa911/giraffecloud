@@ -3,8 +3,8 @@ package mapper
 import (
 	"time"
 
-	userDto "giraffecloud/internal/api/dto/v1/user"
-	"giraffecloud/internal/db/ent"
+	userDto "github.com/osa911/giraffecloud/internal/api/dto/v1/user"
+	"github.com/osa911/giraffecloud/internal/db/ent"
 )
 
 // UserToUserResponse converts an Ent User entity to a UserResponse DTO

@@ -3,8 +3,9 @@ package tunnel
 import (
 	"context"
 	"fmt"
-	"giraffecloud/internal/db/ent"
-	"giraffecloud/internal/repository"
+
+	"github.com/osa911/giraffecloud/internal/db/ent"
+	"github.com/osa911/giraffecloud/internal/repository"
 )
 
 // AuthenticateTunnelByToken is a shared authentication helper for both TCP and gRPC tunnel servers.

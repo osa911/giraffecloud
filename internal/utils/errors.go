@@ -1,9 +1,10 @@
 package utils
 
 import (
-	commonDto "giraffecloud/internal/api/dto/common"
-	"giraffecloud/internal/logging"
 	"net/http"
+
+	commonDto "github.com/osa911/giraffecloud/internal/api/dto/common"
+	"github.com/osa911/giraffecloud/internal/logging"
 
 	"github.com/gin-gonic/gin"
 )

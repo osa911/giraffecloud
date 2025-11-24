@@ -3,11 +3,12 @@ package service
 import (
 	"context"
 	"fmt"
-	"giraffecloud/internal/db/ent"
-	clientVersionEntity "giraffecloud/internal/db/ent/clientversion" // Entity for client version management
-	"giraffecloud/internal/logging"
-	"giraffecloud/internal/version"
 	"runtime"
+
+	"github.com/osa911/giraffecloud/internal/db/ent"
+	clientVersionEntity "github.com/osa911/giraffecloud/internal/db/ent/clientversion" // Entity for client version management
+	"github.com/osa911/giraffecloud/internal/logging"
+	"github.com/osa911/giraffecloud/internal/version"
 )
 
 // VersionService handles client version management

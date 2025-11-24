@@ -4,10 +4,10 @@ import (
 	"context"
 	"net/http"
 
-	"giraffecloud/internal/api/constants"
-	"giraffecloud/internal/api/dto/common"
-	"giraffecloud/internal/repository"
-	"giraffecloud/internal/utils"
+	"github.com/osa911/giraffecloud/internal/api/constants"
+	"github.com/osa911/giraffecloud/internal/api/dto/common"
+	"github.com/osa911/giraffecloud/internal/repository"
+	"github.com/osa911/giraffecloud/internal/utils"
 
 	"github.com/gin-gonic/gin"
 )

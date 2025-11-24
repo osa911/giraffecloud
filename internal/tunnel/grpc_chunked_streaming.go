@@ -2,12 +2,13 @@ package tunnel
 
 import (
 	"fmt"
-	"giraffecloud/internal/tunnel/proto"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/osa911/giraffecloud/internal/tunnel/proto"
 
 	"google.golang.org/grpc"
 )

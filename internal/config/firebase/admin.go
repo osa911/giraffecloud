@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"giraffecloud/internal/logging"
+	"github.com/osa911/giraffecloud/internal/logging"
 
 	firebase "firebase.google.com/go/v4"
 	"firebase.google.com/go/v4/auth"

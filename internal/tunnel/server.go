@@ -6,9 +6,6 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"giraffecloud/internal/interfaces"
-	"giraffecloud/internal/logging"
-	"giraffecloud/internal/repository"
 	"io"
 	"net"
 	"net/http"
@@ -17,6 +14,10 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/osa911/giraffecloud/internal/interfaces"
+	"github.com/osa911/giraffecloud/internal/logging"
+	"github.com/osa911/giraffecloud/internal/repository"
 )
 
 /**

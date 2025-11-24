@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"giraffecloud/internal/api/mapper"
-	"giraffecloud/internal/db/ent"
+	"github.com/osa911/giraffecloud/internal/api/mapper"
+	"github.com/osa911/giraffecloud/internal/db/ent"
 
 	"github.com/google/uuid"
 )

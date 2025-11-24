@@ -1,4 +1,4 @@
-module giraffecloud
+module github.com/osa911/giraffecloud
 
 go 1.24.1
 

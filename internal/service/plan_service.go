@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"giraffecloud/internal/db/ent"
-	entplan "giraffecloud/internal/db/ent/plan"
-	"giraffecloud/internal/logging"
+	"github.com/osa911/giraffecloud/internal/db/ent"
+	entplan "github.com/osa911/giraffecloud/internal/db/ent/plan"
+	"github.com/osa911/giraffecloud/internal/logging"
 )
 
 type PlanService struct {

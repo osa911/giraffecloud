@@ -4,9 +4,10 @@ package ent
 
 import (
 	"fmt"
-	"giraffecloud/internal/db/ent/usage"
 	"strings"
 	"time"
+
+	"github.com/osa911/giraffecloud/internal/db/ent/usage"
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"

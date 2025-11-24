@@ -6,9 +6,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"giraffecloud/internal/db/ent/session"
-	"giraffecloud/internal/db/ent/user"
 	"time"
+
+	"github.com/osa911/giraffecloud/internal/db/ent/session"
+	"github.com/osa911/giraffecloud/internal/db/ent/user"
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"

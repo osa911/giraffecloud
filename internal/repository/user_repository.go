@@ -3,8 +3,8 @@ package repository
 import (
 	"context"
 
-	"giraffecloud/internal/db/ent"
-	"giraffecloud/internal/db/ent/user"
+	"github.com/osa911/giraffecloud/internal/db/ent"
+	"github.com/osa911/giraffecloud/internal/db/ent/user"
 )
 
 // userRepository implements UserRepository interface

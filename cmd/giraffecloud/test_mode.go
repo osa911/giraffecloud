@@ -1,8 +1,9 @@
 package main
 
 import (
-	"giraffecloud/internal/tunnel"
 	"os"
+
+	"github.com/osa911/giraffecloud/internal/tunnel"
 
 	"github.com/spf13/cobra"
 )

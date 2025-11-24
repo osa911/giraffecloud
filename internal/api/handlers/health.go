@@ -3,9 +3,9 @@ package handlers
 import (
 	"context"
 
-	"giraffecloud/internal/api/dto/common"
-	"giraffecloud/internal/db/ent"
-	"giraffecloud/internal/utils"
+	"github.com/osa911/giraffecloud/internal/api/dto/common"
+	"github.com/osa911/giraffecloud/internal/db/ent"
+	"github.com/osa911/giraffecloud/internal/utils"
 
 	"github.com/gin-gonic/gin"
 )

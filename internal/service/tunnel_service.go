@@ -7,11 +7,11 @@ import (
 	"fmt"
 	"os"
 
-	"giraffecloud/internal/db/ent"
-	"giraffecloud/internal/interfaces"
-	"giraffecloud/internal/logging"
-	"giraffecloud/internal/repository"
-	"giraffecloud/internal/utils"
+	"github.com/osa911/giraffecloud/internal/db/ent"
+	"github.com/osa911/giraffecloud/internal/interfaces"
+	"github.com/osa911/giraffecloud/internal/logging"
+	"github.com/osa911/giraffecloud/internal/repository"
+	"github.com/osa911/giraffecloud/internal/utils"
 )
 
 type tunnelService struct {

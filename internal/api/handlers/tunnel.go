@@ -1,17 +1,18 @@
 package handlers
 
 import (
-	"giraffecloud/internal/api/constants"
-	"giraffecloud/internal/api/dto/common"
-	tunneldto "giraffecloud/internal/api/dto/v1/tunnel"
-	"giraffecloud/internal/api/mapper"
-	"giraffecloud/internal/interfaces"
-	"giraffecloud/internal/repository"
-	"giraffecloud/internal/service"
-	"giraffecloud/internal/utils"
 	"strconv"
 
-	"giraffecloud/internal/logging"
+	"github.com/osa911/giraffecloud/internal/api/constants"
+	"github.com/osa911/giraffecloud/internal/api/dto/common"
+	tunneldto "github.com/osa911/giraffecloud/internal/api/dto/v1/tunnel"
+	"github.com/osa911/giraffecloud/internal/api/mapper"
+	"github.com/osa911/giraffecloud/internal/interfaces"
+	"github.com/osa911/giraffecloud/internal/repository"
+	"github.com/osa911/giraffecloud/internal/service"
+	"github.com/osa911/giraffecloud/internal/utils"
+
+	"github.com/osa911/giraffecloud/internal/logging"
 
 	"github.com/gin-gonic/gin"
 )

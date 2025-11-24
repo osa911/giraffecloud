@@ -3,8 +3,9 @@
 package clientversion
 
 import (
-	"giraffecloud/internal/db/ent/predicate"
 	"time"
+
+	"github.com/osa911/giraffecloud/internal/db/ent/predicate"
 
 	"entgo.io/ent/dialect/sql"
 )

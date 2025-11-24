@@ -1,8 +1,8 @@
 package routes
 
 import (
-	"giraffecloud/internal/api/handlers"
-	"giraffecloud/internal/api/middleware"
+	"github.com/osa911/giraffecloud/internal/api/handlers"
+	"github.com/osa911/giraffecloud/internal/api/middleware"
 
 	"github.com/gin-gonic/gin"
 )

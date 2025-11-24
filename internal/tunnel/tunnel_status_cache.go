@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"giraffecloud/internal/interfaces"
-	"giraffecloud/internal/logging"
+	"github.com/osa911/giraffecloud/internal/interfaces"
+	"github.com/osa911/giraffecloud/internal/logging"
 )
 
 // TunnelStatusCache provides fast in-memory lookup of tunnel enabled status

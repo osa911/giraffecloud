@@ -3,7 +3,7 @@ package utils
 import (
 	"net/http"
 
-	"giraffecloud/internal/api/dto/common"
+	"github.com/osa911/giraffecloud/internal/api/dto/common"
 
 	"github.com/gin-gonic/gin"
 )

@@ -2,7 +2,8 @@ package interfaces
 
 import (
 	"context"
-	"giraffecloud/internal/db/ent"
+
+	"github.com/osa911/giraffecloud/internal/db/ent"
 )
 
 // TunnelService defines the interface for tunnel operations

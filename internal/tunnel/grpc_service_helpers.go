@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"giraffecloud/internal/db/ent"
-	"giraffecloud/internal/tunnel/proto"
 	"io"
 	"net"
 	"net/http"
@@ -13,6 +11,9 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/osa911/giraffecloud/internal/db/ent"
+	"github.com/osa911/giraffecloud/internal/tunnel/proto"
 
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc/peer"

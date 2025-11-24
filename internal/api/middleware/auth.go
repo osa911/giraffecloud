@@ -3,14 +3,14 @@ package middleware
 import (
 	"strings"
 
-	"giraffecloud/internal/api/constants"
-	"giraffecloud/internal/api/dto/common"
-	"giraffecloud/internal/config/firebase"
-	"giraffecloud/internal/db/ent"
-	"giraffecloud/internal/logging"
-	"giraffecloud/internal/repository"
-	"giraffecloud/internal/service"
-	"giraffecloud/internal/utils"
+	"github.com/osa911/giraffecloud/internal/api/constants"
+	"github.com/osa911/giraffecloud/internal/api/dto/common"
+	"github.com/osa911/giraffecloud/internal/config/firebase"
+	"github.com/osa911/giraffecloud/internal/db/ent"
+	"github.com/osa911/giraffecloud/internal/logging"
+	"github.com/osa911/giraffecloud/internal/repository"
+	"github.com/osa911/giraffecloud/internal/service"
+	"github.com/osa911/giraffecloud/internal/utils"
 
 	"github.com/gin-gonic/gin"
 )

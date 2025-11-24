@@ -2,11 +2,12 @@ package server
 
 import (
 	"context"
-	"giraffecloud/internal/config"
-	"giraffecloud/internal/db"
-	"giraffecloud/internal/repository"
-	"giraffecloud/internal/service"
-	"giraffecloud/internal/tunnel"
+
+	"github.com/osa911/giraffecloud/internal/config"
+	"github.com/osa911/giraffecloud/internal/db"
+	"github.com/osa911/giraffecloud/internal/repository"
+	"github.com/osa911/giraffecloud/internal/service"
+	"github.com/osa911/giraffecloud/internal/tunnel"
 
 	"github.com/gin-gonic/gin"
 )

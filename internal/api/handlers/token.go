@@ -1,11 +1,11 @@
 package handlers
 
 import (
-	"giraffecloud/internal/api/constants"
-	"giraffecloud/internal/api/dto/common"
-	"giraffecloud/internal/api/dto/v1/token"
-	"giraffecloud/internal/service"
-	"giraffecloud/internal/utils"
+	"github.com/osa911/giraffecloud/internal/api/constants"
+	"github.com/osa911/giraffecloud/internal/api/dto/common"
+	"github.com/osa911/giraffecloud/internal/api/dto/v1/token"
+	"github.com/osa911/giraffecloud/internal/service"
+	"github.com/osa911/giraffecloud/internal/utils"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"

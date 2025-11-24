@@ -4,9 +4,9 @@ import (
 	"net/url"
 	"regexp"
 
-	"giraffecloud/internal/api/constants"
-	commonDto "giraffecloud/internal/api/dto/common"
-	"giraffecloud/internal/utils"
+	"github.com/osa911/giraffecloud/internal/api/constants"
+	commonDto "github.com/osa911/giraffecloud/internal/api/dto/common"
+	"github.com/osa911/giraffecloud/internal/utils"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"

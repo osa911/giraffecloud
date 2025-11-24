@@ -2,15 +2,16 @@ package main
 
 import (
 	"fmt"
-	"giraffecloud/internal/service"
-	"giraffecloud/internal/tunnel"
-	"giraffecloud/internal/version"
 	"os"
 	"os/exec"
 	"runtime"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/osa911/giraffecloud/internal/service"
+	"github.com/osa911/giraffecloud/internal/tunnel"
+	"github.com/osa911/giraffecloud/internal/version"
 
 	"github.com/briandowns/spinner"
 	"github.com/spf13/cobra"

@@ -1,9 +1,10 @@
 package middleware
 
 import (
-	"giraffecloud/internal/logging"
-	"giraffecloud/internal/utils"
 	"time"
+
+	"github.com/osa911/giraffecloud/internal/logging"
+	"github.com/osa911/giraffecloud/internal/utils"
 
 	"github.com/gin-gonic/gin"
 )

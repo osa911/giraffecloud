@@ -5,11 +5,11 @@ package enttest
 import (
 	"context"
 
-	"giraffecloud/internal/db/ent"
+	"github.com/osa911/giraffecloud/internal/db/ent"
 	// required by schema hooks.
-	_ "giraffecloud/internal/db/ent/runtime"
+	_ "github.com/osa911/giraffecloud/internal/db/ent/runtime"
 
-	"giraffecloud/internal/db/ent/migrate"
+	"github.com/osa911/giraffecloud/internal/db/ent/migrate"
 
 	"entgo.io/ent/dialect/sql/schema"
 )

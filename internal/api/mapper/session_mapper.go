@@ -1,8 +1,8 @@
 package mapper
 
 import (
-	"giraffecloud/internal/api/dto/v1/auth"
-	"giraffecloud/internal/db/ent"
+	"github.com/osa911/giraffecloud/internal/api/dto/v1/auth"
+	"github.com/osa911/giraffecloud/internal/db/ent"
 )
 
 // SessionToSessionResponse maps a Session entity to a SessionResponse DTO

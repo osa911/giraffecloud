@@ -3,7 +3,7 @@ package auth
 import (
 	"time"
 
-	"giraffecloud/internal/api/dto/v1/user"
+	"github.com/osa911/giraffecloud/internal/api/dto/v1/user"
 )
 
 // LoginRequest represents the login request payload

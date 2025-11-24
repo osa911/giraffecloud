@@ -5,9 +5,10 @@ package ent
 import (
 	"encoding/json"
 	"fmt"
-	"giraffecloud/internal/db/ent/clientversion"
 	"strings"
 	"time"
+
+	"github.com/osa911/giraffecloud/internal/db/ent/clientversion"
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"

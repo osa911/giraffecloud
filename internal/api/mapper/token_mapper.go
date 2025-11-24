@@ -3,8 +3,8 @@ package mapper
 import (
 	"time"
 
-	"giraffecloud/internal/api/dto/v1/token"
-	"giraffecloud/internal/db/ent"
+	"github.com/osa911/giraffecloud/internal/api/dto/v1/token"
+	"github.com/osa911/giraffecloud/internal/db/ent"
 
 	"github.com/google/uuid"
 )

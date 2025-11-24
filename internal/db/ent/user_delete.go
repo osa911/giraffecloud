@@ -4,8 +4,9 @@ package ent
 
 import (
 	"context"
-	"giraffecloud/internal/db/ent/predicate"
-	"giraffecloud/internal/db/ent/user"
+
+	"github.com/osa911/giraffecloud/internal/db/ent/predicate"
+	"github.com/osa911/giraffecloud/internal/db/ent/user"
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
