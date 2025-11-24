@@ -252,15 +252,11 @@ fi
 print_info "Updating database..."
 
 if [ "$ENV" = "prod" ]; then
-    # Production: Use Docker container
-    PGPASSWORD="$DB_PASSWORD" docker exec -i "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" << EOF
-$SQL_COMMAND
-EOF
+    # Production: Use Docker container (same approach as db-migrate-prod)
+    docker exec -i "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" -c "$SQL_COMMAND"
 else
     # Development: Direct connection
-    PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" << EOF
-$SQL_COMMAND
-EOF
+    PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "$SQL_COMMAND"
 fi
 
 if [ $? -eq 0 ]; then
