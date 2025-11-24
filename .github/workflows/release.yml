@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - "v*"
+  # Allow manual trigger
+  workflow_dispatch:
 
 jobs:
   goreleaser:
