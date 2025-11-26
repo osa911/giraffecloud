@@ -47,6 +47,7 @@ services:
       - "8081:8081"
     depends_on:
       - postgres
+      - tempo
     restart: unless-stopped
     <<: *env-file
     volumes:
@@ -58,6 +59,8 @@ services:
       - GOPATH=/go
       - GOCACHE=/go/cache
       - GO111MODULE=on
+      # Override OTLP endpoint to use internal network
+      - OTEL_EXPORTER_OTLP_ENDPOINT=tempo:4317
     networks:
       giraffecloud_network:
         ipv4_address: 172.20.0.2
@@ -84,6 +87,81 @@ services:
       timeout: 5s
       retries: 5
 
+  # ============================================
+  # Observability Stack
+  # ============================================
+
+  tempo:
+    image: grafana/tempo:latest
+    container_name: giraffecloud_tempo
+    command: ["-config.file=/etc/tempo.yaml"]
+    ports:
+      - "4317:4317" # OTLP gRPC receiver
+      - "3200:3200" # Tempo HTTP API
+    volumes:
+      - ./observability/tempo.yaml:/etc/tempo.yaml
+      - tempo_data:/tmp/tempo
+    networks:
+      giraffecloud_network:
+        ipv4_address: 172.20.0.5
+    restart: unless-stopped
+    user: "0:0" # Run as root to avoid permission issues
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: giraffecloud_prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+    ports:
+      - "19090:9090" # Changed to 19090 to avoid conflict
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    networks:
+      giraffecloud_network:
+        ipv4_address: 172.20.0.6
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:latest
+    container_name: giraffecloud_loki
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - loki_data:/loki
+    networks:
+      giraffecloud_network:
+        ipv4_address: 172.20.0.7
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: giraffecloud_grafana
+    ports:
+      - "3001:3000" # Changed to 3001 to avoid conflict with other apps
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:-http://localhost:3000}
+    volumes:
+      - ./observability/grafana/datasources:/etc/grafana/provisioning/datasources
+      - ./observability/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - tempo
+      - prometheus
+      - loki
+    networks:
+      giraffecloud_network:
+        ipv4_address: 172.20.0.8
+    restart: unless-stopped
+
 networks:
   giraffecloud_network:
     name: giraffecloud_network
@@ -102,4 +180,12 @@ volumes:
   caddy_data:
     driver: local
   caddy_config:
+    driver: local
+  tempo_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  loki_data:
+    driver: local
+  grafana_data:
     driver: local
