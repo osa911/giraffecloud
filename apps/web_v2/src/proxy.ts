@@ -7,7 +7,7 @@ const PROTECTED_PATHS = ["/dashboard"];
 // Paths that are public (auth pages)
 const AUTH_PATHS = ["/auth/login", "/auth/register"];
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Check if the path is protected
