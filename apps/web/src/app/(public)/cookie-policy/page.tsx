@@ -34,7 +34,7 @@ export default function CookiePolicyPage() {
         </p>
 
         <p className="text-sm text-muted-foreground mt-12">
-          Last updated: {new Date().toISOString().split("T")[0]}
+          Last updated: 2025-11-30
         </p>
       </div>
     </div>
