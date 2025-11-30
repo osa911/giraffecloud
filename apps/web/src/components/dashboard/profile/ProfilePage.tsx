@@ -41,7 +41,7 @@ export default function ProfilePage({ initialUser }: ProfilePageProps) {
           <div className="flex flex-col md:flex-row gap-8">
             <div className="flex flex-col items-center space-y-4">
               <Avatar className="h-24 w-24">
-                <AvatarImage src={initialUser.picture} alt={state.name} />
+                <AvatarImage alt={state.name} />
                 <AvatarFallback className="text-2xl">
                   {state.name?.charAt(0) || "U"}
                 </AvatarFallback>
