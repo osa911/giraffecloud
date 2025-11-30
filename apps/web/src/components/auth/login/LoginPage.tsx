@@ -1,33 +1,58 @@
 "use client";
 
 import { useState } from "react";
-import { Container, Box, Typography, TextField, Button, Divider, Alert } from "@mui/material";
-import Link from "@/components/common/Link";
+import Link from "next/link";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
 import { useAuth } from "@/contexts/AuthProvider";
+import { Button } from "@/components/ui/button";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Loader2 } from "lucide-react";
+
+const formSchema = z.object({
+  email: z.string().email({ message: "Invalid email address" }),
+  password: z.string().min(1, { message: "Password is required" }),
+});
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const { signIn, signInWithGoogle } = useAuth();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
+  const form = useForm<z.infer<typeof formSchema>>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      email: "",
+      password: "",
+    },
+  });
+
+  async function onSubmit(values: z.infer<typeof formSchema>) {
+    setIsLoading(true);
     setError("");
     try {
-      await signIn(email, password);
+      await signIn(values.email, values.password);
     } catch {
       setError("Failed to sign in. Please check your credentials.");
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
-  };
+  }
 
   const handleGoogleSignIn = async () => {
-    setGoogleLoading(true);
+    setIsGoogleLoading(true);
     setError("");
     try {
       await signInWithGoogle();
@@ -38,80 +63,87 @@ export default function LoginPage() {
         setError("Failed to sign in with Google.");
       }
     } finally {
-      setGoogleLoading(false);
+      setIsGoogleLoading(false);
     }
   };
 
   return (
-    <Container maxWidth="sm">
-      <Box
-        sx={{
-          minHeight: "100vh",
-          display: "flex",
-          flexDirection: "column",
-          justifyContent: "center",
-          py: 8,
-        }}
-      >
-        <Typography variant="h4" component="h1" gutterBottom align="center">
-          Login to GiraffeCloud
-        </Typography>
-        {error && (
-          <Alert severity="error" sx={{ mt: 2 }}>
-            {error}
-          </Alert>
-        )}
-        <Box component="form" onSubmit={handleSubmit} sx={{ mt: 4 }}>
-          <TextField
-            margin="normal"
-            required
-            fullWidth
-            id="email"
-            label="Email Address"
-            name="email"
-            autoComplete="email"
-            autoFocus
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-          <TextField
-            margin="normal"
-            required
-            fullWidth
-            name="password"
-            label="Password"
-            type="password"
-            id="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-          <Button
-            type="submit"
-            fullWidth
-            variant="contained"
-            sx={{ mt: 3, mb: 2 }}
-            disabled={loading}
-          >
-            {loading ? "Signing in..." : "Sign In"}
+    <div className="flex items-center justify-center min-h-screen py-12 px-4 sm:px-6 lg:px-8 bg-background">
+      <Card className="w-full max-w-md">
+        <CardHeader className="space-y-1">
+          <CardTitle className="text-2xl font-bold text-center">Login to GiraffeCloud</CardTitle>
+          <CardDescription className="text-center">
+            Enter your email and password to access your account
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {error && (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+              <FormField
+                control={form.control}
+                name="email"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Email</FormLabel>
+                    <FormControl>
+                      <Input placeholder="m@example.com" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="password"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Password</FormLabel>
+                    <FormControl>
+                      <Input type="password" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <Button type="submit" className="w-full" disabled={isLoading}>
+                {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Sign In
+              </Button>
+            </form>
+          </Form>
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-background px-2 text-muted-foreground">Or continue with</span>
+            </div>
+          </div>
+          <Button variant="outline" type="button" className="w-full" onClick={handleGoogleSignIn} disabled={isGoogleLoading}>
+            {isGoogleLoading ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <svg className="mr-2 h-4 w-4" aria-hidden="true" focusable="false" data-prefix="fab" data-icon="google" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512">
+                <path fill="currentColor" d="M488 261.8C488 403.3 391.1 504 248 504 110.8 504 0 393.2 0 256S110.8 8 248 8c66.8 0 123 24.5 166.3 64.9l-67.5 64.9C258.5 52.6 94.3 116.6 94.3 256c0 86.5 69.1 156.6 153.7 156.6 98.2 0 135-70.4 140.8-106.9H248v-85.3h236.1c2.3 12.7 3.9 24.9 3.9 41.4z"></path>
+              </svg>
+            )}
+            Google
           </Button>
-          <Divider sx={{ my: 2 }}>OR</Divider>
-          <Button
-            fullWidth
-            variant="outlined"
-            onClick={handleGoogleSignIn}
-            sx={{ mb: 2 }}
-            disabled={googleLoading}
-          >
-            {googleLoading ? "Signing in..." : "Sign in with Google"}
-          </Button>
-          <Box sx={{ textAlign: "center" }}>
-            <Link href="/auth/register" variant="body2">
-              Don&apos;t have an account? Sign Up
+        </CardContent>
+        <CardFooter className="flex justify-center">
+          <p className="text-sm text-muted-foreground">
+            Don&apos;t have an account?{" "}
+            <Link href="/auth/register" className="text-primary hover:underline">
+              Sign Up
             </Link>
-          </Box>
-        </Box>
-      </Box>
-    </Container>
+          </p>
+        </CardFooter>
+      </Card>
+    </div>
   );
 }

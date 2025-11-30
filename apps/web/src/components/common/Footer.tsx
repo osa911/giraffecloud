@@ -1,53 +1,41 @@
-import Link from "@/components/common/Link";
+import Link from "next/link";
 import { ROUTES } from "@/constants/routes";
-import { Box, Container, Divider, Stack, Typography } from "@mui/material";
+import { Separator } from "@/components/ui/separator";
 
 export default function Footer() {
   return (
-    <Box component="footer" sx={{ pt: 3, pb: 3, bgcolor: "background.default" }}>
-      <Divider sx={{ mb: 3 }} />
-      <Container maxWidth="lg">
-        <Stack
-          direction={{ xs: "column", sm: "row" }}
-          columnGap={2}
-          justifyContent="space-between"
-          flexWrap="wrap"
-          alignItems={{ xs: "flex-start", sm: "center" }}
-        >
-          <Typography variant="body2" color="text.secondary">
-            © <Link href={ROUTES.HOME}>GiraffeCloud</Link> {new Date().getFullYear()}
-          </Typography>
-          <Stack direction="row" columnGap={2} flexWrap="wrap" useFlexGap>
-            <Link href={ROUTES.ABOUT} underline="hover">
+    <footer className="py-6 bg-background">
+      <Separator className="mb-6" />
+      <div className="container mx-auto px-4 max-w-7xl">
+        <div className="flex flex-col sm:flex-row justify-between items-center gap-4 text-sm text-muted-foreground">
+          <p>
+            © <Link href={ROUTES.HOME} className="hover:underline">GiraffeCloud</Link> {new Date().getFullYear()}
+          </p>
+          <div className="flex flex-wrap gap-4">
+            <Link href={ROUTES.ABOUT} className="hover:underline hover:text-foreground transition-colors">
               About
             </Link>
-            {/* <Link href={ROUTES.PRICING} underline="hover">
-              Pricing
-            </Link> */}
-            <Link href={ROUTES.CONTACT} underline="hover">
+            <Link href={ROUTES.CONTACT} className="hover:underline hover:text-foreground transition-colors">
               Contact
             </Link>
-            <Link href={ROUTES.INSTALLATION} underline="hover">
+            <Link href={ROUTES.INSTALLATION} className="hover:underline hover:text-foreground transition-colors">
               Install
             </Link>
-            <Link href={ROUTES.TERMS} underline="hover">
+            <Link href={ROUTES.TERMS} className="hover:underline hover:text-foreground transition-colors">
               Terms
             </Link>
-            <Link href={ROUTES.PRIVACY} underline="hover">
+            <Link href={ROUTES.PRIVACY} className="hover:underline hover:text-foreground transition-colors">
               Privacy
             </Link>
-            <Link href={ROUTES.ACCEPTABLE_USE} underline="hover">
+            <Link href={ROUTES.ACCEPTABLE_USE} className="hover:underline hover:text-foreground transition-colors">
               AUP
             </Link>
-            {/* <Link href={ROUTES.REFUND} underline="hover">
-              Refunds
-            </Link> */}
-            <Link href={ROUTES.COOKIE_POLICY} underline="hover">
+            <Link href={ROUTES.COOKIE_POLICY} className="hover:underline hover:text-foreground transition-colors">
               Cookies
             </Link>
-          </Stack>
-        </Stack>
-      </Container>
-    </Box>
+          </div>
+        </div>
+      </div>
+    </footer>
   );
 }

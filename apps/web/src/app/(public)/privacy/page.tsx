@@ -1,5 +1,4 @@
-import { Typography, Box, Container } from "@mui/material";
-import type { Metadata } from "next";
+import { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Privacy Policy | GiraffeCloud",
@@ -8,75 +7,61 @@ export const metadata: Metadata = {
 
 export default function PrivacyPolicyPage() {
   return (
-    <Container maxWidth="md">
-      <Box sx={{ py: 8 }}>
-        <Typography variant="h2" component="h1" gutterBottom>
-          Privacy Policy
-        </Typography>
-        <Typography gutterBottom color="text.secondary">
-          This Privacy Policy describes how GiraffeCloud (&quot;we&quot;, &quot;us&quot;) collects
-          and uses personal information in connection with our services.
-        </Typography>
+    <div className="container mx-auto px-4 py-12 max-w-3xl">
+      <h1 className="text-4xl font-bold mb-6">Privacy Policy</h1>
+      <p className="text-muted-foreground mb-8">
+        This Privacy Policy describes how GiraffeCloud (&quot;we&quot;, &quot;us&quot;) collects
+        and uses personal information in connection with our services.
+      </p>
 
-        <Typography variant="h5" gutterBottom sx={{ mt: 4 }}>
-          Information We Collect
-        </Typography>
-        <Typography component="ul" sx={{ pl: 2 }}>
-          <li>
-            <Typography component="span">
+      <div className="space-y-8">
+        <section>
+          <h2 className="text-2xl font-semibold mb-4">Information We Collect</h2>
+          <ul className="list-disc pl-6 space-y-2 text-muted-foreground">
+            <li>
               Account data: name, email, authentication identifiers.
-            </Typography>
-          </li>
-          <li>
-            <Typography component="span">
+            </li>
+            <li>
               Service metadata: IP addresses, device and browser information, usage analytics.
-            </Typography>
-          </li>
-          <li>
-            <Typography component="span">
+            </li>
+            <li>
               Billing data for paid plans processed via our payment provider.
-            </Typography>
-          </li>
-        </Typography>
+            </li>
+          </ul>
+        </section>
 
-        <Typography variant="h5" gutterBottom sx={{ mt: 3 }}>
-          How We Use Information
-        </Typography>
-        <Typography component="ul" sx={{ pl: 2 }}>
-          <li>
-            <Typography component="span">Provide and improve the Service</Typography>
-          </li>
-          <li>
-            <Typography component="span">
+        <section>
+          <h2 className="text-2xl font-semibold mb-4">How We Use Information</h2>
+          <ul className="list-disc pl-6 space-y-2 text-muted-foreground">
+            <li>Provide and improve the Service</li>
+            <li>
               Secure our platform, prevent abuse, and troubleshoot issues
-            </Typography>
-          </li>
-          <li>
-            <Typography component="span">Process payments and manage subscriptions</Typography>
-          </li>
-        </Typography>
+            </li>
+            <li>Process payments and manage subscriptions</li>
+          </ul>
+        </section>
 
-        <Typography variant="h5" gutterBottom sx={{ mt: 3 }}>
-          Data Sharing
-        </Typography>
-        <Typography gutterBottom>
-          We share data with vendors who help us operate the Service (e.g., cloud hosting,
-          analytics, payments). We do not sell personal information.
-        </Typography>
+        <section>
+          <h2 className="text-2xl font-semibold mb-4">Data Sharing</h2>
+          <p className="text-muted-foreground">
+            We share data with vendors who help us operate the Service (e.g., cloud hosting,
+            analytics, payments). We do not sell personal information.
+          </p>
+        </section>
 
-        <Typography variant="h5" gutterBottom sx={{ mt: 3 }}>
-          Your Choices
-        </Typography>
-        <Typography gutterBottom>
-          You may access, correct, or delete certain personal information. You may opt out of
-          marketing communications. Some functional communications are required for service
-          delivery.
-        </Typography>
+        <section>
+          <h2 className="text-2xl font-semibold mb-4">Your Choices</h2>
+          <p className="text-muted-foreground">
+            You may access, correct, or delete certain personal information. You may opt out of
+            marketing communications. Some functional communications are required for service
+            delivery.
+          </p>
+        </section>
 
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 6 }}>
+        <p className="text-sm text-muted-foreground mt-12">
           Last updated: {new Date().toISOString().split("T")[0]}
-        </Typography>
-      </Box>
-    </Container>
+        </p>
+      </div>
+    </div>
   );
 }

@@ -1,5 +1,4 @@
-import { Typography, Box, Container } from "@mui/material";
-import type { Metadata } from "next";
+import { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Acceptable Use Policy | GiraffeCloud",
@@ -8,39 +7,32 @@ export const metadata: Metadata = {
 
 export default function AcceptableUsePage() {
   return (
-    <Container maxWidth="md">
-      <Box sx={{ py: 8 }}>
-        <Typography variant="h2" component="h1" gutterBottom>
-          Acceptable Use Policy
-        </Typography>
-        <Typography gutterBottom color="text.secondary">
-          To keep our network safe and reliable for everyone, you agree not to misuse the Service.
-          Prohibited uses include:
-        </Typography>
-        <Typography component="ul" sx={{ pl: 2 }}>
-          <li>
-            <Typography component="span">
-              Illegal content or activity, including infringement and distribution of malware.
-            </Typography>
-          </li>
-          <li>
-            <Typography component="span">
-              Denial-of-service attacks, port scanning at scale, or evasion of abuse detection.
-            </Typography>
-          </li>
-          <li>
-            <Typography component="span">
-              Sending spam or abusive traffic; crypto mining; child sexual abuse material (CSAM).
-            </Typography>
-          </li>
-        </Typography>
-        <Typography gutterBottom sx={{ mt: 3 }}>
-          We reserve the right to suspend or terminate accounts that violate this policy.
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 6 }}>
-          Last updated: {new Date().toISOString().split("T")[0]}
-        </Typography>
-      </Box>
-    </Container>
+    <div className="container mx-auto px-4 py-12 max-w-3xl">
+      <h1 className="text-4xl font-bold mb-6">Acceptable Use Policy</h1>
+      <p className="text-muted-foreground mb-8">
+        To keep our network safe and reliable for everyone, you agree not to misuse the Service.
+        Prohibited uses include:
+      </p>
+
+      <ul className="list-disc pl-6 space-y-4 mb-8 text-muted-foreground">
+        <li>
+          Illegal content or activity, including infringement and distribution of malware.
+        </li>
+        <li>
+          Denial-of-service attacks, port scanning at scale, or evasion of abuse detection.
+        </li>
+        <li>
+          Sending spam or abusive traffic; crypto mining; child sexual abuse material (CSAM).
+        </li>
+      </ul>
+
+      <p className="text-muted-foreground">
+        We reserve the right to suspend or terminate accounts that violate this policy.
+      </p>
+
+      <p className="text-sm text-muted-foreground mt-12">
+        Last updated: {new Date().toISOString().split("T")[0]}
+      </p>
+    </div>
   );
 }

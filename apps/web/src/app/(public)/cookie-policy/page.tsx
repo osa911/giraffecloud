@@ -1,5 +1,4 @@
-import { Typography, Box, Container } from "@mui/material";
-import type { Metadata } from "next";
+import { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Cookie Policy | GiraffeCloud",
@@ -8,41 +7,36 @@ export const metadata: Metadata = {
 
 export default function CookiePolicyPage() {
   return (
-    <Container maxWidth="md">
-      <Box sx={{ py: 8 }}>
-        <Typography variant="h2" component="h1" gutterBottom>
-          Cookie Policy
-        </Typography>
-        <Typography gutterBottom color="text.secondary">
-          We use cookies and similar technologies to provide core functionality (e.g.,
-          authentication), remember preferences, and measure product usage.
-        </Typography>
-        <Typography variant="h5" gutterBottom sx={{ mt: 4 }}>
-          Types of Cookies
-        </Typography>
-        <Typography component="ul" sx={{ pl: 2 }}>
-          <li>
-            <Typography component="span">
+    <div className="container mx-auto px-4 py-12 max-w-3xl">
+      <h1 className="text-4xl font-bold mb-6">Cookie Policy</h1>
+      <p className="text-muted-foreground mb-8">
+        We use cookies and similar technologies to provide core functionality (e.g.,
+        authentication), remember preferences, and measure product usage.
+      </p>
+
+      <div className="space-y-8">
+        <section>
+          <h2 className="text-2xl font-semibold mb-4">Types of Cookies</h2>
+          <ul className="list-disc pl-6 space-y-2 text-muted-foreground">
+            <li>
               Strictly necessary: required for login and security.
-            </Typography>
-          </li>
-          <li>
-            <Typography component="span">Preferences: remember settings such as theme.</Typography>
-          </li>
-          <li>
-            <Typography component="span">
+            </li>
+            <li>Preferences: remember settings such as theme.</li>
+            <li>
               Analytics: help us understand usage and improve the Service.
-            </Typography>
-          </li>
-        </Typography>
-        <Typography gutterBottom sx={{ mt: 3 }}>
+            </li>
+          </ul>
+        </section>
+
+        <p className="text-muted-foreground">
           You can control cookies through your browser settings. Disabling certain cookies may
           impact functionality.
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 6 }}>
+        </p>
+
+        <p className="text-sm text-muted-foreground mt-12">
           Last updated: {new Date().toISOString().split("T")[0]}
-        </Typography>
-      </Box>
-    </Container>
+        </p>
+      </div>
+    </div>
   );
 }
