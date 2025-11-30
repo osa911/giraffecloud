@@ -67,6 +67,8 @@ export default function DailyUsageChart() {
     );
   }
 
+  const totalUsage = usage?.history.reduce((acc, entry) => acc + entry.bytes_in + entry.bytes_out, 0) || 0;
+
   return (
     <Card className="col-span-4">
       <CardHeader>
@@ -74,7 +76,7 @@ export default function DailyUsageChart() {
       </CardHeader>
       <CardContent className="pl-2">
         <div className="h-[300px] w-full relative">
-          {(!usage || usage.history.length === 0) && (
+          {(!usage || usage.history.length === 0 || totalUsage === 0) && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/50 backdrop-blur-[1px] z-10 rounded-md border border-dashed">
               <div className="flex flex-col items-center space-y-2 text-muted-foreground">
                 <Activity className="h-8 w-8 opacity-50" />
