@@ -13,7 +13,7 @@ export default function PublicLayout({ children }: PublicLayoutProps) {
     <div className="flex flex-col min-h-screen">
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container mx-auto px-4 max-w-7xl flex h-14 items-center">
-          <div className="mr-4 hidden md:flex">
+          <div className="mr-4 flex">
             <Link href="/" className="mr-6 flex items-center space-x-2">
               <Cloud className="h-6 w-6" />
               <span className="hidden font-bold sm:inline-block">
@@ -21,7 +21,7 @@ export default function PublicLayout({ children }: PublicLayoutProps) {
                 <span className="font-semibold">Cloud</span>
               </span>
             </Link>
-            <nav className="flex items-center space-x-6 text-sm font-medium">
+            <nav className="hidden md:flex items-center space-x-6 text-sm font-medium">
               <Link href="/about" className="transition-colors hover:text-foreground/80 text-foreground/60">
                 About
               </Link>
