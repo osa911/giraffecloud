@@ -20,7 +20,10 @@
     ],
     "paths": {
       "@/*": ["./src/*"]
-    }
+    },
+    // Strict type checking for 'any'
+    "noImplicitAny": true,
+    "noUncheckedIndexedAccess": true
   },
   "include": [
     "next-env.d.ts",

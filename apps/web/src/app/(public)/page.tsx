@@ -1,12 +1,9 @@
 "use client";
 
-import Link from "next/link";
-import { ROUTES } from "@/constants/routes";
-import { Button } from "@/components/ui/button";
 import HomeRedirectHandler from "@/components/home/HomeRedirectHandler";
 import AuthButtons from "@/components/auth/AuthButtons";
 import { motion } from "framer-motion";
-import { ArrowRight, ShieldCheck, Zap, Globe } from "lucide-react";
+import { ShieldCheck, Zap, Globe } from "lucide-react";
 
 export default function HomePage() {
   return (

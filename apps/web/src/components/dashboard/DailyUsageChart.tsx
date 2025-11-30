@@ -16,7 +16,6 @@ import { AlertTriangle, Loader2, Activity } from "lucide-react";
 import { fetcher } from "@/lib/swr-fetcher";
 import { UsageData } from "@/types/tunnel";
 import { format, subDays } from "date-fns";
-import { useTheme } from "next-themes";
 
 export default function DailyUsageChart() {
   const { data: usage, error, isLoading } = useSWR<UsageData>(

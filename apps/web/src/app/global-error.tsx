@@ -26,7 +26,7 @@ export default function GlobalError({
           <p className="text-muted-foreground">
             A critical error occurred. Please try refreshing the page.
           </p>
-          <Button onClick={() => reset()}>Try again 2</Button>
+          <Button onClick={() => reset()}>Try again</Button>
         </div>
       </body>
     </html>

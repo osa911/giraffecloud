@@ -12,8 +12,6 @@ interface AuthButtonsProps {
 export default function AuthButtons({ className }: AuthButtonsProps) {
   const { user, loading } = useAuth();
 
-  console.log("user", user);
-  console.log("loading", loading);
   if (loading) return null;
 
   if (user) {

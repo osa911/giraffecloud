@@ -1,7 +1,6 @@
 import Link from "next/link";
 import Footer from "@/components/common/Footer";
 import { ModeToggle } from "@/components/mode-toggle";
-import { Button } from "@/components/ui/button";
 import { Cloud } from "lucide-react";
 import AuthButtons from "@/components/auth/AuthButtons";
 
