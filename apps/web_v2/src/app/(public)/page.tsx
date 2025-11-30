@@ -24,7 +24,7 @@ export default function HomePage() {
             Secure Tunnel Service for Your Applications
           </h1>
           <p className="text-xl text-muted-foreground max-w-[600px] mx-auto">
-            Expose your local server to the internet with a single command. Secure, fast, and user-friendly.
+            Expose your local server to the internet without revealing your IP address. Secure, fast, and user-friendly.
           </p>
         </motion.div>
 
@@ -46,7 +46,7 @@ export default function HomePage() {
           <FeatureCard
             icon={<ShieldCheck className="w-10 h-10 text-primary" />}
             title="Secure by Default"
-            description="End-to-end encryption and automatic HTTPS for all your tunnels."
+            description="End-to-end encryption, automatic HTTPS, and IP privacy—your real address stays hidden."
           />
           <FeatureCard
             icon={<Zap className="w-10 h-10 text-primary" />}
