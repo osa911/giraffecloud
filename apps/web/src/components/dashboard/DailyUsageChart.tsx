@@ -14,32 +14,20 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertTriangle, Loader2, Activity } from "lucide-react";
 import { fetcher } from "@/lib/swr-fetcher";
-import { UsageData } from "@/types/tunnel";
+import { DailyUsageHistory } from "@/types/tunnel";
 import { format, subDays } from "date-fns";
 
 export default function DailyUsageChart() {
-  const { data: usage, error, isLoading } = useSWR<UsageData>(
-    "/usage/summary",
+  const { data: usage, error, isLoading } = useSWR<DailyUsageHistory>(
+    "/usage/daily-history?days=30",
     fetcher
   );
 
-  // Generate data for the chart
-  // If usage is 0, show flat line. If usage > 0, show mock distribution (since we lack history API)
-  const data = Array.from({ length: 7 }).map((_, i) => {
-    const date = subDays(new Date(), 6 - i);
-    let bytes = 0;
-
-    if (usage && usage.month.used_bytes > 0) {
-      // Mock distribution if we have usage but no history endpoint
-      // This is a temporary visualization until the backend provides daily history
-      bytes = Math.floor(Math.random() * (usage.month.used_bytes / 5));
-    }
-
-    return {
-      date: format(date, "MMM dd"),
-      bytes: bytes,
-    };
-  });
+  const data = usage?.history.map((entry) => ({
+    date: format(new Date(entry.date), "MMM dd"),
+    bytes_in: entry.bytes_in,
+    bytes_out: entry.bytes_out,
+  })) || [];
 
   const formatBytes = (bytes: number) => {
     if (bytes === 0) return "0 B";
@@ -53,7 +41,7 @@ export default function DailyUsageChart() {
     return (
       <Card className="col-span-4">
         <CardHeader>
-          <CardTitle>Traffic History (Last 7 Days)</CardTitle>
+          <CardTitle>Traffic History (Last 30 Days)</CardTitle>
         </CardHeader>
         <CardContent className="flex justify-center py-12">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -82,11 +70,11 @@ export default function DailyUsageChart() {
   return (
     <Card className="col-span-4">
       <CardHeader>
-        <CardTitle>Traffic History (Last 7 Days)</CardTitle>
+        <CardTitle>Traffic History (Last 30 Days)</CardTitle>
       </CardHeader>
       <CardContent className="pl-2">
         <div className="h-[300px] w-full relative">
-          {(!usage || usage.month.used_bytes === 0) && (
+          {(!usage || usage.history.length === 0) && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/50 backdrop-blur-[1px] z-10 rounded-md border border-dashed">
               <div className="flex flex-col items-center space-y-2 text-muted-foreground">
                 <Activity className="h-8 w-8 opacity-50" />
@@ -98,9 +86,13 @@ export default function DailyUsageChart() {
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={data} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
               <defs>
-                <linearGradient id="colorBytes" x1="0" y1="0" x2="0" y2="1">
+                <linearGradient id="colorBytesIn" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.8} />
                   <stop offset="95%" stopColor="var(--primary)" stopOpacity={0} />
+                </linearGradient>
+                <linearGradient id="colorBytesOut" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.8} />
+                  <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <XAxis
@@ -124,16 +116,31 @@ export default function DailyUsageChart() {
                   color: "var(--popover-foreground)",
                   borderRadius: "var(--radius)",
                 }}
-                itemStyle={{ color: "var(--primary)" }}
-                formatter={(value: number) => [formatBytes(value), "Traffic"]}
+                itemStyle={{ color: "var(--foreground)" }}
+                formatter={(value: number, name: string) => [
+                  formatBytes(value),
+                  name === "bytes_in" ? "Incoming" : "Outgoing",
+                ]}
+                labelStyle={{ color: "var(--muted-foreground)" }}
               />
               <CartesianGrid strokeDasharray="3 3" className="stroke-muted/20" vertical={false} />
               <Area
                 type="monotone"
-                dataKey="bytes"
+                dataKey="bytes_in"
+                name="bytes_in"
                 stroke="var(--primary)"
                 fillOpacity={1}
-                fill="url(#colorBytes)"
+                fill="url(#colorBytesIn)"
+                stackId="1"
+              />
+              <Area
+                type="monotone"
+                dataKey="bytes_out"
+                name="bytes_out"
+                stroke="#10b981"
+                fillOpacity={1}
+                fill="url(#colorBytesOut)"
+                stackId="2"
               />
             </AreaChart>
           </ResponsiveContainer>

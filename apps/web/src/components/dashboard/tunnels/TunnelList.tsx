@@ -29,9 +29,21 @@ import clientApi from "@/services/apiClient/clientApiClient";
 import { toast } from "@/lib/toast";
 import Link from "next/link";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+
 export default function TunnelList() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedTunnel, setSelectedTunnel] = useState<Tunnel | null>(null);
+  const [tunnelToDelete, setTunnelToDelete] = useState<Tunnel | null>(null);
   const { tunnels, isLoading, mutate } = useTunnels();
 
   const handleOpenDialog = (tunnel?: Tunnel) => {
@@ -58,16 +70,22 @@ export default function TunnelList() {
     }
   };
 
-  const handleDelete = async (tunnel: Tunnel) => {
-    if (!confirm("Are you sure you want to delete this tunnel?")) return;
+  const handleDelete = (tunnel: Tunnel) => {
+    setTunnelToDelete(tunnel);
+  };
+
+  const confirmDelete = async () => {
+    if (!tunnelToDelete) return;
 
     try {
-      await clientApi().delete<void>(`/tunnels/${tunnel.id}`);
+      await clientApi().delete<void>(`/tunnels/${tunnelToDelete.id}`);
       mutate(); // Refresh the tunnels list
       toast.success("Tunnel deleted successfully");
     } catch (error) {
       console.error("Error deleting tunnel:", error);
       toast.error("Failed to delete tunnel");
+    } finally {
+      setTunnelToDelete(null);
     }
   };
 
@@ -167,6 +185,24 @@ export default function TunnelList() {
         }}
         existingTunnels={tunnels}
       />
+
+      <AlertDialog open={!!tunnelToDelete} onOpenChange={(open) => !open && setTunnelToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete the tunnel
+              {tunnelToDelete && <span className="font-semibold text-foreground"> {tunnelToDelete.domain}</span>} and remove your data from our servers.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

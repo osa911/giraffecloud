@@ -38,7 +38,7 @@ import { cn } from "@/lib/utils";
 
 export default function GettingStartedPage() {
   const { mutate } = useTunnels();
-  const [copiedStep, setCopiedStep] = useState<number | null>(null);
+  const [copiedStep, setCopiedStep] = useState<number | string | null>(null);
 
   // Token creation dialog state
   const [tokenDialogOpen, setTokenDialogOpen] = useState(false);
@@ -47,7 +47,7 @@ export default function GettingStartedPage() {
   // Tunnel creation dialog state
   const [tunnelDialogOpen, setTunnelDialogOpen] = useState(false);
 
-  const handleCopy = (text: string, stepNumber: number) => {
+  const handleCopy = (text: string, stepNumber: number | string) => {
     navigator.clipboard.writeText(text);
     setCopiedStep(stepNumber);
     toast.success("Copied to clipboard!");
@@ -73,7 +73,7 @@ export default function GettingStartedPage() {
     label,
   }: {
     code: string;
-    step: number;
+    step: number | string;
     label?: string;
   }) => (
     <div className="relative mt-2 rounded-md bg-muted p-4">
@@ -253,20 +253,60 @@ export default function GettingStartedPage() {
               <Terminal className="h-4 w-4" /> Core Commands
             </h4>
             <div className="grid gap-4 md:grid-cols-2">
-              <div className="rounded-lg border p-4 space-y-2">
-                <code className="text-sm font-bold block">giraffecloud login --token &lt;TOKEN&gt;</code>
+              <div className="rounded-lg border p-4 space-y-2 relative group">
+                <div className="flex items-center justify-between gap-2">
+                  <code className="text-sm font-bold block break-all">giraffecloud login --token &lt;TOKEN&gt;</code>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 shrink-0"
+                    onClick={() => handleCopy("giraffecloud login --token <TOKEN>", "cmd-login")}
+                  >
+                    {copiedStep === "cmd-login" ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+                  </Button>
+                </div>
                 <p className="text-xs text-muted-foreground">Login and download client certificates.</p>
               </div>
-              <div className="rounded-lg border p-4 space-y-2">
-                <code className="text-sm font-bold block">giraffecloud connect</code>
+              <div className="rounded-lg border p-4 space-y-2 relative group">
+                <div className="flex items-center justify-between gap-2">
+                  <code className="text-sm font-bold block break-all">giraffecloud connect</code>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 shrink-0"
+                    onClick={() => handleCopy("giraffecloud connect", "cmd-connect")}
+                  >
+                    {copiedStep === "cmd-connect" ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+                  </Button>
+                </div>
                 <p className="text-xs text-muted-foreground">Connect to GiraffeCloud and establish a tunnel.</p>
               </div>
-              <div className="rounded-lg border p-4 space-y-2">
-                <code className="text-sm font-bold block">giraffecloud status</code>
+              <div className="rounded-lg border p-4 space-y-2 relative group">
+                <div className="flex items-center justify-between gap-2">
+                  <code className="text-sm font-bold block break-all">giraffecloud status</code>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 shrink-0"
+                    onClick={() => handleCopy("giraffecloud status", "cmd-status")}
+                  >
+                    {copiedStep === "cmd-status" ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+                  </Button>
+                </div>
                 <p className="text-xs text-muted-foreground">Check tunnel connection status.</p>
               </div>
-              <div className="rounded-lg border p-4 space-y-2">
-                <code className="text-sm font-bold block">giraffecloud version</code>
+              <div className="rounded-lg border p-4 space-y-2 relative group">
+                <div className="flex items-center justify-between gap-2">
+                  <code className="text-sm font-bold block break-all">giraffecloud version</code>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 shrink-0"
+                    onClick={() => handleCopy("giraffecloud version", "cmd-version")}
+                  >
+                    {copiedStep === "cmd-version" ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+                  </Button>
+                </div>
                 <p className="text-xs text-muted-foreground">Display version information.</p>
               </div>
             </div>
@@ -279,20 +319,60 @@ export default function GettingStartedPage() {
               <Server className="h-4 w-4" /> Service Management
             </h4>
             <div className="grid gap-4 md:grid-cols-2">
-              <div className="rounded-lg border p-4 space-y-2">
-                <code className="text-sm font-bold block">giraffecloud service install</code>
+              <div className="rounded-lg border p-4 space-y-2 relative group">
+                <div className="flex items-center justify-between gap-2">
+                  <code className="text-sm font-bold block break-all">giraffecloud service install</code>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 shrink-0"
+                    onClick={() => handleCopy("giraffecloud service install", "cmd-svc-install")}
+                  >
+                    {copiedStep === "cmd-svc-install" ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+                  </Button>
+                </div>
                 <p className="text-xs text-muted-foreground">Install as system service.</p>
               </div>
-              <div className="rounded-lg border p-4 space-y-2">
-                <code className="text-sm font-bold block">giraffecloud service start</code>
+              <div className="rounded-lg border p-4 space-y-2 relative group">
+                <div className="flex items-center justify-between gap-2">
+                  <code className="text-sm font-bold block break-all">giraffecloud service start</code>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 shrink-0"
+                    onClick={() => handleCopy("giraffecloud service start", "cmd-svc-start")}
+                  >
+                    {copiedStep === "cmd-svc-start" ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+                  </Button>
+                </div>
                 <p className="text-xs text-muted-foreground">Start the service.</p>
               </div>
-              <div className="rounded-lg border p-4 space-y-2">
-                <code className="text-sm font-bold block">giraffecloud service stop</code>
+              <div className="rounded-lg border p-4 space-y-2 relative group">
+                <div className="flex items-center justify-between gap-2">
+                  <code className="text-sm font-bold block break-all">giraffecloud service stop</code>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 shrink-0"
+                    onClick={() => handleCopy("giraffecloud service stop", "cmd-svc-stop")}
+                  >
+                    {copiedStep === "cmd-svc-stop" ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+                  </Button>
+                </div>
                 <p className="text-xs text-muted-foreground">Stop the service.</p>
               </div>
-              <div className="rounded-lg border p-4 space-y-2">
-                <code className="text-sm font-bold block">giraffecloud service health-check</code>
+              <div className="rounded-lg border p-4 space-y-2 relative group">
+                <div className="flex items-center justify-between gap-2">
+                  <code className="text-sm font-bold block break-all">giraffecloud service health-check</code>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 shrink-0"
+                    onClick={() => handleCopy("giraffecloud service health-check", "cmd-svc-health")}
+                  >
+                    {copiedStep === "cmd-svc-health" ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+                  </Button>
+                </div>
                 <p className="text-xs text-muted-foreground">Run comprehensive health check.</p>
               </div>
             </div>
@@ -305,12 +385,32 @@ export default function GettingStartedPage() {
               <RefreshCw className="h-4 w-4" /> Update Commands
             </h4>
             <div className="grid gap-4 md:grid-cols-2">
-              <div className="rounded-lg border p-4 space-y-2">
-                <code className="text-sm font-bold block">giraffecloud update</code>
+              <div className="rounded-lg border p-4 space-y-2 relative group">
+                <div className="flex items-center justify-between gap-2">
+                  <code className="text-sm font-bold block break-all">giraffecloud update</code>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 shrink-0"
+                    onClick={() => handleCopy("giraffecloud update", "cmd-update")}
+                  >
+                    {copiedStep === "cmd-update" ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+                  </Button>
+                </div>
                 <p className="text-xs text-muted-foreground">Check for and install updates.</p>
               </div>
-              <div className="rounded-lg border p-4 space-y-2">
-                <code className="text-sm font-bold block">giraffecloud auto-update enable</code>
+              <div className="rounded-lg border p-4 space-y-2 relative group">
+                <div className="flex items-center justify-between gap-2">
+                  <code className="text-sm font-bold block break-all">giraffecloud auto-update enable</code>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 shrink-0"
+                    onClick={() => handleCopy("giraffecloud auto-update enable", "cmd-autoupdate")}
+                  >
+                    {copiedStep === "cmd-autoupdate" ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+                  </Button>
+                </div>
                 <p className="text-xs text-muted-foreground">Enable automatic updates.</p>
               </div>
             </div>
