@@ -1,64 +1,44 @@
 "use client";
 
-import React from "react";
-import { Box, Container, Paper, Tab, Tabs, Typography } from "@mui/material";
-import TokenManagement from "@/components/dashboard/settings/TokenManagement";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import TokenManagement from "./TokenManagement";
 
-interface TabPanelProps {
-  children?: React.ReactNode;
-  index: number;
-  value: number;
-}
-
-function TabPanel(props: TabPanelProps) {
-  const { children, value, index, ...other } = props;
-
+export default function SettingsPage() {
   return (
-    <div
-      role="tabpanel"
-      hidden={value !== index}
-      id={`settings-tabpanel-${index}`}
-      aria-labelledby={`settings-tab-${index}`}
-      {...other}
-    >
-      {value === index && <Box sx={{ p: 3 }}>{children}</Box>}
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-lg font-medium">Settings</h3>
+        <p className="text-sm text-muted-foreground">
+          Manage your account settings and API access.
+        </p>
+      </div>
+
+      <Tabs defaultValue="api-tokens" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="api-tokens">API Tokens</TabsTrigger>
+          <TabsTrigger value="general" disabled>General</TabsTrigger>
+          <TabsTrigger value="notifications" disabled>Notifications</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="api-tokens" className="space-y-4">
+          <TokenManagement />
+        </TabsContent>
+
+        <TabsContent value="general">
+          <Card>
+            <CardHeader>
+              <CardTitle>General Settings</CardTitle>
+              <CardDescription>
+                Manage your general account settings.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <p className="text-sm text-muted-foreground">Coming soon...</p>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
-
-function a11yProps(index: number) {
-  return {
-    id: `settings-tab-${index}`,
-    "aria-controls": `settings-tabpanel-${index}`,
-  };
-}
-
-const SettingsPage = () => {
-  const [value, setValue] = React.useState(0);
-
-  const handleChange = (_event: React.SyntheticEvent, newValue: number) => {
-    setValue(newValue);
-  };
-
-  return (
-    <Container maxWidth="lg" sx={{ mt: 4 }}>
-      <Typography variant="h4" gutterBottom>
-        Settings
-      </Typography>
-      <Paper sx={{ width: "100%" }}>
-        <Box sx={{ borderBottom: 1, borderColor: "divider" }}>
-          <Tabs value={value} onChange={handleChange} aria-label="settings tabs">
-            <Tab label="API Tokens" {...a11yProps(0)} />
-            {/* Add more tabs here as needed */}
-          </Tabs>
-        </Box>
-        <TabPanel value={value} index={0}>
-          <TokenManagement />
-        </TabPanel>
-        {/* Add more TabPanels here as needed */}
-      </Paper>
-    </Container>
-  );
-};
-
-export default SettingsPage;

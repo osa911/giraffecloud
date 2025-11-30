@@ -10,5 +10,9 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default function TunnelsPage() {
-  return <TunnelList />;
+  return (
+    <div className="flex-1 space-y-4">
+      <TunnelList />
+    </div>
+  );
 }

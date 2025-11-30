@@ -29,6 +29,18 @@ export interface APIResponse<T> {
   };
 }
 
+export class ApiError extends Error {
+  code?: string;
+  details?: unknown;
+
+  constructor(message: string, code?: string, details?: unknown) {
+    super(message);
+    this.name = "ApiError";
+    this.code = code;
+    this.details = details;
+  }
+}
+
 // CSRF-related types
 type CSRFConfig = {
   getCsrfToken: () => string | undefined | Promise<string | undefined>;

@@ -1,21 +1,17 @@
-import React from "react";
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
-import { AppRouterCacheProvider } from "@mui/material-nextjs/v15-appRouter";
 import { AuthProvider } from "@/contexts/AuthProvider";
 import CookieValidator from "@/components/auth/CookieValidator";
-import { ThemeProvider } from "@mui/material/styles";
-import CssBaseline from "@mui/material/CssBaseline";
-import theme from "@/styles/theme";
-import { Toaster } from "react-hot-toast";
+import { ThemeProvider } from "@/components/theme-provider";
+import { Toaster } from "@/components/ui/sonner";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
+import "./globals.css";
 
 const inter = Inter({
   subsets: ["latin"],
-  display: "swap",
   variable: "--font-inter",
-  weight: ["300", "400", "500", "700"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -23,22 +19,26 @@ export const metadata: Metadata = {
   description: "Secure tunnel service for your applications",
 };
 
-type RootServerLayoutProps = {
+export default function RootLayout({
+  children,
+}: Readonly<{
   children: React.ReactNode;
-};
-
-export default function RootServerLayout({ children }: RootServerLayoutProps) {
+}>) {
   return (
-    <html lang="en" className={inter.className}>
-      <body>
-        <AppRouterCacheProvider>
-          <ThemeProvider theme={theme}>
-            <CssBaseline />
-            <CookieValidator />
-            <AuthProvider>{children}</AuthProvider>
-            <Toaster />
-          </ThemeProvider>
-        </AppRouterCacheProvider>
+    <html lang="en" suppressHydrationWarning>
+      <body className={`${inter.variable} font-sans antialiased`}>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="dark"
+          enableSystem
+          disableTransitionOnChange
+        >
+          <CookieValidator />
+          <AuthProvider>
+            {children}
+          </AuthProvider>
+          <Toaster />
+        </ThemeProvider>
         <Analytics />
         <SpeedInsights />
       </body>

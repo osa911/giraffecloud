@@ -1,5 +1,5 @@
 import axios, { AxiosInstance, AxiosResponse, AxiosError } from "axios";
-import toast from "react-hot-toast";
+import { toast } from "@/lib/toast";
 import baseApiClient, {
   BaseApiClientParams,
   CSRF_COOKIE_NAME,
@@ -67,6 +67,13 @@ axiosClient.interceptors.response.use(
     // Log the error in development only
     if (process.env.NODE_ENV === "development") {
       console.error("API Error:", error.response?.status, error.response?.data, error.config?.url);
+    }
+
+    // Handle network errors (e.g., backend down)
+    if (!error.response) {
+      console.error("Network Error:", error.message);
+      toast.error("Unable to connect to the server. Please check your connection or try again later.");
+      return Promise.reject(error);
     }
 
     // Handle CSRF errors

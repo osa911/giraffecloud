@@ -20,11 +20,12 @@ import {
 import { auth as firebaseAuth } from "@/services/firebaseService";
 import { handleTokenChanged } from "@/lib/actions/auth.actions";
 import { User } from "@/lib/actions/user.types";
-import { logout, loginWithTokenAction, registerWithEmailAction } from "@/lib/actions/auth.actions";
+import { logout, loginWithTokenAction, registerWithEmailAction, getAuthUser } from "@/lib/actions/auth.actions";
 import { LoginWithTokenFormState, RegisterRequest } from "@/lib/actions/auth.types";
 
 type AuthContextType = {
   user: User | null;
+  loading: boolean;
   signUp: (email: string, password: string, name: string) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
@@ -48,6 +49,7 @@ type AuthProviderProps = {
 
 export const AuthProvider = ({ children, initialUser = null }: AuthProviderProps) => {
   const [user, setUser] = useState<User | null>(initialUser);
+  const [loading, setLoading] = useState(!initialUser);
   const [, startTransition] = useTransition();
   const [, loginWithToken] = useActionState<undefined, LoginWithTokenFormState>(
     loginWithTokenAction,
@@ -57,6 +59,7 @@ export const AuthProvider = ({ children, initialUser = null }: AuthProviderProps
     registerWithEmailAction,
     undefined,
   );
+
   /**
    * Handle refresh token changes
    */
@@ -67,10 +70,18 @@ export const AuthProvider = ({ children, initialUser = null }: AuthProviderProps
         try {
           const idToken = await firebaseUser.getIdToken();
           await handleTokenChanged(idToken);
+
+          // Fetch user data after token verification
+          const user = await getAuthUser({ redirect: false });
+          setUser(user);
         } catch (error) {
           console.error("Error getting ID token:", error);
+          setUser(null);
         }
+      } else {
+        setUser(null);
       }
+      setLoading(false);
     });
 
     return () => unsubscribe();
@@ -154,6 +165,7 @@ export const AuthProvider = ({ children, initialUser = null }: AuthProviderProps
     <AuthContext.Provider
       value={{
         user,
+        loading,
         signUp,
         signIn,
         signInWithGoogle,

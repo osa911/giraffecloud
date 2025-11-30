@@ -1,32 +1,40 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import {
-  Box,
-  Button,
-  IconButton,
-  Paper,
   Table,
   TableBody,
   TableCell,
-  TableContainer,
   TableHead,
+  TableHeader,
   TableRow,
-  Typography,
-  Alert,
-  Snackbar,
-} from "@mui/material";
-import DeleteIcon from "@mui/icons-material/Delete";
+} from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Trash, Plus, AlertTriangle, Loader2 } from "lucide-react";
 import { format } from "date-fns";
-import { getTokensList, revokeToken, type Token } from "@/api/tokenApi";
-import { ApiError } from "@/utils/error";
+import { getTokensList, revokeToken, type Token } from "@/services/api/tokenApi";
+import { ApiError } from "@/services/apiClient/baseApiClient";
 import TokenDialog from "./TokenDialog";
+import { toast } from "@/lib/toast";
 
-const TokenManagement: React.FC = () => {
+export default function TokenManagement() {
   const [tokens, setTokens] = useState<Token[]>([]);
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const fetchTokens = async () => {
     try {
@@ -35,7 +43,8 @@ const TokenManagement: React.FC = () => {
       setTokens(data);
       setError(null);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to fetch tokens");
+      const errorMessage = err instanceof ApiError ? err.message : "Failed to fetch tokens";
+      setError(errorMessage);
       console.error("Error fetching tokens:", err);
     } finally {
       setLoading(false);
@@ -47,89 +56,130 @@ const TokenManagement: React.FC = () => {
   }, []);
 
   const handleTokenCreated = () => {
-    // Refresh the tokens list after a new token is created
     fetchTokens();
   };
 
   const handleRevokeToken = async (id: string) => {
+
     try {
-      setLoading(true);
       await revokeToken(id);
       setTokens(tokens.filter((token) => token.id !== id));
-      setError(null);
+      toast.success("Token revoked successfully");
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to revoke token");
+      const errorMessage = err instanceof ApiError ? err.message : "Failed to revoke token";
+      toast.error(errorMessage);
       console.error("Error revoking token:", err);
-    } finally {
-      setLoading(false);
     }
   };
 
-  const handleClose = () => {
-    setOpen(false);
-  };
-
-  const handleErrorClose = () => {
-    setError(null);
-  };
-
   return (
-    <Box sx={{ p: 3 }}>
-      <Box sx={{ display: "flex", justifyContent: "space-between", mb: 3 }}>
-        <Typography variant="h5">API Tokens</Typography>
-        <Button variant="contained" onClick={() => setOpen(true)} disabled={loading}>
-          Create New Token
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-medium">API Tokens</h3>
+          <p className="text-sm text-muted-foreground">
+            Manage your API tokens for accessing the GiraffeCloud API programmatically.
+          </p>
+        </div>
+        <Button onClick={() => setOpen(true)}>
+          <Plus className="mr-2 h-4 w-4" /> Create New Token
         </Button>
-      </Box>
+      </div>
 
-      <TableContainer component={Paper}>
+      {error && (
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Error</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      <div className="rounded-md border">
         <Table>
-          <TableHead>
+          <TableHeader>
             <TableRow>
-              <TableCell>Name</TableCell>
-              <TableCell>Created</TableCell>
-              <TableCell>Last Used</TableCell>
-              <TableCell>Expires</TableCell>
-              <TableCell>Actions</TableCell>
+              <TableHead>Name</TableHead>
+              <TableHead>Created</TableHead>
+              <TableHead>Last Used</TableHead>
+              <TableHead>Expires</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
             </TableRow>
-          </TableHead>
+          </TableHeader>
           <TableBody>
-            {tokens.map((token) => (
-              <TableRow key={token.id}>
-                <TableCell>{token.name}</TableCell>
-                <TableCell>{format(new Date(token.created_at), "PPp")}</TableCell>
-                <TableCell>{format(new Date(token.last_used_at), "PPp")}</TableCell>
-                <TableCell>{format(new Date(token.expires_at), "PPp")}</TableCell>
-                <TableCell>
-                  <IconButton
-                    onClick={() => handleRevokeToken(token.id)}
-                    color="error"
-                    size="small"
-                    disabled={loading}
-                  >
-                    <DeleteIcon />
-                  </IconButton>
+            {loading ? (
+              <TableRow>
+                <TableCell colSpan={5} className="h-24 text-center">
+                  <div className="flex items-center justify-center gap-2 text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading tokens...
+                  </div>
                 </TableCell>
               </TableRow>
-            ))}
+            ) : tokens.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
+                  No tokens found. Create one to get started.
+                </TableCell>
+              </TableRow>
+            ) : (
+              tokens.map((token) => (
+                <TableRow key={token.id}>
+                  <TableCell className="font-medium">{token.name}</TableCell>
+                  <TableCell>{format(new Date(token.created_at), "PPp")}</TableCell>
+                  <TableCell>
+                    {token.last_used_at
+                      ? format(new Date(token.last_used_at), "PPp")
+                      : "Never"}
+                  </TableCell>
+                  <TableCell>
+                    {token.expires_at
+                      ? format(new Date(token.expires_at), "PPp")
+                      : "Never"}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                        >
+                          <Trash className="h-4 w-4" />
+                          <span className="sr-only">Revoke</span>
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This action cannot be undone. This will permanently revoke the token
+                            and any applications using it will stop working immediately.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={() => handleRevokeToken(token.id)}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          >
+                            Revoke Token
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
           </TableBody>
         </Table>
-      </TableContainer>
+      </div>
 
-      <TokenDialog open={open} onClose={handleClose} onSuccess={handleTokenCreated} />
-
-      <Snackbar
-        open={!!error}
-        autoHideDuration={6000}
-        onClose={handleErrorClose}
-        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
-      >
-        <Alert onClose={handleErrorClose} severity="error" sx={{ width: "100%" }}>
-          {error}
-        </Alert>
-      </Snackbar>
-    </Box>
+      <TokenDialog
+        open={open}
+        onOpenChange={setOpen}
+        onSuccess={handleTokenCreated}
+      />
+    </div>
   );
-};
-
-export default TokenManagement;
+}

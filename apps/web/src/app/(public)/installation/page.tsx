@@ -1,182 +1,149 @@
 "use client";
 
-import { Box, Container, Typography, Card, CardContent, Stack, Button } from "@mui/material";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Terminal, Download, ExternalLink } from "lucide-react";
 
 export default function InstallationPage() {
+  const CodeBlock = ({ code }: { code: string }) => (
+    <div className="bg-muted p-4 rounded-md overflow-x-auto font-mono text-sm my-2">
+      {code}
+    </div>
+  );
+
   return (
-    <Container maxWidth="md">
-      <Box sx={{ py: 6 }}>
-        <Typography variant="h3" gutterBottom>
-          Install GiraffeCloud
-        </Typography>
-        <Typography variant="body1" color="text.secondary" sx={{ mb: 4 }}>
-          Choose the one-liner for your platform or view the full installation guide.
-        </Typography>
+    <div className="container mx-auto px-4 py-12 max-w-4xl">
+      <h1 className="text-4xl font-bold mb-4">Install GiraffeCloud</h1>
+      <p className="text-lg text-muted-foreground mb-8">
+        Choose the one-liner for your platform or view the full installation guide.
+      </p>
 
-        <Stack spacing={3}>
-          <Card variant="outlined">
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Linux/macOS - Quick Install
-              </Typography>
-              <Box
-                component="pre"
-                sx={{ p: 2, bgcolor: "background.paper", borderRadius: 1, overflow: "auto" }}
-              >
-                {`curl -fsSL https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/install.sh | bash`}
-              </Box>
-              <Typography variant="body2" color="text.secondary">
-                Installs the CLI in your user profile. To install and start the Linux system service
-                in one step:
-              </Typography>
-              <Box
-                component="pre"
-                sx={{ p: 2, bgcolor: "background.paper", borderRadius: 1, overflow: "auto" }}
-              >
-                {`curl -fsSL https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/install.sh | bash -s -- --service system`}
-              </Box>
-            </CardContent>
-          </Card>
+      <div className="grid gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Terminal className="h-5 w-5" />
+              Linux / macOS
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <h3 className="font-medium mb-2">Quick Install</h3>
+              <p className="text-sm text-muted-foreground mb-2">
+                Installs the CLI in your user profile.
+              </p>
+              <CodeBlock code="curl -fsSL https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/install.sh | bash" />
+            </div>
 
-          <Card variant="outlined">
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Linux/macOS - Interactive (prompts)
-              </Typography>
-              <Box
-                component="pre"
-                sx={{ p: 2, bgcolor: "background.paper", borderRadius: 1, overflow: "auto" }}
-              >
-                {`bash <(curl -fsSL https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/install.sh)`}
-              </Box>
-            </CardContent>
-          </Card>
+            <div>
+              <h3 className="font-medium mb-2">Install as System Service</h3>
+              <p className="text-sm text-muted-foreground mb-2">
+                Installs and starts the Linux system service in one step:
+              </p>
+              <CodeBlock code="curl -fsSL https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/install.sh | bash -s -- --service system" />
+            </div>
 
-          <Card variant="outlined">
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Windows (PowerShell)
-              </Typography>
-              <Box
-                component="pre"
-                sx={{ p: 2, bgcolor: "background.paper", borderRadius: 1, overflow: "auto" }}
-              >
-                {`iwr -useb https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/install.ps1 | iex`}
-              </Box>
-            </CardContent>
-          </Card>
+            <div>
+              <h3 className="font-medium mb-2">Interactive Mode</h3>
+              <p className="text-sm text-muted-foreground mb-2">
+                Run with prompts for custom configuration:
+              </p>
+              <CodeBlock code="bash <(curl -fsSL https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/install.sh)" />
+            </div>
+          </CardContent>
+        </Card>
 
-          <Stack direction="row" spacing={2}>
-            <Button
-              variant="contained"
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Download className="h-5 w-5" />
+              Windows (PowerShell)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <CodeBlock code="iwr -useb https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/install.ps1 | iex" />
+          </CardContent>
+        </Card>
+
+        <div className="flex flex-wrap gap-4 mt-4">
+          <Button variant="outline" asChild>
+            <a
               href="https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/install.sh"
               target="_blank"
               rel="noopener noreferrer"
             >
-              View install.sh
-            </Button>
-            <Button
-              variant="outlined"
+              View install.sh <ExternalLink className="ml-2 h-4 w-4" />
+            </a>
+          </Button>
+          <Button variant="outline" asChild>
+            <a
               href="https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/install.ps1"
               target="_blank"
               rel="noopener noreferrer"
             >
-              View install.ps1
-            </Button>
-            <Button
-              variant="text"
+              View install.ps1 <ExternalLink className="ml-2 h-4 w-4" />
+            </a>
+          </Button>
+          <Button variant="link" asChild>
+            <a
               href="https://github.com/osa911/giraffecloud/blob/main/docs/installation.md"
               target="_blank"
               rel="noopener noreferrer"
             >
-              Full installation guide
-            </Button>
-          </Stack>
-        </Stack>
+              Full installation guide <ExternalLink className="ml-2 h-4 w-4" />
+            </a>
+          </Button>
+        </div>
 
-        {/* Uninstall Section */}
-        <Box sx={{ mt: 6 }}>
-          <Typography variant="h4" gutterBottom>
-            Uninstall GiraffeCloud
-          </Typography>
-          <Typography variant="body1" color="text.secondary" sx={{ mb: 4 }}>
+        <div className="mt-12">
+          <h2 className="text-3xl font-bold mb-6">Uninstall GiraffeCloud</h2>
+          <p className="text-muted-foreground mb-6">
             Remove GiraffeCloud from your system using our uninstall script.
-          </Typography>
+          </p>
 
-          <Stack spacing={3}>
-            <Card variant="outlined">
-              <CardContent>
-                <Typography variant="h6" gutterBottom>
-                  Linux/macOS - Quick Uninstall
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                  Remove binary and service (keeps configuration):
-                </Typography>
-                <Box
-                  component="pre"
-                  sx={{ p: 2, bgcolor: "background.paper", borderRadius: 1, overflow: "auto" }}
-                >
-                  {`curl -fsSL https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/uninstall.sh | bash`}
-                </Box>
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 2, mb: 1 }}>
-                  Remove everything including configuration and data:
-                </Typography>
-                <Box
-                  component="pre"
-                  sx={{ p: 2, bgcolor: "background.paper", borderRadius: 1, overflow: "auto" }}
-                >
-                  {`curl -fsSL https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/uninstall.sh | bash -s -- --remove-data`}
-                </Box>
+          <div className="grid gap-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Linux / macOS</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <h3 className="font-medium mb-2">Quick Uninstall</h3>
+                  <p className="text-sm text-muted-foreground mb-2">
+                    Remove binary and service (keeps configuration):
+                  </p>
+                  <CodeBlock code="curl -fsSL https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/uninstall.sh | bash" />
+                </div>
+                <div>
+                  <h3 className="font-medium mb-2">Full Uninstall</h3>
+                  <p className="text-sm text-muted-foreground mb-2">
+                    Remove everything including configuration and data:
+                  </p>
+                  <CodeBlock code="curl -fsSL https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/uninstall.sh | bash -s -- --remove-data" />
+                </div>
               </CardContent>
             </Card>
 
-            <Card variant="outlined">
-              <CardContent>
-                <Typography variant="h6" gutterBottom>
-                  Windows (PowerShell) - Run as Administrator
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                  Remove binary and service (keeps configuration):
-                </Typography>
-                <Box
-                  component="pre"
-                  sx={{ p: 2, bgcolor: "background.paper", borderRadius: 1, overflow: "auto" }}
-                >
-                  {`Invoke-WebRequest -Uri "https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/uninstall.ps1" -OutFile "$env:TEMP\\uninstall.ps1"; & "$env:TEMP\\uninstall.ps1"`}
-                </Box>
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 2, mb: 1 }}>
-                  Remove everything including configuration and data:
-                </Typography>
-                <Box
-                  component="pre"
-                  sx={{ p: 2, bgcolor: "background.paper", borderRadius: 1, overflow: "auto" }}
-                >
-                  {`Invoke-WebRequest -Uri "https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/uninstall.ps1" -OutFile "$env:TEMP\\uninstall.ps1"; & "$env:TEMP\\uninstall.ps1" -RemoveData`}
-                </Box>
+            <Card>
+              <CardHeader>
+                <CardTitle>Windows (PowerShell)</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <p className="text-sm font-medium text-destructive">Run as Administrator</p>
+                <div>
+                  <h3 className="font-medium mb-2">Quick Uninstall</h3>
+                  <CodeBlock code='Invoke-WebRequest -Uri "https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/uninstall.ps1" -OutFile "$env:TEMP\uninstall.ps1"; & "$env:TEMP\uninstall.ps1"' />
+                </div>
+                <div>
+                  <h3 className="font-medium mb-2">Full Uninstall</h3>
+                  <CodeBlock code='Invoke-WebRequest -Uri "https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/uninstall.ps1" -OutFile "$env:TEMP\uninstall.ps1"; & "$env:TEMP\uninstall.ps1" -RemoveData' />
+                </div>
               </CardContent>
             </Card>
-
-            <Stack direction="row" spacing={2}>
-              <Button
-                variant="outlined"
-                href="https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/uninstall.sh"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                View uninstall.sh
-              </Button>
-              <Button
-                variant="outlined"
-                href="https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/uninstall.ps1"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                View uninstall.ps1
-              </Button>
-            </Stack>
-          </Stack>
-        </Box>
-      </Box>
-    </Container>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

@@ -1,34 +1,43 @@
 "use client";
 
+import { useState } from "react";
 import {
-  Box,
   Card,
   CardContent,
+  CardDescription,
   CardHeader,
-  Stack,
-  Divider,
-  Paper,
-  IconButton,
-  Tooltip,
-  Button,
-  Typography,
-} from "@mui/material";
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import {
-  Download as DownloadIcon,
-  Key as KeyIcon,
-  VpnLock as TunnelIcon,
-  PlayArrow as PlayArrowIcon,
-  ContentCopy as ContentCopyIcon,
-  Check as CheckIcon,
-} from "@mui/icons-material";
-import { useState } from "react";
-import toast from "react-hot-toast";
+  Download,
+  Key,
+  Network,
+  Play,
+  Copy,
+  Check,
+  Terminal,
+  Server,
+  RefreshCw,
+  Settings,
+  Trash,
+  Activity,
+} from "lucide-react";
+import { toast } from "@/lib/toast";
 import TunnelDialog from "./tunnels/TunnelDialog";
 import TokenDialog from "./settings/TokenDialog";
 import { useTunnels } from "@/hooks/useTunnels";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { Separator } from "@/components/ui/separator";
+import { cn } from "@/lib/utils";
 
 export default function GettingStartedPage() {
-  const { mutate, tunnels } = useTunnels();
+  const { mutate } = useTunnels();
   const [copiedStep, setCopiedStep] = useState<number | null>(null);
 
   // Token creation dialog state
@@ -49,922 +58,277 @@ export default function GettingStartedPage() {
     setNewTokenValue(tokenValue);
   };
 
-  const handleCloseTokenDialog = () => {
-    setTokenDialogOpen(false);
-  };
-
   const installCommand = `curl -fsSL https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/install.sh | bash`;
   const windowsInstallCommand = `iwr -useb https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/install.ps1 | iex`;
 
+  const StepNumber = ({ number }: { number: number }) => (
+    <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground font-bold">
+      {number}
+    </div>
+  );
+
+  const CodeBlock = ({
+    code,
+    step,
+    label,
+  }: {
+    code: string;
+    step: number;
+    label?: string;
+  }) => (
+    <div className="relative mt-2 rounded-md bg-muted p-4">
+      {label && (
+        <div className="mb-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+          {label}
+        </div>
+      )}
+      <pre className="overflow-x-auto font-mono text-sm pr-10 whitespace-pre">
+        <code>{code}</code>
+      </pre>
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn(
+                "absolute right-2 top-2 h-8 w-8",
+                copiedStep === step && "text-green-500 hover:text-green-600"
+              )}
+              onClick={() => handleCopy(code, step)}
+            >
+              {copiedStep === step ? (
+                <Check className="h-4 w-4" />
+              ) : (
+                <Copy className="h-4 w-4" />
+              )}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>{copiedStep === step ? "Copied!" : "Copy command"}</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    </div>
+  );
+
   return (
-    <Box>
-      <Typography variant="h4" gutterBottom>
-        Getting Started
-      </Typography>
-      <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
-        Follow these steps to start using GiraffeCloud and expose your local applications to the
-        internet.
-      </Typography>
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-lg font-medium">Getting Started</h3>
+        <p className="text-sm text-muted-foreground">
+          Follow these steps to start using GiraffeCloud and expose your local applications to the internet.
+        </p>
+      </div>
 
       <Card>
-        <CardHeader title="Quick Start Guide" subheader="Set up your tunnel in 5 easy steps" />
-        <CardContent>
-          <Stack spacing={3}>
-            {/* Step 1: Install CLI */}
-            <Box>
-              <Stack direction="row" spacing={2} alignItems="flex-start">
-                <Box
-                  sx={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: "50%",
-                    bgcolor: "primary.main",
-                    color: "white",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontWeight: "bold",
-                    flexShrink: 0,
-                  }}
-                >
-                  1
-                </Box>
-                <Box sx={{ flex: 1 }}>
-                  <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
-                    <DownloadIcon color="primary" />
-                    <Typography variant="h6">Install the CLI</Typography>
-                  </Stack>
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                    Run this command in your terminal to install GiraffeCloud CLI:
-                  </Typography>
-                  <Paper
-                    variant="outlined"
-                    sx={{ p: 2, bgcolor: "background.default", position: "relative" }}
-                  >
-                    <Typography
-                      component="pre"
-                      sx={{
-                        fontFamily: "monospace",
-                        fontSize: "0.875rem",
-                        m: 0,
-                        overflow: "auto",
-                        pr: 5,
-                      }}
-                    >
-                      {installCommand}
-                    </Typography>
-                    <Tooltip title={copiedStep === 1 ? "Copied!" : "Copy command"}>
-                      <IconButton
-                        size="small"
-                        onClick={() => handleCopy(installCommand, 1)}
-                        sx={{ position: "absolute", top: 8, right: 8 }}
-                        color={copiedStep === 1 ? "success" : "default"}
-                      >
-                        {copiedStep === 1 ? <CheckIcon /> : <ContentCopyIcon />}
-                      </IconButton>
-                    </Tooltip>
-                  </Paper>
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ mt: 1, display: "block" }}
-                  >
-                    Windows users: Use PowerShell
-                  </Typography>
-                  <Paper
-                    variant="outlined"
-                    sx={{ p: 2, bgcolor: "background.default", position: "relative", mt: 1 }}
-                  >
-                    <Typography
-                      component="pre"
-                      sx={{
-                        fontFamily: "monospace",
-                        fontSize: "0.875rem",
-                        m: 0,
-                        overflow: "auto",
-                        pr: 5,
-                      }}
-                    >
-                      {windowsInstallCommand}
-                    </Typography>
-                    <Tooltip title={copiedStep === 5 ? "Copied!" : "Copy command"}>
-                      <IconButton
-                        size="small"
-                        onClick={() => handleCopy(windowsInstallCommand, 5)}
-                        sx={{ position: "absolute", top: 8, right: 8 }}
-                        color={copiedStep === 5 ? "success" : "default"}
-                      >
-                        {copiedStep === 5 ? <CheckIcon /> : <ContentCopyIcon />}
-                      </IconButton>
-                    </Tooltip>
-                  </Paper>
-                </Box>
-              </Stack>
-            </Box>
+        <CardHeader>
+          <CardTitle>Quick Start Guide</CardTitle>
+          <CardDescription>Set up your tunnel in 5 easy steps</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-8">
+          {/* Step 1: Install CLI */}
+          <div className="flex gap-4">
+            <StepNumber number={1} />
+            <div className="flex-1 space-y-2 min-w-0">
+              <div className="flex items-center gap-2">
+                <Download className="h-5 w-5 text-primary" />
+                <h4 className="font-medium">Install the CLI</h4>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Run this command in your terminal to install GiraffeCloud CLI:
+              </p>
+              <CodeBlock code={installCommand} step={1} label="Linux / macOS" />
+              <CodeBlock code={windowsInstallCommand} step={5} label="Windows (PowerShell)" />
+            </div>
+          </div>
 
-            <Divider />
+          <Separator />
 
-            {/* Step 2: Create API Token */}
-            <Box>
-              <Stack direction="row" spacing={2} alignItems="flex-start">
-                <Box
-                  sx={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: "50%",
-                    bgcolor: "primary.main",
-                    color: "white",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontWeight: "bold",
-                    flexShrink: 0,
-                  }}
-                >
-                  2
-                </Box>
-                <Box sx={{ flex: 1 }}>
-                  <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
-                    <KeyIcon color="primary" />
-                    <Typography variant="h6">Create an API Token</Typography>
-                  </Stack>
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                    Generate a token to authenticate your CLI with GiraffeCloud via secure mutual
-                    TLS (mTLS) authentication.
-                  </Typography>
-                  <Button
-                    variant="contained"
-                    onClick={() => setTokenDialogOpen(true)}
-                    startIcon={<KeyIcon />}
-                  >
-                    Create Token
-                  </Button>
-                </Box>
-              </Stack>
-            </Box>
+          {/* Step 2: Create API Token */}
+          <div className="flex gap-4">
+            <StepNumber number={2} />
+            <div className="flex-1 space-y-2 min-w-0">
+              <div className="flex items-center gap-2">
+                <Key className="h-5 w-5 text-primary" />
+                <h4 className="font-medium">Create an API Token</h4>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Generate a token to authenticate your CLI with GiraffeCloud via secure mutual TLS (mTLS) authentication.
+              </p>
+              <Button onClick={() => setTokenDialogOpen(true)}>
+                <Key className="mr-2 h-4 w-4" />
+                Create Token
+              </Button>
+            </div>
+          </div>
 
-            <Divider />
+          <Separator />
 
-            {/* Step 3: Login with API Token */}
-            <Box>
-              <Stack direction="row" spacing={2} alignItems="flex-start">
-                <Box
-                  sx={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: "50%",
-                    bgcolor: "primary.main",
-                    color: "white",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontWeight: "bold",
-                    flexShrink: 0,
-                  }}
-                >
-                  3
-                </Box>
-                <Box sx={{ flex: 1 }}>
-                  <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
-                    <DownloadIcon color="primary" />
-                    <Typography variant="h6">Login and Download Certificates</Typography>
-                  </Stack>
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                    Use your API token to login and download mTLS certificates:
-                  </Typography>
-                  <Paper
-                    variant="outlined"
-                    sx={{ p: 2, bgcolor: "background.default", position: "relative" }}
-                  >
-                    <Typography
-                      component="pre"
-                      sx={{
-                        fontFamily: "monospace",
-                        fontSize: "0.875rem",
-                        m: 0,
-                        overflow: "auto",
-                        pr: 5,
-                      }}
-                    >
-                      {newTokenValue
-                        ? `giraffecloud login --token ${"*".repeat(40)}`
-                        : `giraffecloud login --token YOUR_API_TOKEN`}
-                    </Typography>
-                    <Tooltip title={copiedStep === 3 ? "Copied!" : "Copy command"}>
-                      <IconButton
-                        size="small"
-                        onClick={() =>
-                          handleCopy(
-                            newTokenValue
-                              ? `giraffecloud login --token ${newTokenValue}`
-                              : "giraffecloud login --token YOUR_API_TOKEN",
-                            3,
-                          )
-                        }
-                        sx={{ position: "absolute", top: 8, right: 8 }}
-                        color={copiedStep === 3 ? "success" : "default"}
-                      >
-                        {copiedStep === 3 ? <CheckIcon /> : <ContentCopyIcon />}
-                      </IconButton>
-                    </Tooltip>
-                  </Paper>
-                </Box>
-              </Stack>
-            </Box>
+          {/* Step 3: Login */}
+          <div className="flex gap-4">
+            <StepNumber number={3} />
+            <div className="flex-1 space-y-2 min-w-0">
+              <div className="flex items-center gap-2">
+                <Terminal className="h-5 w-5 text-primary" />
+                <h4 className="font-medium">Login and Download Certificates</h4>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Use your API token to login and download mTLS certificates:
+              </p>
+              <CodeBlock
+                code={
+                  newTokenValue
+                    ? `giraffecloud login --token ${newTokenValue}`
+                    : `giraffecloud login --token YOUR_API_TOKEN`
+                }
+                step={3}
+              />
+            </div>
+          </div>
 
-            <Divider />
+          <Separator />
 
-            {/* Step 4: Create a Tunnel */}
-            <Box>
-              <Stack direction="row" spacing={2} alignItems="flex-start">
-                <Box
-                  sx={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: "50%",
-                    bgcolor: "primary.main",
-                    color: "white",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontWeight: "bold",
-                    flexShrink: 0,
-                  }}
-                >
-                  4
-                </Box>
-                <Box sx={{ flex: 1 }}>
-                  <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
-                    <TunnelIcon color="primary" />
-                    <Typography variant="h6">Create a Tunnel</Typography>
-                  </Stack>
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                    Create a tunnel with your domain or use our free subdomain. Save the tunnel
-                    token that will be displayed.
-                  </Typography>
-                  <Button
-                    variant="contained"
-                    onClick={() => setTunnelDialogOpen(true)}
-                    startIcon={<TunnelIcon />}
-                  >
-                    Create Tunnel
-                  </Button>
-                </Box>
-              </Stack>
-            </Box>
+          {/* Step 4: Create Tunnel */}
+          <div className="flex gap-4">
+            <StepNumber number={4} />
+            <div className="flex-1 space-y-2 min-w-0">
+              <div className="flex items-center gap-2">
+                <Network className="h-5 w-5 text-primary" />
+                <h4 className="font-medium">Create a Tunnel</h4>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Create a tunnel with your domain or use our free subdomain.
+              </p>
+              <Button onClick={() => setTunnelDialogOpen(true)}>
+                <Network className="mr-2 h-4 w-4" />
+                Create Tunnel
+              </Button>
+            </div>
+          </div>
 
-            <Divider />
+          <Separator />
 
-            {/* Step 5: Connect - Two Options */}
-            <Box>
-              <Stack direction="row" spacing={2} alignItems="flex-start">
-                <Box
-                  sx={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: "50%",
-                    bgcolor: "primary.main",
-                    color: "white",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontWeight: "bold",
-                    flexShrink: 0,
-                  }}
-                >
-                  5
-                </Box>
-                <Box sx={{ flex: 1 }}>
-                  <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
-                    <PlayArrowIcon color="primary" />
-                    <Typography variant="h6">Connect Your Tunnel</Typography>
-                  </Stack>
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                    Choose how to run your tunnel:
-                  </Typography>
+          {/* Step 5: Connect */}
+          <div className="flex gap-4">
+            <StepNumber number={5} />
+            <div className="flex-1 space-y-4 min-w-0">
+              <div className="flex items-center gap-2">
+                <Play className="h-5 w-5 text-primary" />
+                <h4 className="font-medium">Connect Your Tunnel</h4>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Choose how to run your tunnel:
+              </p>
 
-                  {/* Option 1: Direct Connection */}
-                  <Box sx={{ mb: 3 }}>
-                    <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                      Option 1: Direct Connection (Foreground)
-                    </Typography>
-                    <Typography
-                      variant="caption"
-                      color="text.secondary"
-                      display="block"
-                      sx={{ mb: 1 }}
-                    >
-                      Run the tunnel directly in your terminal:
-                    </Typography>
-                    <Paper
-                      variant="outlined"
-                      sx={{ p: 2, bgcolor: "background.default", position: "relative" }}
-                    >
-                      <Typography
-                        component="pre"
-                        sx={{
-                          fontFamily: "monospace",
-                          fontSize: "0.875rem",
-                          m: 0,
-                          overflow: "auto",
-                          pr: 5,
-                        }}
-                      >
-                        giraffecloud connect
-                      </Typography>
-                      <Tooltip title={copiedStep === 5 ? "Copied!" : "Copy command"}>
-                        <IconButton
-                          size="small"
-                          onClick={() => handleCopy("giraffecloud connect", 5)}
-                          sx={{ position: "absolute", top: 8, right: 8 }}
-                          color={copiedStep === 5 ? "success" : "default"}
-                        >
-                          {copiedStep === 5 ? <CheckIcon /> : <ContentCopyIcon />}
-                        </IconButton>
-                      </Tooltip>
-                    </Paper>
-                    <Typography
-                      variant="caption"
-                      color="text.secondary"
-                      display="block"
-                      sx={{ mt: 1 }}
-                    >
-                      💡 <strong>Tip:</strong> If you have multiple tunnels, specify which one with{" "}
-                      <code style={{ fontSize: "0.75rem" }}>
-                        giraffecloud connect --domain your-domain.com
-                      </code>
-                    </Typography>
-                  </Box>
+              <div className="space-y-2">
+                <h5 className="text-sm font-medium">Option 1: Direct Connection (Foreground)</h5>
+                <p className="text-xs text-muted-foreground">Run the tunnel directly in your terminal:</p>
+                <CodeBlock code="giraffecloud connect" step={5} />
+                <p className="text-xs text-muted-foreground mt-2">
+                  💡 <strong>Tip:</strong> If you have multiple tunnels, specify which one with{" "}
+                  <code className="bg-muted px-1 py-0.5 rounded">giraffecloud connect --domain your-domain.com</code>
+                </p>
+              </div>
 
-                  {/* Option 2: Install as Service */}
-                  <Box>
-                    <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                      Option 2: Install as System Service (Recommended for servers)
-                    </Typography>
-                    <Typography
-                      variant="caption"
-                      color="text.secondary"
-                      display="block"
-                      sx={{ mb: 1 }}
-                    >
-                      Install and run as a background service (auto-start on boot):
-                    </Typography>
-                    <Paper
-                      variant="outlined"
-                      sx={{ p: 2, bgcolor: "background.default", position: "relative", mb: 1 }}
-                    >
-                      <Typography
-                        component="pre"
-                        sx={{
-                          fontFamily: "monospace",
-                          fontSize: "0.875rem",
-                          m: 0,
-                          overflow: "auto",
-                          pr: 5,
-                        }}
-                      >
-                        giraffecloud service install
-                      </Typography>
-                      <Tooltip title={copiedStep === 6 ? "Copied!" : "Copy command"}>
-                        <IconButton
-                          size="small"
-                          onClick={() => handleCopy("giraffecloud service install", 6)}
-                          sx={{ position: "absolute", top: 8, right: 8 }}
-                          color={copiedStep === 6 ? "success" : "default"}
-                        >
-                          {copiedStep === 6 ? <CheckIcon /> : <ContentCopyIcon />}
-                        </IconButton>
-                      </Tooltip>
-                    </Paper>
-                    <Paper
-                      variant="outlined"
-                      sx={{ p: 2, bgcolor: "background.default", position: "relative" }}
-                    >
-                      <Typography
-                        component="pre"
-                        sx={{
-                          fontFamily: "monospace",
-                          fontSize: "0.875rem",
-                          m: 0,
-                          overflow: "auto",
-                          pr: 5,
-                        }}
-                      >
-                        giraffecloud service start
-                      </Typography>
-                      <Tooltip title={copiedStep === 7 ? "Copied!" : "Copy command"}>
-                        <IconButton
-                          size="small"
-                          onClick={() => handleCopy("giraffecloud service start", 7)}
-                          sx={{ position: "absolute", top: 8, right: 8 }}
-                          color={copiedStep === 7 ? "success" : "default"}
-                        >
-                          {copiedStep === 7 ? <CheckIcon /> : <ContentCopyIcon />}
-                        </IconButton>
-                      </Tooltip>
-                    </Paper>
-                  </Box>
-                  <Box>
-                    <Typography variant="body2" color="text.secondary" sx={{ mt: 3 }}>
-                      <strong>Note:</strong> GiraffeCloud supports HTTP/HTTPS and WebSocket traffic.
-                    </Typography>
-                  </Box>
-                </Box>
-              </Stack>
-            </Box>
-          </Stack>
+              <div className="space-y-2">
+                <h5 className="text-sm font-medium">Option 2: Install as System Service (Recommended)</h5>
+                <p className="text-xs text-muted-foreground">Install and run as a background service (auto-start on boot):</p>
+                <CodeBlock code="giraffecloud service install" step={6} />
+                <CodeBlock code="giraffecloud service start" step={7} />
+              </div>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
-      {/* CLI Commands Reference */}
-      <Card sx={{ mt: 3 }}>
-        <CardHeader
-          title="CLI Commands Reference"
-          subheader="Complete list of available commands"
-        />
-        <CardContent>
-          <Stack spacing={2}>
-            {/* Core Commands */}
-            <Box>
-              <Typography variant="h6" gutterBottom>
-                Core Commands
-              </Typography>
-              <Paper variant="outlined" sx={{ p: 2 }}>
-                <Stack spacing={1.5}>
-                  <Box>
-                    <Typography
-                      variant="body2"
-                      sx={{ fontFamily: "monospace", fontWeight: "bold" }}
-                    >
-                      giraffecloud login --token &lt;YOUR_TOKEN&gt;
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      Login and download client certificates for secure mutual TLS authentication
-                    </Typography>
-                    <Typography
-                      variant="caption"
-                      display="block"
-                      sx={{ fontFamily: "monospace", mt: 0.5 }}
-                    >
-                      Options: --api-host &lt;host&gt;, --api-port &lt;port&gt;
-                    </Typography>
-                  </Box>
-                  <Divider />
-                  <Box>
-                    <Typography
-                      variant="body2"
-                      sx={{ fontFamily: "monospace", fontWeight: "bold" }}
-                    >
-                      giraffecloud connect
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary" display="block">
-                      Connect to GiraffeCloud and establish a tunnel to expose your local service
-                    </Typography>
-                    <Typography
-                      variant="caption"
-                      display="block"
-                      color="text.secondary"
-                      sx={{ mt: 0.5 }}
-                    >
-                      • Single tunnel: Connects automatically
-                    </Typography>
-                    <Typography variant="caption" display="block" color="text.secondary">
-                      • Multiple tunnels: Use <code>--domain</code> to specify which one
-                    </Typography>
-                    <Typography variant="caption" display="block" color="text.secondary">
-                      • Last connected domain is saved for quick reconnect
-                    </Typography>
-                    <Typography
-                      variant="caption"
-                      display="block"
-                      sx={{ fontFamily: "monospace", mt: 0.5 }}
-                    >
-                      Options: --domain &lt;domain&gt;, --tunnel-host &lt;host&gt;, --tunnel-port
-                      &lt;port&gt;
-                    </Typography>
-                  </Box>
-                  <Divider />
-                  <Box>
-                    <Typography
-                      variant="body2"
-                      sx={{ fontFamily: "monospace", fontWeight: "bold" }}
-                    >
-                      giraffecloud status
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      Check tunnel connection status and configuration
-                    </Typography>
-                  </Box>
-                  <Divider />
-                  <Box>
-                    <Typography
-                      variant="body2"
-                      sx={{ fontFamily: "monospace", fontWeight: "bold" }}
-                    >
-                      giraffecloud version
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      Display version information
-                    </Typography>
-                  </Box>
-                </Stack>
-              </Paper>
-            </Box>
+      <Card>
+        <CardHeader>
+          <CardTitle>CLI Commands Reference</CardTitle>
+          <CardDescription>Complete list of available commands</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="space-y-4">
+            <h4 className="font-medium flex items-center gap-2">
+              <Terminal className="h-4 w-4" /> Core Commands
+            </h4>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="rounded-lg border p-4 space-y-2">
+                <code className="text-sm font-bold block">giraffecloud login --token &lt;TOKEN&gt;</code>
+                <p className="text-xs text-muted-foreground">Login and download client certificates.</p>
+              </div>
+              <div className="rounded-lg border p-4 space-y-2">
+                <code className="text-sm font-bold block">giraffecloud connect</code>
+                <p className="text-xs text-muted-foreground">Connect to GiraffeCloud and establish a tunnel.</p>
+              </div>
+              <div className="rounded-lg border p-4 space-y-2">
+                <code className="text-sm font-bold block">giraffecloud status</code>
+                <p className="text-xs text-muted-foreground">Check tunnel connection status.</p>
+              </div>
+              <div className="rounded-lg border p-4 space-y-2">
+                <code className="text-sm font-bold block">giraffecloud version</code>
+                <p className="text-xs text-muted-foreground">Display version information.</p>
+              </div>
+            </div>
+          </div>
 
-            {/* Service Management */}
-            <Box>
-              <Typography variant="h6" gutterBottom>
-                Service Management
-              </Typography>
-              <Paper variant="outlined" sx={{ p: 2 }}>
-                <Stack spacing={1.5}>
-                  <Box>
-                    <Typography
-                      variant="body2"
-                      sx={{ fontFamily: "monospace", fontWeight: "bold" }}
-                    >
-                      giraffecloud service install
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      Install GiraffeCloud as a system service (auto-start on boot)
-                    </Typography>
-                  </Box>
-                  <Divider />
-                  <Box>
-                    <Typography
-                      variant="body2"
-                      sx={{ fontFamily: "monospace", fontWeight: "bold" }}
-                    >
-                      giraffecloud service start
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      Start the GiraffeCloud service
-                    </Typography>
-                  </Box>
-                  <Divider />
-                  <Box>
-                    <Typography
-                      variant="body2"
-                      sx={{ fontFamily: "monospace", fontWeight: "bold" }}
-                    >
-                      giraffecloud service stop
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      Stop the GiraffeCloud service
-                    </Typography>
-                  </Box>
-                  <Divider />
-                  <Box>
-                    <Typography
-                      variant="body2"
-                      sx={{ fontFamily: "monospace", fontWeight: "bold" }}
-                    >
-                      giraffecloud service restart
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      Restart the GiraffeCloud service
-                    </Typography>
-                  </Box>
-                  <Divider />
-                  <Box>
-                    <Typography
-                      variant="body2"
-                      sx={{ fontFamily: "monospace", fontWeight: "bold" }}
-                    >
-                      giraffecloud service uninstall
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      Uninstall the GiraffeCloud system service
-                    </Typography>
-                  </Box>
-                  <Divider />
-                  <Box>
-                    <Typography
-                      variant="body2"
-                      sx={{ fontFamily: "monospace", fontWeight: "bold" }}
-                    >
-                      giraffecloud service health-check
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      Run comprehensive health check (certificates, connectivity, configuration)
-                    </Typography>
-                  </Box>
-                </Stack>
-              </Paper>
-            </Box>
+          <Separator />
 
-            {/* Update Commands */}
-            <Box>
-              <Typography variant="h6" gutterBottom>
-                Update Commands
-              </Typography>
-              <Paper variant="outlined" sx={{ p: 2 }}>
-                <Stack spacing={1.5}>
-                  <Box>
-                    <Typography
-                      variant="body2"
-                      sx={{ fontFamily: "monospace", fontWeight: "bold" }}
-                    >
-                      giraffecloud update
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      Check for and install updates to the CLI client
-                    </Typography>
-                    <Typography
-                      variant="caption"
-                      display="block"
-                      sx={{ fontFamily: "monospace", mt: 0.5 }}
-                    >
-                      Options: --check-only, --force
-                    </Typography>
-                  </Box>
-                  <Divider />
-                  <Box>
-                    <Typography
-                      variant="body2"
-                      sx={{ fontFamily: "monospace", fontWeight: "bold" }}
-                    >
-                      giraffecloud auto-update status
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      Show auto-update configuration and status
-                    </Typography>
-                  </Box>
-                  <Divider />
-                  <Box>
-                    <Typography
-                      variant="body2"
-                      sx={{ fontFamily: "monospace", fontWeight: "bold" }}
-                    >
-                      giraffecloud auto-update enable
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      Enable automatic updates
-                    </Typography>
-                  </Box>
-                  <Divider />
-                  <Box>
-                    <Typography
-                      variant="body2"
-                      sx={{ fontFamily: "monospace", fontWeight: "bold" }}
-                    >
-                      giraffecloud auto-update disable
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      Disable automatic updates
-                    </Typography>
-                  </Box>
-                  <Divider />
-                  <Box>
-                    <Typography
-                      variant="body2"
-                      sx={{ fontFamily: "monospace", fontWeight: "bold" }}
-                    >
-                      giraffecloud auto-update config
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      Configure auto-update settings
-                    </Typography>
-                    <Typography
-                      variant="caption"
-                      display="block"
-                      sx={{ fontFamily: "monospace", mt: 0.5 }}
-                    >
-                      Options: --interval &lt;duration&gt;, --required-only, --preserve-connection,
-                      --restart-service
-                    </Typography>
-                  </Box>
-                </Stack>
-              </Paper>
-            </Box>
+          <div className="space-y-4">
+            <h4 className="font-medium flex items-center gap-2">
+              <Server className="h-4 w-4" /> Service Management
+            </h4>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="rounded-lg border p-4 space-y-2">
+                <code className="text-sm font-bold block">giraffecloud service install</code>
+                <p className="text-xs text-muted-foreground">Install as system service.</p>
+              </div>
+              <div className="rounded-lg border p-4 space-y-2">
+                <code className="text-sm font-bold block">giraffecloud service start</code>
+                <p className="text-xs text-muted-foreground">Start the service.</p>
+              </div>
+              <div className="rounded-lg border p-4 space-y-2">
+                <code className="text-sm font-bold block">giraffecloud service stop</code>
+                <p className="text-xs text-muted-foreground">Stop the service.</p>
+              </div>
+              <div className="rounded-lg border p-4 space-y-2">
+                <code className="text-sm font-bold block">giraffecloud service health-check</code>
+                <p className="text-xs text-muted-foreground">Run comprehensive health check.</p>
+              </div>
+            </div>
+          </div>
 
-            {/* Configuration Commands */}
-            <Box>
-              <Typography variant="h6" gutterBottom>
-                Configuration Commands
-              </Typography>
-              <Paper variant="outlined" sx={{ p: 2 }}>
-                <Stack spacing={1.5}>
-                  <Box>
-                    <Typography
-                      variant="body2"
-                      sx={{ fontFamily: "monospace", fontWeight: "bold" }}
-                    >
-                      giraffecloud config show
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      Display current configuration in JSON format
-                    </Typography>
-                  </Box>
-                  <Divider />
-                  <Box>
-                    <Typography
-                      variant="body2"
-                      sx={{ fontFamily: "monospace", fontWeight: "bold" }}
-                    >
-                      giraffecloud config path
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      Show paths to configuration file, certificates, and logs
-                    </Typography>
-                  </Box>
-                </Stack>
-              </Paper>
-            </Box>
-          </Stack>
+          <Separator />
+
+          <div className="space-y-4">
+            <h4 className="font-medium flex items-center gap-2">
+              <RefreshCw className="h-4 w-4" /> Update Commands
+            </h4>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="rounded-lg border p-4 space-y-2">
+                <code className="text-sm font-bold block">giraffecloud update</code>
+                <p className="text-xs text-muted-foreground">Check for and install updates.</p>
+              </div>
+              <div className="rounded-lg border p-4 space-y-2">
+                <code className="text-sm font-bold block">giraffecloud auto-update enable</code>
+                <p className="text-xs text-muted-foreground">Enable automatic updates.</p>
+              </div>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
-      {/* Uninstall Section */}
-      <Card sx={{ mt: 3 }}>
-        <CardHeader
-          title="Uninstall GiraffeCloud"
-          subheader="Remove GiraffeCloud from your system"
-        />
-        <CardContent>
-          <Stack spacing={3}>
-            {/* Linux/macOS Uninstall */}
-            <Box>
-              <Typography variant="h6" gutterBottom>
-                Linux/macOS
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                Remove binary and service (keeps configuration):
-              </Typography>
-              <Paper
-                variant="outlined"
-                sx={{ p: 2, bgcolor: "background.default", position: "relative" }}
-              >
-                <Typography
-                  component="pre"
-                  sx={{
-                    fontFamily: "monospace",
-                    fontSize: "0.875rem",
-                    m: 0,
-                    overflow: "auto",
-                    pr: 5,
-                  }}
-                >
-                  {`curl -fsSL https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/uninstall.sh | bash`}
-                </Typography>
-                <Tooltip title={copiedStep === 10 ? "Copied!" : "Copy command"}>
-                  <IconButton
-                    size="small"
-                    onClick={() =>
-                      handleCopy(
-                        "curl -fsSL https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/uninstall.sh | bash",
-                        10,
-                      )
-                    }
-                    sx={{ position: "absolute", top: 8, right: 8 }}
-                    color={copiedStep === 10 ? "success" : "default"}
-                  >
-                    {copiedStep === 10 ? <CheckIcon /> : <ContentCopyIcon />}
-                  </IconButton>
-                </Tooltip>
-              </Paper>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 2, mb: 2 }}>
-                Remove everything including configuration and data:
-              </Typography>
-              <Paper
-                variant="outlined"
-                sx={{ p: 2, bgcolor: "background.default", position: "relative" }}
-              >
-                <Typography
-                  component="pre"
-                  sx={{
-                    fontFamily: "monospace",
-                    fontSize: "0.875rem",
-                    m: 0,
-                    overflow: "auto",
-                    pr: 5,
-                  }}
-                >
-                  {`curl -fsSL https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/uninstall.sh | bash -s -- --remove-data`}
-                </Typography>
-                <Tooltip title={copiedStep === 11 ? "Copied!" : "Copy command"}>
-                  <IconButton
-                    size="small"
-                    onClick={() =>
-                      handleCopy(
-                        "curl -fsSL https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/uninstall.sh | bash -s -- --remove-data",
-                        11,
-                      )
-                    }
-                    sx={{ position: "absolute", top: 8, right: 8 }}
-                    color={copiedStep === 11 ? "success" : "default"}
-                  >
-                    {copiedStep === 11 ? <CheckIcon /> : <ContentCopyIcon />}
-                  </IconButton>
-                </Tooltip>
-              </Paper>
-            </Box>
-
-            <Divider />
-
-            {/* Windows Uninstall */}
-            <Box>
-              <Typography variant="h6" gutterBottom>
-                Windows (PowerShell - Run as Administrator)
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                Remove binary and service (keeps configuration):
-              </Typography>
-              <Paper
-                variant="outlined"
-                sx={{ p: 2, bgcolor: "background.default", position: "relative" }}
-              >
-                <Typography
-                  component="pre"
-                  sx={{
-                    fontFamily: "monospace",
-                    fontSize: "0.875rem",
-                    m: 0,
-                    overflow: "auto",
-                    pr: 5,
-                    wordWrap: "break-word",
-                    whiteSpace: "pre-wrap",
-                  }}
-                >
-                  {`Invoke-WebRequest -Uri "https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/uninstall.ps1" -OutFile "$env:TEMP\\uninstall.ps1"; & "$env:TEMP\\uninstall.ps1"`}
-                </Typography>
-                <Tooltip title={copiedStep === 12 ? "Copied!" : "Copy command"}>
-                  <IconButton
-                    size="small"
-                    onClick={() =>
-                      handleCopy(
-                        `Invoke-WebRequest -Uri "https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/uninstall.ps1" -OutFile "$env:TEMP\\uninstall.ps1"; & "$env:TEMP\\uninstall.ps1"`,
-                        12,
-                      )
-                    }
-                    sx={{ position: "absolute", top: 8, right: 8 }}
-                    color={copiedStep === 12 ? "success" : "default"}
-                  >
-                    {copiedStep === 12 ? <CheckIcon /> : <ContentCopyIcon />}
-                  </IconButton>
-                </Tooltip>
-              </Paper>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 2, mb: 2 }}>
-                Remove everything including configuration and data:
-              </Typography>
-              <Paper
-                variant="outlined"
-                sx={{ p: 2, bgcolor: "background.default", position: "relative" }}
-              >
-                <Typography
-                  component="pre"
-                  sx={{
-                    fontFamily: "monospace",
-                    fontSize: "0.875rem",
-                    m: 0,
-                    overflow: "auto",
-                    pr: 5,
-                    wordWrap: "break-word",
-                    whiteSpace: "pre-wrap",
-                  }}
-                >
-                  {`Invoke-WebRequest -Uri "https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/uninstall.ps1" -OutFile "$env:TEMP\\uninstall.ps1"; & "$env:TEMP\\uninstall.ps1" -RemoveData`}
-                </Typography>
-                <Tooltip title={copiedStep === 13 ? "Copied!" : "Copy command"}>
-                  <IconButton
-                    size="small"
-                    onClick={() =>
-                      handleCopy(
-                        `Invoke-WebRequest -Uri "https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/uninstall.ps1" -OutFile "$env:TEMP\\uninstall.ps1"; & "$env:TEMP\\uninstall.ps1" -RemoveData`,
-                        13,
-                      )
-                    }
-                    sx={{ position: "absolute", top: 8, right: 8 }}
-                    color={copiedStep === 13 ? "success" : "default"}
-                  >
-                    {copiedStep === 13 ? <CheckIcon /> : <ContentCopyIcon />}
-                  </IconButton>
-                </Tooltip>
-              </Paper>
-            </Box>
-          </Stack>
-        </CardContent>
-      </Card>
-
-      {/* Token Creation Dialog */}
       <TokenDialog
         open={tokenDialogOpen}
-        onClose={handleCloseTokenDialog}
+        onOpenChange={setTokenDialogOpen}
         onSuccess={handleTokenCreated}
       />
 
-      {/* Tunnel Creation Dialog */}
       <TunnelDialog
         open={tunnelDialogOpen}
-        onClose={() => setTunnelDialogOpen(false)}
-        onSuccess={() => {
-          mutate();
-          toast.success(
-            "Tunnel created! Make sure to copy the tunnel token - you'll need it to connect.",
-          );
-        }}
-        existingTunnels={tunnels}
+        onOpenChange={setTunnelDialogOpen}
+        onSuccess={() => mutate()}
       />
-    </Box>
+    </div>
   );
 }

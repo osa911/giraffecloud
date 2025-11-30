@@ -1,5 +1,4 @@
-import { Typography, Box, Container } from "@mui/material";
-import type { Metadata } from "next";
+import { Metadata } from "next";
 import ContactForm from "@/components/common/ContactForm";
 
 export const metadata: Metadata = {
@@ -9,16 +8,14 @@ export const metadata: Metadata = {
 
 export default function ContactPage() {
   return (
-    <Container maxWidth="sm">
-      <Box sx={{ py: 8 }}>
-        <Typography variant="h2" component="h1" gutterBottom>
-          Contact Us
-        </Typography>
-        <Typography gutterBottom color="text.secondary">
-          Questions about{/* pricing,*/} compliance or technical capabilities? Send us a message.
-        </Typography>
+    <div className="container mx-auto px-4 py-12 max-w-xl">
+      <h1 className="text-4xl font-bold mb-6 text-center">Contact Us</h1>
+      <p className="text-lg text-muted-foreground mb-8 text-center">
+        Questions about compliance or technical capabilities? Send us a message.
+      </p>
+      <div className="bg-card border rounded-lg p-6 shadow-sm">
         <ContactForm />
-      </Box>
-    </Container>
+      </div>
+    </div>
   );
 }

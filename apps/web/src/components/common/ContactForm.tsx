@@ -1,8 +1,13 @@
 "use client";
-import { Box, TextField, Button, Stack, Typography } from "@mui/material";
+
 import { useState, useEffect } from "react";
-import toast from "react-hot-toast";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { toast } from "@/lib/toast";
 import clientApi from "@/services/apiClient/clientApiClient";
+import { Loader2 } from "lucide-react";
 
 // Type definitions for Google reCAPTCHA
 interface ReCaptchaV3 {
@@ -44,18 +49,28 @@ export default function ContactForm() {
   const MAX_MESSAGE_LENGTH = 1000;
 
   useEffect(() => {
-    loadRecaptcha()
-      .then(() => setRecaptchaReady(true))
-      .catch((err) => {
-        console.error("reCAPTCHA load error:", err);
-        toast.error("Failed to load security verification");
-      });
+    if (process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY) {
+      loadRecaptcha()
+        .then(() => setRecaptchaReady(true))
+        .catch((err) => {
+          console.error("reCAPTCHA load error:", err);
+          toast.error("Failed to load security verification");
+        });
+    } else {
+      console.warn("NEXT_PUBLIC_RECAPTCHA_SITE_KEY is not set");
+    }
   }, []);
 
   const getRecaptchaToken = async (): Promise<string> => {
     return new Promise((resolve, reject) => {
       if (!recaptchaReady || !window.grecaptcha) {
-        reject(new Error("reCAPTCHA not ready"));
+        // If reCAPTCHA is not configured/loaded, we might want to skip or fail
+        // For now, let's reject if it was expected
+        if (process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY) {
+            reject(new Error("reCAPTCHA not ready"));
+        } else {
+            resolve("mock-token"); // Dev mode fallback
+        }
         return;
       }
 
@@ -108,66 +123,83 @@ export default function ContactForm() {
         },
       );
 
-      // Success - error handling is done by the API client interceptor
+      // Success
       toast.success(response.message || "Message sent successfully!");
       setName("");
       setEmail("");
       setMessage("");
     } catch (error) {
-      // Error toasts are already shown by the API client interceptor
-      // Just log it for debugging
       console.error("Contact form error:", error);
+      // Error handling is mostly done by the API client interceptor, but we catch here to stop loading state
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Box component="form" onSubmit={onSubmit} noValidate>
-      <Stack spacing={2}>
-        <TextField
-          label="Name"
-          required
+    <form onSubmit={onSubmit} className="space-y-4">
+      <div className="space-y-2">
+        <Label htmlFor="name">Name</Label>
+        <Input
+          id="name"
           value={name}
           onChange={(e) => setName(e.target.value)}
           disabled={loading}
-          helperText="Required (min 2 characters)"
-        />
-        <TextField
-          label="Email"
-          type="email"
+          placeholder="Your name"
           required
+          minLength={2}
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="email">Email</Label>
+        <Input
+          id="email"
+          type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           disabled={loading}
-          helperText="Required"
-        />
-        <TextField
-          label="Message"
+          placeholder="your@email.com"
           required
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="message">Message</Label>
+        <Textarea
+          id="message"
           value={message}
           onChange={(e) => setMessage(e.target.value)}
-          multiline
-          minRows={4}
           disabled={loading}
-          helperText={`${message.length}/${MAX_MESSAGE_LENGTH} characters`}
-          error={message.length > MAX_MESSAGE_LENGTH}
+          placeholder="How can we help you?"
+          required
+          rows={5}
+          className={message.length > MAX_MESSAGE_LENGTH ? "border-destructive" : ""}
         />
-        <Button type="submit" variant="contained" disabled={loading || !recaptchaReady}>
-          {loading ? "Sending..." : "Send"}
-        </Button>
-        <Typography variant="body2" color="text.secondary">
-          This site is protected by reCAPTCHA and the Google{" "}
-          <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">
-            Privacy Policy
-          </a>{" "}
-          and{" "}
-          <a href="https://policies.google.com/terms" target="_blank" rel="noopener">
-            Terms of Service
-          </a>{" "}
-          apply.
-        </Typography>
-      </Stack>
-    </Box>
+        <div className="flex justify-between text-xs text-muted-foreground">
+          <span>Minimum 10 characters</span>
+          <span className={message.length > MAX_MESSAGE_LENGTH ? "text-destructive" : ""}>
+            {message.length}/{MAX_MESSAGE_LENGTH}
+          </span>
+        </div>
+      </div>
+
+      <Button type="submit" className="w-full" disabled={loading || (!recaptchaReady && !!process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY)}>
+        {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+        {loading ? "Sending..." : "Send Message"}
+      </Button>
+
+      <p className="text-xs text-muted-foreground text-center mt-4">
+        This site is protected by reCAPTCHA and the Google{" "}
+        <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">
+          Privacy Policy
+        </a>{" "}
+        and{" "}
+        <a href="https://policies.google.com/terms" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">
+          Terms of Service
+        </a>{" "}
+        apply.
+      </p>
+    </form>
   );
 }

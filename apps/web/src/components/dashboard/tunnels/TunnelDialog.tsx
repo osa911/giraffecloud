@@ -1,44 +1,58 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
 import {
-  Button,
   Dialog,
-  DialogActions,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
   DialogTitle,
-  Stack,
-  Switch,
-  TextField,
-  FormControlLabel,
-  ToggleButtonGroup,
-  ToggleButton,
-  Alert,
-  CircularProgress,
-  Box,
-  Typography,
-  Chip,
-} from "@mui/material";
-import { AutoAwesome, Language } from "@mui/icons-material";
-import toast from "react-hot-toast";
-import type { Tunnel, TunnelFormData, TunnelCreateResponse } from "@/types/tunnel";
+} from "@/components/ui/dialog";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+  FormDescription,
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Loader2, Wand2, Globe, AlertTriangle } from "lucide-react";
+import { toast } from "@/lib/toast";
+import type { Tunnel, TunnelCreateResponse } from "@/types/tunnel";
 import clientApi from "@/services/apiClient/clientApiClient";
 import { getFreeSubdomain } from "@/hooks/useTunnels";
 import { isReservedDomain, getReservedDomainError } from "@/config/domains";
 
 interface TunnelDialogProps {
   open: boolean;
-  onClose: () => void;
+  onOpenChange: (open: boolean) => void;
   tunnel?: Tunnel | null;
   onSuccess: () => void;
   existingTunnels?: Tunnel[];
 }
 
+const formSchema = z.object({
+  domain: z.string().min(1, "Domain is required"),
+  target_port: z.number().min(1).max(65535),
+  is_enabled: z.boolean(),
+});
+
 type DomainType = "free" | "custom";
 
 export default function TunnelDialog({
   open,
-  onClose,
+  onOpenChange,
   tunnel,
   onSuccess,
   existingTunnels = [],
@@ -48,45 +62,43 @@ export default function TunnelDialog({
   const [freeSubdomainAvailable, setFreeSubdomainAvailable] = useState<boolean>(true);
   const [loadingFreeSubdomain, setLoadingFreeSubdomain] = useState(false);
   const [freeSubdomainError, setFreeSubdomainError] = useState<string>("");
-  const [portError, setPortError] = useState<string>("");
-  const [domainError, setDomainError] = useState<string>("");
-
-  const [formData, setFormData] = useState<TunnelFormData>(() => ({
-    domain: tunnel?.domain || "",
-    target_port: tunnel?.target_port || 80,
-    is_enabled: tunnel?.is_enabled ?? true,
-  }));
-
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const form = useForm<z.infer<typeof formSchema>>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      domain: "",
+      target_port: 80,
+      is_enabled: true,
+    },
+  });
 
   // Reset state when dialog opens
   useEffect(() => {
     if (open) {
       if (tunnel) {
-        // Editing existing tunnel - populate form with tunnel data
-        setFormData({
+        // Editing existing tunnel
+        form.reset({
           domain: tunnel.domain,
           target_port: tunnel.target_port,
           is_enabled: tunnel.is_enabled,
         });
+        setDomainType("custom"); // Treat existing as custom for UI purposes (readonly)
       } else {
-        // Creating new tunnel - reset to initial state
+        // Creating new tunnel
         setDomainType("free");
         setFreeSubdomain("");
         setFreeSubdomainAvailable(true);
         setFreeSubdomainError("");
-        setPortError("");
-        setDomainError("");
-        setFormData({
+        form.reset({
           domain: "",
           target_port: 80,
           is_enabled: true,
         });
-        // Load free subdomain
         loadFreeSubdomain();
       }
     }
-  }, [open, tunnel]);
+  }, [open, tunnel, form]);
 
   const loadFreeSubdomain = async () => {
     setLoadingFreeSubdomain(true);
@@ -96,12 +108,11 @@ export default function TunnelDialog({
       setFreeSubdomain(response.domain);
       setFreeSubdomainAvailable(response.available);
 
-      // If subdomain is not available, switch to custom domain
       if (!response.available) {
         setDomainType("custom");
-        setFormData((prev) => ({ ...prev, domain: "" }));
+        form.setValue("domain", "");
       } else {
-        setFormData((prev) => ({ ...prev, domain: response.domain }));
+        form.setValue("domain", response.domain);
       }
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : "Failed to load free subdomain";
@@ -111,63 +122,34 @@ export default function TunnelDialog({
     }
   };
 
-  const validateDomain = (domain: string): boolean => {
-    if (isReservedDomain(domain)) {
-      setDomainError(getReservedDomainError(domain));
-      return false;
-    }
+  const handleDomainTypeChange = (value: string) => {
+    if (!value) return;
+    const newType = value as DomainType;
+    setDomainType(newType);
 
-    setDomainError("");
-    return true;
+    if (newType === "free" && freeSubdomain) {
+      form.setValue("domain", freeSubdomain);
+    } else if (newType === "custom") {
+      form.setValue("domain", "");
+    }
   };
 
-  const validatePort = (port: number): boolean => {
-    // Check if another tunnel is already using this port
+  async function onSubmit(values: z.infer<typeof formSchema>) {
+    // Custom validation
+    if (domainType === "custom" && isReservedDomain(values.domain)) {
+      form.setError("domain", { message: getReservedDomainError(values.domain) });
+      return;
+    }
+
+    // Check for duplicate port
     const duplicateTunnel = existingTunnels.find(
-      (t) => t.target_port === port && (!tunnel || t.id !== tunnel.id),
+      (t) => t.target_port === values.target_port && (!tunnel || t.id !== tunnel.id)
     );
 
     if (duplicateTunnel) {
-      setPortError(`Port ${port} is already used by another tunnel (${duplicateTunnel.domain})`);
-      return false;
-    }
-
-    setPortError("");
-    return true;
-  };
-
-  const handlePortChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const port = parseInt(e.target.value, 10);
-    setFormData({ ...formData, target_port: port });
-
-    // Validate port on change
-    if (port && !isNaN(port)) {
-      validatePort(port);
-    }
-  };
-
-  const handleDomainTypeChange = (
-    _event: React.MouseEvent<HTMLElement>,
-    newType: DomainType | null,
-  ) => {
-    if (newType !== null) {
-      setDomainType(newType);
-      if (newType === "free" && freeSubdomain) {
-        setFormData({ ...formData, domain: freeSubdomain });
-      } else if (newType === "custom") {
-        setFormData({ ...formData, domain: "" });
-      }
-    }
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    // Validate domain and port before submitting
-    if (domainType === "custom" && !validateDomain(formData.domain)) {
-      return;
-    }
-    if (!validatePort(formData.target_port)) {
+      form.setError("target_port", {
+        message: `Port ${values.target_port} is already used by another tunnel (${duplicateTunnel.domain})`
+      });
       return;
     }
 
@@ -175,186 +157,184 @@ export default function TunnelDialog({
 
     try {
       if (tunnel) {
-        await clientApi().put<Tunnel>(`/tunnels/${tunnel.id}`, formData);
+        await clientApi().put<Tunnel>(`/tunnels/${tunnel.id}`, values);
         toast.success("Tunnel updated successfully");
       } else {
-        const response = await clientApi().post<TunnelCreateResponse>("/tunnels", formData);
+        const response = await clientApi().post<TunnelCreateResponse>("/tunnels", values);
         toast.success("Tunnel created successfully");
 
-        // Show token to user (they need it for CLI)
         if (response.token) {
-          toast.success(`Token: ${response.token.substring(0, 20)}... (saved to clipboard)`, {
-            duration: 5000,
+          toast.success("Token copied to clipboard", {
+            description: `Token: ${response.token.substring(0, 20)}...`,
           });
-          // Copy token to clipboard
           navigator.clipboard.writeText(response.token);
         }
       }
 
       onSuccess();
-      onClose();
+      onOpenChange(false);
     } catch (error) {
-      // Error handling is done by clientApi
       console.error("Error saving tunnel:", error);
+      toast.error("Failed to save tunnel");
     } finally {
       setIsSubmitting(false);
     }
-  };
+  }
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <form onSubmit={handleSubmit}>
-        <DialogTitle>{tunnel ? "Edit Tunnel" : "Create New Tunnel"}</DialogTitle>
-        <DialogContent>
-          {!tunnel && (
-            <Alert severity="info" sx={{ mb: 2 }}>
-              GiraffeCloud supports <strong>HTTP/HTTPS</strong> and <strong>WebSocket</strong>{" "}
-              traffic.
-            </Alert>
-          )}
-          <Stack spacing={3} sx={{ mt: 2 }}>
-            {/* Domain Type Selector - only for new tunnels */}
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[500px]">
+        <DialogHeader>
+          <DialogTitle>{tunnel ? "Edit Tunnel" : "Create New Tunnel"}</DialogTitle>
+          <DialogDescription>
+            Configure your tunnel settings. {tunnel ? "Domain cannot be changed." : "Choose a domain and local port."}
+          </DialogDescription>
+        </DialogHeader>
+
+        {!tunnel && (
+          <Alert className="bg-muted/50">
+            <AlertDescription>
+              <p>
+                GiraffeCloud supports <strong>HTTP/HTTPS</strong> and <strong>WebSocket</strong> traffic.
+              </p>
+            </AlertDescription>
+          </Alert>
+        )}
+
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
             {!tunnel && (
-              <Box>
-                <Typography variant="body2" sx={{ mb: 1, fontWeight: 500 }}>
-                  Domain Type
-                </Typography>
-                <ToggleButtonGroup
-                  value={domainType}
-                  exclusive
-                  onChange={handleDomainTypeChange}
-                  fullWidth
-                  size="small"
-                >
-                  <ToggleButton
-                    value="free"
-                    aria-label="free subdomain"
-                    disabled={!freeSubdomainAvailable}
-                  >
-                    <AutoAwesome sx={{ mr: 1, fontSize: 18 }} />
+              <div className="space-y-3">
+                <FormLabel>Domain Type</FormLabel>
+                <ToggleGroup type="single" value={domainType} onValueChange={handleDomainTypeChange} className="justify-start">
+                  <ToggleGroupItem value="free" aria-label="Free Subdomain" disabled={!freeSubdomainAvailable} className="flex-1">
+                    <Wand2 className="mr-2 h-4 w-4" />
                     Free Subdomain
-                  </ToggleButton>
-                  <ToggleButton value="custom" aria-label="custom domain">
-                    <Language sx={{ mr: 1, fontSize: 18 }} />
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="custom" aria-label="Custom Domain" className="flex-1">
+                    <Globe className="mr-2 h-4 w-4" />
                     Custom Domain
-                  </ToggleButton>
-                </ToggleButtonGroup>
+                  </ToggleGroupItem>
+                </ToggleGroup>
+
                 {!freeSubdomainAvailable && freeSubdomain && (
-                  <Alert severity="info" sx={{ mt: 2 }}>
-                    You already have a free subdomain: <strong>{freeSubdomain}</strong>
-                    <br />
-                    To create additional tunnels, please use a custom domain.
+                  <Alert variant="default" className="bg-blue-50 text-blue-900 border-blue-200 dark:bg-blue-950 dark:text-blue-100 dark:border-blue-800">
+                    <AlertDescription>
+                      You already have a free subdomain: <strong>{freeSubdomain}</strong>To create additional tunnels, please use a custom domain.
+                    </AlertDescription>
                   </Alert>
                 )}
-              </Box>
+              </div>
             )}
 
             {/* Free Subdomain Display */}
             {!tunnel && domainType === "free" && (
-              <Box>
+              <div className="space-y-2">
                 {loadingFreeSubdomain ? (
-                  <Box display="flex" alignItems="center" gap={2}>
-                    <CircularProgress size={20} />
-                    <Typography variant="body2" color="text.secondary">
-                      Loading your free subdomain...
-                    </Typography>
-                  </Box>
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading your free subdomain...
+                  </div>
                 ) : freeSubdomainError ? (
-                  <Alert severity="error" sx={{ mb: 2 }}>
-                    {freeSubdomainError}
+                  <Alert variant="destructive">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertTitle>Error</AlertTitle>
+                    <AlertDescription>{freeSubdomainError}</AlertDescription>
                   </Alert>
                 ) : freeSubdomain ? (
-                  <Box>
-                    <Typography variant="body2" sx={{ mb: 1, color: "text.secondary" }}>
-                      Your free subdomain:
-                    </Typography>
-                    <Chip
-                      label={freeSubdomain}
-                      color="primary"
-                      variant="outlined"
-                      sx={{ fontFamily: "monospace", fontSize: "0.9rem" }}
-                    />
-                    <Typography
-                      variant="caption"
-                      display="block"
-                      sx={{ mt: 1, color: "text.secondary" }}
-                    >
-                      This subdomain is uniquely generated for you and will always be the same.
-                    </Typography>
-                  </Box>
+                  <div className="p-4 border rounded-lg bg-muted/30">
+                    <p className="text-sm text-muted-foreground mb-2">Your free subdomain:</p>
+                    <Badge variant="secondary" className="text-base font-mono px-3 py-1">
+                      {freeSubdomain}
+                    </Badge>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      This subdomain is uniquely generated for you.
+                    </p>
+                  </div>
                 ) : null}
-              </Box>
+              </div>
             )}
 
             {/* Custom Domain Input */}
             {(tunnel || domainType === "custom") && (
-              <TextField
-                label="Domain"
-                fullWidth
-                required
-                value={formData.domain}
-                onChange={(e) => {
-                  const domain = e.target.value;
-                  setFormData({ ...formData, domain });
-                  // Validate domain on change (only for new tunnels)
-                  if (!tunnel && domain) {
-                    validateDomain(domain);
-                  }
-                }}
-                placeholder="example.com"
-                error={!!domainError}
-                helperText={
-                  domainError ||
-                  (tunnel ? "Domain cannot be changed after creation" : "Enter your custom domain")
-                }
-                disabled={!!tunnel}
-                InputProps={{
-                  readOnly: !!tunnel,
-                }}
+              <FormField
+                control={form.control}
+                name="domain"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Domain</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="example.com"
+                        {...field}
+                        disabled={!!tunnel}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {tunnel ? "Domain cannot be changed after creation" : "Enter your custom domain (subdomains are also supported)"}.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
               />
             )}
 
-            <TextField
-              label="Target Port"
-              type="number"
-              fullWidth
-              required
-              value={formData.target_port}
-              onChange={handlePortChange}
-              inputProps={{ min: 1, max: 65535 }}
-              helperText={portError || "Port on your local machine to forward traffic to"}
-              error={!!portError}
-            />
+              <FormField
+                control={form.control}
+                name="target_port"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Target Port</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        {...field}
+                        onChange={(e) => field.onChange(e.target.valueAsNumber)}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      Port on your local machine to forward traffic to (1-65535).
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
             {tunnel && (
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={formData.is_enabled}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        is_enabled: e.target.checked,
-                      })
-                    }
-                  />
-                }
-                label="Enabled"
+              <FormField
+                control={form.control}
+                name="is_enabled"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                    <div className="space-y-0.5">
+                      <FormLabel className="text-base">Enabled</FormLabel>
+                      <FormDescription>
+                        Enable or disable traffic forwarding for this tunnel.
+                      </FormDescription>
+                    </div>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
               />
             )}
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={onClose}>Cancel</Button>
-          <Button
-            type="submit"
-            variant="contained"
-            disabled={isSubmitting || (domainType === "free" && !freeSubdomain && !tunnel)}
-          >
-            {isSubmitting ? "Saving..." : tunnel ? "Update" : "Create"}
-          </Button>
-        </DialogActions>
-      </form>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isSubmitting || (domainType === "free" && !freeSubdomain && !tunnel)}>
+                {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {tunnel ? "Update Tunnel" : "Create Tunnel"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
+      </DialogContent>
     </Dialog>
   );
 }
