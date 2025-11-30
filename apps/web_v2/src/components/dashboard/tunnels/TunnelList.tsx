@@ -26,7 +26,7 @@ import TunnelDialog from "./TunnelDialog";
 import { useTunnels } from "@/hooks/useTunnels";
 import type { Tunnel } from "@/types/tunnel";
 import clientApi from "@/services/apiClient/clientApiClient";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import Link from "next/link";
 
 export default function TunnelList() {

@@ -21,8 +21,12 @@ export default function Error({
         <AlertTriangle className="h-10 w-10 text-destructive" />
       </div>
       <h2 className="text-2xl font-bold tracking-tight">Something went wrong!</h2>
-      <p className="text-muted-foreground">
-        We apologize for the inconvenience. Please try again.
+      <p className="text-muted-foreground max-w-[500px]">
+        {error.message === "fetch failed" ||
+         (error as any).code === "ECONNREFUSED" ||
+         JSON.stringify(error).includes("ECONNREFUSED")
+          ? "We are unable to connect to the server. The backend service might be down or unreachable."
+          : "We apologize for the inconvenience. Please try again."}
       </p>
       <div className="flex gap-4">
         <Button onClick={() => window.location.href = "/"}>Go Home</Button>

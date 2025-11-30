@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Loader2, Copy, Check, AlertTriangle } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { createToken } from "@/services/api/tokenApi";
 import {
   Tooltip,

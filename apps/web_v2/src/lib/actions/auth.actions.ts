@@ -263,7 +263,24 @@ export async function getAuthUser(
         }
         return null;
       }
-    } catch {
+    } catch (error: any) {
+      // Helper to check for network errors
+      const isNetworkError = (err: any): boolean => {
+        if (!err) return false;
+        const code = err.code || err.cause?.code;
+        if (code === "ECONNREFUSED" || code === "ENOTFOUND" || code === "EAI_AGAIN") return true;
+        if (err.errors && Array.isArray(err.errors)) {
+          return err.errors.some((e: any) => isNetworkError(e));
+        }
+        if (err.cause) return isNetworkError(err.cause);
+        return false;
+      };
+
+      // Check for network errors
+      if (isNetworkError(error)) {
+        throw error;
+      }
+
       // API call failed (likely 401) - ALWAYS try to clear stale cookies
       try {
         await clearAllAuthCookies();
@@ -273,23 +290,43 @@ export async function getAuthUser(
       }
       return null;
     }
-  } catch (error) {
-    console.error("Error verifying session:", error);
-    // API call failed (likely 401/403) - ALWAYS try to clear stale cookies
-    try {
-      await clearAllAuthCookies();
-    } catch {
-      // Cookie clearing failed - likely during SSR in page/layout, safe to ignore
-      // The backend will also clear cookies via Set-Cookie headers
+    } catch (error: any) {
+      console.error("Error verifying session:", error);
+
+      // Helper to check for network errors
+      const isNetworkError = (err: any): boolean => {
+        if (!err) return false;
+        const code = err.code || err.cause?.code;
+        if (code === "ECONNREFUSED" || code === "ENOTFOUND" || code === "EAI_AGAIN") return true;
+        if (err.errors && Array.isArray(err.errors)) {
+          return err.errors.some((e: any) => isNetworkError(e));
+        }
+        if (err.cause) return isNetworkError(err.cause);
+        return false;
+      };
+
+      // Check for network errors (backend down)
+      // Re-throw these to trigger the Error Boundary instead of redirecting
+      if (isNetworkError(error)) {
+        throw error;
+      }
+
+      // API call failed (likely 401/403) - ALWAYS try to clear stale cookies
+      try {
+        await clearAllAuthCookies();
+      } catch {
+        // Cookie clearing failed - likely during SSR in page/layout, safe to ignore
+        // The backend will also clear cookies via Set-Cookie headers
+      }
     }
-  } finally {
+
+    // Only redirect if no error was thrown and we have no user
     if (shouldRedirect && !user) {
       redirect(ROUTES.AUTH.LOGIN);
     }
-  }
 
-  return user;
-}
+    return user;
+  }
 
 export async function verifyToken(data: VerifyTokenRequest): Promise<void> {
   await serverApi().post("/auth/verify-token", data);

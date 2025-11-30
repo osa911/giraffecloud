@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import useSWR from "swr";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertTriangle, Loader2 } from "lucide-react";
-import clientApi from "@/services/apiClient/clientApiClient";
+import { fetcher } from "@/lib/swr-fetcher";
 import { UsageData } from "@/types/tunnel";
 
 interface UsageCardProps {
@@ -13,26 +13,10 @@ interface UsageCardProps {
 }
 
 export default function UsageCard({ monthlyLimitBytes }: UsageCardProps) {
-  const [usage, setUsage] = useState<UsageData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const fetchUsage = async () => {
-      try {
-        const api = clientApi();
-        const data = await api.get<UsageData>("/usage/summary");
-        setUsage(data);
-      } catch (err) {
-        console.error("Failed to fetch usage data:", err);
-        setError("Could not load usage data");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchUsage();
-  }, []);
+  const { data: usage, error, isLoading } = useSWR<UsageData>(
+    "/usage/summary",
+    fetcher
+  );
 
   const formatBytes = (bytes: number) => {
     if (bytes === 0) return "0 B";
@@ -42,7 +26,7 @@ export default function UsageCard({ monthlyLimitBytes }: UsageCardProps) {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
 
-  if (loading) {
+  if (isLoading) {
     return (
       <Card>
         <CardHeader>
@@ -65,7 +49,7 @@ export default function UsageCard({ monthlyLimitBytes }: UsageCardProps) {
           <Alert variant="destructive">
             <AlertTriangle className="h-4 w-4" />
             <AlertTitle>Error</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
+            <AlertDescription>Could not load usage data</AlertDescription>
           </Alert>
         </CardContent>
       </Card>

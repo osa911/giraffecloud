@@ -3,6 +3,7 @@ import Footer from "@/components/common/Footer";
 import { ModeToggle } from "@/components/mode-toggle";
 import { Button } from "@/components/ui/button";
 import { Cloud } from "lucide-react";
+import AuthButtons from "@/components/auth/AuthButtons";
 
 type PublicLayoutProps = {
   children: React.ReactNode;
@@ -17,7 +18,8 @@ export default function PublicLayout({ children }: PublicLayoutProps) {
             <Link href="/" className="mr-6 flex items-center space-x-2">
               <Cloud className="h-6 w-6" />
               <span className="hidden font-bold sm:inline-block">
-                GiraffeCloud
+                <span className="font-extrabold text-primary">Giraffe</span>
+                <span className="font-semibold">Cloud</span>
               </span>
             </Link>
             <nav className="flex items-center space-x-6 text-sm font-medium">
@@ -38,12 +40,7 @@ export default function PublicLayout({ children }: PublicLayoutProps) {
             </div>
             <nav className="flex items-center gap-2">
               <ModeToggle />
-              <Button asChild variant="ghost" size="sm">
-                <Link href="/auth/login">Login</Link>
-              </Button>
-              <Button asChild size="sm">
-                <Link href="/auth/register">Get Started</Link>
-              </Button>
+              <AuthButtons />
             </nav>
           </div>
         </div>

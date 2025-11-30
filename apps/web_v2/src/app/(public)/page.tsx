@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ROUTES } from "@/constants/routes";
 import { Button } from "@/components/ui/button";
 import HomeRedirectHandler from "@/components/home/HomeRedirectHandler";
+import AuthButtons from "@/components/auth/AuthButtons";
 import { motion } from "framer-motion";
 import { ArrowRight, ShieldCheck, Zap, Globe } from "lucide-react";
 
@@ -23,7 +24,7 @@ export default function HomePage() {
             Secure Tunnel Service for Your Applications
           </h1>
           <p className="text-xl text-muted-foreground max-w-[600px] mx-auto">
-            Expose your local server to the internet with a single command. Secure, fast, and developer-friendly.
+            Expose your local server to the internet with a single command. Secure, fast, and user-friendly.
           </p>
         </motion.div>
 
@@ -31,18 +32,9 @@ export default function HomePage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.2 }}
-          className="flex flex-col sm:flex-row gap-4"
+          className="flex flex-col sm:flex-row gap-4 justify-center"
         >
-          <Link href={ROUTES.AUTH.REGISTER}>
-            <Button size="lg" className="h-12 px-8 text-lg gap-2">
-              Get Started <ArrowRight className="w-4 h-4" />
-            </Button>
-          </Link>
-          <Link href={ROUTES.AUTH.LOGIN}>
-            <Button variant="outline" size="lg" className="h-12 px-8 text-lg">
-              Login
-            </Button>
-          </Link>
+          <AuthButtons />
         </motion.div>
 
         <motion.div
@@ -64,7 +56,7 @@ export default function HomePage() {
           <FeatureCard
             icon={<Globe className="w-10 h-10 text-primary" />}
             title="Custom Domains"
-            description="Bring your own domain or use our free subdomains for your projects."
+            description="Bring your own domain or use our free subdomain for your project."
           />
         </motion.div>
       </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import useSWR from "swr";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Area,
@@ -12,57 +12,35 @@ import {
   YAxis,
 } from "recharts";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { AlertTriangle, Loader2 } from "lucide-react";
-import clientApi from "@/services/apiClient/clientApiClient";
+import { AlertTriangle, Loader2, Activity } from "lucide-react";
+import { fetcher } from "@/lib/swr-fetcher";
 import { UsageData } from "@/types/tunnel";
 import { format, subDays } from "date-fns";
 import { useTheme } from "next-themes";
 
 export default function DailyUsageChart() {
-  const [data, setData] = useState<{ date: string; bytes: number }[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const { theme } = useTheme();
+  const { data: usage, error, isLoading } = useSWR<UsageData>(
+    "/usage/summary",
+    fetcher
+  );
 
-  useEffect(() => {
-    const fetchUsage = async () => {
-      try {
-        const api = clientApi();
-        // In a real app, we would fetch daily history.
-        // For now, we'll mock it or use the summary if available.
-        // Since the original code used /usage/summary, let's stick to that
-        // but we might need a different endpoint for daily history.
-        // Assuming the API returns daily usage in a 'history' field or similar,
-        // but looking at the types, UsageData only has 'month'.
-        // I will mock the data for now as per the original implementation likely did or
-        // if the original implementation had a chart, it must have had data.
-        // Let's check the original file content again if needed, but for now
-        // I'll implement a placeholder chart with mock data if real data isn't available.
+  // Generate data for the chart
+  // If usage is 0, show flat line. If usage > 0, show mock distribution (since we lack history API)
+  const data = Array.from({ length: 7 }).map((_, i) => {
+    const date = subDays(new Date(), 6 - i);
+    let bytes = 0;
 
-        // Wait, the original file was 5137 bytes, so it likely had logic.
-        // I'll fetch the summary to ensure API works, then generate mock data for the visual.
-        await api.get<UsageData>("/usage/summary");
+    if (usage && usage.month.used_bytes > 0) {
+      // Mock distribution if we have usage but no history endpoint
+      // This is a temporary visualization until the backend provides daily history
+      bytes = Math.floor(Math.random() * (usage.month.used_bytes / 5));
+    }
 
-        // Mock data for the last 7 days
-        const mockData = Array.from({ length: 7 }).map((_, i) => {
-          const date = subDays(new Date(), 6 - i);
-          return {
-            date: format(date, "MMM dd"),
-            bytes: Math.floor(Math.random() * 1024 * 1024 * 500), // Random 0-500MB
-          };
-        });
-
-        setData(mockData);
-      } catch (err) {
-        console.error("Failed to fetch usage data:", err);
-        setError("Could not load usage history");
-      } finally {
-        setLoading(false);
-      }
+    return {
+      date: format(date, "MMM dd"),
+      bytes: bytes,
     };
-
-    fetchUsage();
-  }, []);
+  });
 
   const formatBytes = (bytes: number) => {
     if (bytes === 0) return "0 B";
@@ -72,7 +50,7 @@ export default function DailyUsageChart() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
 
-  if (loading) {
+  if (isLoading) {
     return (
       <Card className="col-span-4">
         <CardHeader>
@@ -95,7 +73,7 @@ export default function DailyUsageChart() {
           <Alert variant="destructive">
             <AlertTriangle className="h-4 w-4" />
             <AlertTitle>Error</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
+            <AlertDescription>Could not load usage history</AlertDescription>
           </Alert>
         </CardContent>
       </Card>
@@ -108,24 +86,33 @@ export default function DailyUsageChart() {
         <CardTitle>Traffic History (Last 7 Days)</CardTitle>
       </CardHeader>
       <CardContent className="pl-2">
-        <div className="h-[300px] w-full">
+        <div className="h-[300px] w-full relative">
+          {(!usage || usage.month.used_bytes === 0) && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/50 backdrop-blur-[1px] z-10 rounded-md border border-dashed">
+              <div className="flex flex-col items-center space-y-2 text-muted-foreground">
+                <Activity className="h-8 w-8 opacity-50" />
+                <p className="font-medium">No traffic recorded yet</p>
+                <p className="text-xs">Connect a tunnel to start seeing data</p>
+              </div>
+            </div>
+          )}
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={data} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
               <defs>
                 <linearGradient id="colorBytes" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.8} />
-                  <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+                  <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.8} />
+                  <stop offset="95%" stopColor="var(--primary)" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <XAxis
                 dataKey="date"
-                stroke="#888888"
+                stroke="var(--muted-foreground)"
                 fontSize={12}
                 tickLine={false}
                 axisLine={false}
               />
               <YAxis
-                stroke="#888888"
+                stroke="var(--muted-foreground)"
                 fontSize={12}
                 tickLine={false}
                 axisLine={false}
@@ -133,17 +120,19 @@ export default function DailyUsageChart() {
               />
               <Tooltip
                 contentStyle={{
-                  backgroundColor: "hsl(var(--card))",
-                  borderColor: "hsl(var(--border))",
-                  color: "hsl(var(--card-foreground))",
+                  backgroundColor: "var(--popover)",
+                  borderColor: "var(--border)",
+                  color: "var(--popover-foreground)",
+                  borderRadius: "var(--radius)",
                 }}
+                itemStyle={{ color: "var(--primary)" }}
                 formatter={(value: number) => [formatBytes(value), "Traffic"]}
               />
-              <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
+              <CartesianGrid strokeDasharray="3 3" className="stroke-muted/20" vertical={false} />
               <Area
                 type="monotone"
                 dataKey="bytes"
-                stroke="hsl(var(--primary))"
+                stroke="var(--primary)"
                 fillOpacity={1}
                 fill="url(#colorBytes)"
               />

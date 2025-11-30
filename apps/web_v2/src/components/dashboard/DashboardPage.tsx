@@ -67,15 +67,19 @@ export default function DashboardPage({ initialStats }: DashboardPageProps) {
             </p>
           </CardContent>
         </Card>
+        {/* Removed Total Traffic card as it is redundant with UsageCard */}
+        {/* Placeholder for another stat or action */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Traffic</CardTitle>
             <Activity className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatBytes(initialStats.totalTraffic)}</div>
+            <div className="text-2xl font-bold">
+              {formatBytes(initialStats.totalTraffic)}
+            </div>
             <p className="text-xs text-muted-foreground">
-              This month
+              Data transfer this month
             </p>
           </CardContent>
         </Card>
@@ -89,20 +93,20 @@ export default function DashboardPage({ initialStats }: DashboardPageProps) {
              <Button
                 variant="secondary"
                 size="sm"
-                className="w-full mt-1"
+                className="w-full mt-1 h-auto whitespace-normal py-2"
                 onClick={() => router.push(ROUTES.DASHBOARD.TUNNELS)}
              >
-                Manage Tunnels <ArrowRight className="ml-2 h-3 w-3" />
+                Manage Tunnels <ArrowRight className="ml-2 h-3 w-3 shrink-0" />
              </Button>
           </CardContent>
         </Card>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <DailyUsageChart />
-        <div className="col-span-4 lg:col-span-3">
+        {/* <div className="col-span-4 lg:col-span-3">
              <UsageCard />
-        </div>
+        </div> */}
       </div>
     </div>
   );

@@ -43,7 +43,8 @@ export default function DashboardLayout({ children, user }: DashboardLayoutProps
             <a className="mr-6 flex items-center space-x-2" href="/">
               <Cloud className="h-6 w-6" />
               <span className="hidden font-bold sm:inline-block">
-                GiraffeCloud
+                <span className="font-extrabold text-primary">Giraffe</span>
+                <span className="font-semibold">Cloud</span>
               </span>
             </a>
           </div>

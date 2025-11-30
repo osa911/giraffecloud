@@ -23,7 +23,7 @@ import {
   Trash,
   Activity,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import TunnelDialog from "./tunnels/TunnelDialog";
 import TokenDialog from "./settings/TokenDialog";
 import { useTunnels } from "@/hooks/useTunnels";
@@ -82,7 +82,7 @@ export default function GettingStartedPage() {
           {label}
         </div>
       )}
-      <pre className="overflow-x-auto font-mono text-sm pr-10">
+      <pre className="overflow-x-auto font-mono text-sm pr-10 whitespace-pre">
         <code>{code}</code>
       </pre>
       <TooltipProvider>
@@ -130,7 +130,7 @@ export default function GettingStartedPage() {
           {/* Step 1: Install CLI */}
           <div className="flex gap-4">
             <StepNumber number={1} />
-            <div className="flex-1 space-y-2">
+            <div className="flex-1 space-y-2 min-w-0">
               <div className="flex items-center gap-2">
                 <Download className="h-5 w-5 text-primary" />
                 <h4 className="font-medium">Install the CLI</h4>
@@ -148,7 +148,7 @@ export default function GettingStartedPage() {
           {/* Step 2: Create API Token */}
           <div className="flex gap-4">
             <StepNumber number={2} />
-            <div className="flex-1 space-y-2">
+            <div className="flex-1 space-y-2 min-w-0">
               <div className="flex items-center gap-2">
                 <Key className="h-5 w-5 text-primary" />
                 <h4 className="font-medium">Create an API Token</h4>
@@ -168,7 +168,7 @@ export default function GettingStartedPage() {
           {/* Step 3: Login */}
           <div className="flex gap-4">
             <StepNumber number={3} />
-            <div className="flex-1 space-y-2">
+            <div className="flex-1 space-y-2 min-w-0">
               <div className="flex items-center gap-2">
                 <Terminal className="h-5 w-5 text-primary" />
                 <h4 className="font-medium">Login and Download Certificates</h4>
@@ -192,7 +192,7 @@ export default function GettingStartedPage() {
           {/* Step 4: Create Tunnel */}
           <div className="flex gap-4">
             <StepNumber number={4} />
-            <div className="flex-1 space-y-2">
+            <div className="flex-1 space-y-2 min-w-0">
               <div className="flex items-center gap-2">
                 <Network className="h-5 w-5 text-primary" />
                 <h4 className="font-medium">Create a Tunnel</h4>
@@ -212,7 +212,7 @@ export default function GettingStartedPage() {
           {/* Step 5: Connect */}
           <div className="flex gap-4">
             <StepNumber number={5} />
-            <div className="flex-1 space-y-4">
+            <div className="flex-1 space-y-4 min-w-0">
               <div className="flex items-center gap-2">
                 <Play className="h-5 w-5 text-primary" />
                 <h4 className="font-medium">Connect Your Tunnel</h4>

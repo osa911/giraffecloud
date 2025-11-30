@@ -28,7 +28,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Wand2, Globe, AlertTriangle } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import type { Tunnel, TunnelCreateResponse } from "@/types/tunnel";
 import clientApi from "@/services/apiClient/clientApiClient";
 import { getFreeSubdomain } from "@/hooks/useTunnels";
@@ -194,7 +194,9 @@ export default function TunnelDialog({
         {!tunnel && (
           <Alert className="bg-muted/50">
             <AlertDescription>
-              GiraffeCloud supports <strong>HTTP/HTTPS</strong> and <strong>WebSocket</strong> traffic.
+              <p>
+                GiraffeCloud supports <strong>HTTP/HTTPS</strong> and <strong>WebSocket</strong> traffic.
+              </p>
             </AlertDescription>
           </Alert>
         )}
@@ -218,7 +220,7 @@ export default function TunnelDialog({
                 {!freeSubdomainAvailable && freeSubdomain && (
                   <Alert variant="default" className="bg-blue-50 text-blue-900 border-blue-200 dark:bg-blue-950 dark:text-blue-100 dark:border-blue-800">
                     <AlertDescription>
-                      You already have a free subdomain: <strong>{freeSubdomain}</strong>. To create additional tunnels, please use a custom domain.
+                      You already have a free subdomain: <strong>{freeSubdomain}</strong>To create additional tunnels, please use a custom domain.
                     </AlertDescription>
                   </Alert>
                 )}
@@ -269,7 +271,7 @@ export default function TunnelDialog({
                       />
                     </FormControl>
                     <FormDescription>
-                      {tunnel ? "Domain cannot be changed after creation" : "Enter your custom domain"}
+                      {tunnel ? "Domain cannot be changed after creation" : "Enter your custom domain (subdomains are also supported)"}.
                     </FormDescription>
                     <FormMessage />
                   </FormItem>

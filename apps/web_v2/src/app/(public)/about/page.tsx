@@ -17,16 +17,22 @@ export default function AboutPage() {
         security, and operational simplicity.
       </p>
 
-      <h2 className="text-2xl font-semibold mb-4">What we do</h2>
-      <ul className="list-disc pl-6 space-y-2 mb-8 text-muted-foreground">
+      <h2 className="text-2xl font-semibold mb-4">Our Mission</h2>
+      <p className="text-muted-foreground mb-8">
+        To simplify the way developers share and expose their local work to the world, without compromising on security or speed.
+        We believe that setting up secure remote access should be as easy as typing a single command.
+      </p>
+
+      <h2 className="text-2xl font-semibold mb-4">Why GiraffeCloud?</h2>
+      <ul className="list-disc pl-6 space-y-3 mb-8 text-muted-foreground">
         <li>
-          Secure tunnels for HTTP and WebSocket traffic with robust authentication and access controls.
+          <strong className="text-foreground">Instant Sharing:</strong> Turn your localhost server into a public URL in seconds. Perfect for client demos, webhook testing, and mobile debugging.
         </li>
         <li>
-          Automatic certificate management and modern TLS.
+          <strong className="text-foreground">Secure by Design:</strong> We handle the complexity of SSL/TLS certificates automatically. Your tunnels are encrypted and protected with robust access controls.
         </li>
         <li>
-          Reliability features: health checks, graceful deploys, and observability.
+          <strong className="text-foreground">Developer First:</strong> Built for modern workflows with a powerful CLI, intuitive dashboard, and reliable connections that don't drop when you need them most.
         </li>
       </ul>
 

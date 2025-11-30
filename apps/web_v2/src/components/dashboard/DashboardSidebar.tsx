@@ -61,7 +61,7 @@ export function DashboardSidebar({ className }: SidebarProps) {
             {items.map((item) => (
               <Button
                 key={item.href}
-                variant={pathname === item.href ? "secondary" : "ghost"}
+                variant={pathname === item.href ? "default" : "ghost"}
                 className="w-full justify-start"
                 asChild
               >

@@ -9,6 +9,8 @@ import { Label } from "@/components/ui/label";
 import { updateProfileAction } from "@/lib/actions/user.actions";
 import { User } from "@/lib/actions/user.types";
 import { Loader2 } from "lucide-react";
+import { toast } from "@/lib/toast";
+import { useEffect } from "react";
 
 interface ProfilePageProps {
   initialUser: User;
@@ -19,6 +21,12 @@ export default function ProfilePage({ initialUser }: ProfilePageProps) {
     name: initialUser.name,
     email: initialUser.email,
   });
+
+  useEffect(() => {
+    if (state.name !== initialUser.name) {
+       toast.success("Profile updated successfully!");
+    }
+  }, [state, initialUser.name]);
 
   return (
     <div className="space-y-6">

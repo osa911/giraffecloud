@@ -12,12 +12,23 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Trash, Plus, AlertTriangle, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { getTokensList, revokeToken, type Token } from "@/services/api/tokenApi";
 import { ApiError } from "@/services/apiClient/baseApiClient";
 import TokenDialog from "./TokenDialog";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 
 export default function TokenManagement() {
   const [tokens, setTokens] = useState<Token[]>([]);
@@ -49,9 +60,6 @@ export default function TokenManagement() {
   };
 
   const handleRevokeToken = async (id: string) => {
-    if (!confirm("Are you sure you want to revoke this token? Any applications using it will stop working immediately.")) {
-      return;
-    }
 
     try {
       await revokeToken(id);
@@ -129,15 +137,36 @@ export default function TokenManagement() {
                       : "Never"}
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleRevokeToken(token.id)}
-                      className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                    >
-                      <Trash className="h-4 w-4" />
-                      <span className="sr-only">Revoke</span>
-                    </Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                        >
+                          <Trash className="h-4 w-4" />
+                          <span className="sr-only">Revoke</span>
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This action cannot be undone. This will permanently revoke the token
+                            and any applications using it will stop working immediately.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={() => handleRevokeToken(token.id)}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          >
+                            Revoke Token
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   </TableCell>
                 </TableRow>
               ))
