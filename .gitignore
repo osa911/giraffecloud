@@ -10,8 +10,6 @@ internal/config/env/.env.*
 !internal/config/env/.env.example
 !apps/web/.env.example
 apps/web/.env.local
-!apps/web_v2/.env.example
-apps/web_v2/.env.local
 certs/
 
 # Database backups
@@ -44,27 +42,21 @@ go.work.sum
 
 .vscode/
 
-
 # web
 apps/web/node_modules/
 apps/web/.next/
-apps/web/.yarn/
+apps/web/out/
+apps/web/build/
+apps/web/coverage/
+apps/web/.vercel/
+apps/web/*.tsbuildinfo
+apps/web/next-env.d.ts
+apps/web/.yarn/*
 apps/web/.pnp*
-
-# web_v2
-apps/web_v2/node_modules/
-apps/web_v2/.next/
-apps/web_v2/out/
-apps/web_v2/build/
-apps/web_v2/coverage/
-apps/web_v2/.vercel/
-apps/web_v2/*.tsbuildinfo
-apps/web_v2/next-env.d.ts
-apps/web_v2/.yarn/*
-!apps/web_v2/.yarn/patches
-!apps/web_v2/.yarn/plugins
-!apps/web_v2/.yarn/releases
-!apps/web_v2/.yarn/versions
+!apps/web/.yarn/patches
+!apps/web/.yarn/plugins
+!apps/web/.yarn/releases
+!apps/web/.yarn/versions
 
 # IDE specific files
 .idea/
