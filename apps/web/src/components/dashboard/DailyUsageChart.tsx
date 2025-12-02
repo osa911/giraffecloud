@@ -17,6 +17,47 @@ import { fetcher } from "@/lib/swr-fetcher";
 import { DailyUsageHistory } from "@/types/tunnel";
 import { format, subDays } from "date-fns";
 
+const formatBytes = (bytes: number) => {
+  if (bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+};
+
+const CustomTooltip = ({ active, payload, label }: any) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="rounded-lg border bg-popover p-2 shadow-sm">
+        <div className="grid grid-cols-2 gap-2">
+          <div className="flex flex-col">
+            <span className="text-[0.70rem] uppercase text-muted-foreground">
+              {label}
+            </span>
+          </div>
+        </div>
+        <div className="mt-2 flex flex-col gap-1">
+          {payload.map((entry: any, index: number) => (
+            <div key={index} className="flex items-center gap-2">
+              <div
+                className="h-2 w-2 rounded-full"
+                style={{ backgroundColor: entry.color }}
+              />
+              <span className="text-[0.70rem] uppercase text-muted-foreground">
+                {entry.name === "bytes_in" ? "Incoming" : "Outgoing"}
+              </span>
+              <span className="font-bold text-foreground">
+                {formatBytes(entry.value as number)}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+  return null;
+};
+
 export default function DailyUsageChart() {
   const { data: usage, error, isLoading } = useSWR<DailyUsageHistory>(
     "/usage/daily-history?days=30",
@@ -29,13 +70,7 @@ export default function DailyUsageChart() {
     bytes_out: entry.bytes_out,
   })) || [];
 
-  const formatBytes = (bytes: number) => {
-    if (bytes === 0) return "0 B";
-    const k = 1024;
-    const sizes = ["B", "KB", "MB", "GB", "TB"];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-  };
+
 
   if (isLoading) {
     return (
@@ -111,20 +146,7 @@ export default function DailyUsageChart() {
                 axisLine={false}
                 tickFormatter={(value) => formatBytes(value)}
               />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: "var(--popover)",
-                  borderColor: "var(--border)",
-                  color: "var(--popover-foreground)",
-                  borderRadius: "var(--radius)",
-                }}
-                itemStyle={{ color: "var(--foreground)" }}
-                formatter={(value: number, name: string) => [
-                  formatBytes(value),
-                  name === "bytes_in" ? "Incoming" : "Outgoing",
-                ]}
-                labelStyle={{ color: "var(--muted-foreground)" }}
-              />
+              <Tooltip content={<CustomTooltip />} />
               <CartesianGrid strokeDasharray="3 3" className="stroke-muted/20" vertical={false} />
               <Area
                 type="monotone"
