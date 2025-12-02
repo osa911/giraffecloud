@@ -27,7 +27,7 @@ import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Wand2, Globe, AlertTriangle } from "lucide-react";
+import { Loader2, Wand2, Globe, AlertTriangle, Copy, Check } from "lucide-react";
 import { toast } from "@/lib/toast";
 import type { Tunnel, TunnelCreateResponse } from "@/types/tunnel";
 import clientApi from "@/services/apiClient/clientApiClient";
@@ -63,6 +63,7 @@ export default function TunnelDialog({
   const [loadingFreeSubdomain, setLoadingFreeSubdomain] = useState(false);
   const [freeSubdomainError, setFreeSubdomainError] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [copiedIp, setCopiedIp] = useState(false);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -141,6 +142,12 @@ export default function TunnelDialog({
       return;
     }
 
+    // Safety check: Prevent creating free tunnel if not available
+    if (domainType === "free" && !freeSubdomainAvailable) {
+      toast.error("You already have a free subdomain. Please use a custom domain.");
+      return;
+    }
+
     // Check for duplicate port
     const duplicateTunnel = existingTunnels.find(
       (t) => t.target_port === values.target_port && (!tunnel || t.id !== tunnel.id)
@@ -181,6 +188,19 @@ export default function TunnelDialog({
     }
   }
 
+  const handleCopyIp = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const ip = process.env.NEXT_PUBLIC_SERVER_IP;
+    if (ip) {
+      navigator.clipboard.writeText(ip);
+      setCopiedIp(true);
+      toast.success("Server IP copied to clipboard");
+      setTimeout(() => setCopiedIp(false), 2000);
+    } else {
+      toast.error("Server IP not configured");
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[500px]">
@@ -218,9 +238,11 @@ export default function TunnelDialog({
                 </ToggleGroup>
 
                 {!freeSubdomainAvailable && freeSubdomain && (
-                  <Alert variant="default" className="bg-blue-50 text-blue-900 border-blue-200 dark:bg-blue-950 dark:text-blue-100 dark:border-blue-800">
+                  <Alert variant="default" className="bg-amber-50 text-amber-900 border-amber-200 dark:bg-amber-950 dark:text-amber-100 dark:border-amber-800">
+                    <AlertTriangle className="h-4 w-4" />
                     <AlertDescription>
-                      You already have a free subdomain: <strong>{freeSubdomain}</strong>To create additional tunnels, please use a custom domain.
+                      You already have a free subdomain: <strong>{freeSubdomain}</strong>
+                      To create additional tunnels, please use a custom domain.
                     </AlertDescription>
                   </Alert>
                 )}
@@ -257,26 +279,52 @@ export default function TunnelDialog({
 
             {/* Custom Domain Input */}
             {(tunnel || domainType === "custom") && (
-              <FormField
-                control={form.control}
-                name="domain"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Domain</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="example.com"
-                        {...field}
-                        disabled={!!tunnel}
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      {tunnel ? "Domain cannot be changed after creation" : "Enter your custom domain (subdomains are also supported)"}.
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <div className="space-y-4">
+                <Alert className="bg-blue-50 text-blue-900 border-blue-200 dark:bg-blue-950 dark:text-blue-100 dark:border-blue-800">
+                  <Globe className="h-5 w-5" />
+                  <AlertTitle>DNS Configuration Required</AlertTitle>
+                  <AlertDescription className="text-sm opacity-90">
+                    <div className="flex flex-wrap items-center gap-1">
+                      <span>To use a custom domain, point your domain to our server IP:</span>
+                      <code className="relative rounded bg-muted px-[0.3rem] py-[0.2rem] font-mono text-sm font-semibold">
+                        {process.env.NEXT_PUBLIC_SERVER_IP || "our server IP"}
+                      </code>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className={`h-6 w-6 ${copiedIp ? "text-green-500" : ""}`}
+                        onClick={handleCopyIp}
+                        title="Copy Server IP"
+                      >
+                        {copiedIp ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                        <span className="sr-only">Copy Server IP</span>
+                      </Button>
+                      <span>(A Record).</span>
+                    </div>
+                  </AlertDescription>
+                </Alert>
+
+                <FormField
+                  control={form.control}
+                  name="domain"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Domain</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="example.com"
+                          {...field}
+                          disabled={!!tunnel}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        {tunnel ? "Domain cannot be changed after creation" : "Enter your custom domain (subdomains are also supported)"}.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
             )}
 
               <FormField
