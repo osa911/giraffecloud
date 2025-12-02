@@ -44,7 +44,7 @@ const nextConfig: NextConfig = {
           },
           {
             key: 'Content-Security-Policy',
-            value: "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline' https://apis.google.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://api.giraffecloud.xyz https://identitytoolkit.googleapis.com https://securetoken.googleapis.com http://localhost:8081 ws://localhost:8081; frame-src 'self' https://giraffecloud.xyz;"
+            value: "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline' https://apis.google.com https://accounts.google.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://api.giraffecloud.xyz https://identitytoolkit.googleapis.com https://securetoken.googleapis.com http://localhost:8081 ws://localhost:8081 https://*.firebaseapp.com; frame-src 'self' https://giraffecloud.xyz https://accounts.google.com https://*.firebaseapp.com;"
           }
         ]
       }
