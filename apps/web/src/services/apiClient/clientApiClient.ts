@@ -61,6 +61,10 @@ axiosClient.interceptors.response.use(
     if (process.env.NODE_ENV === "development") {
       console.debug("API Response:", response.status, response.config.url);
     }
+    // Reset 401 retry count on successful response
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("401_retry_count");
+    }
     return response;
   },
   (error: AxiosError<APIResponse<unknown>>) => {
@@ -98,6 +102,27 @@ axiosClient.interceptors.response.use(
 
     // Handle unauthorized access
     if (error.response?.status === 401) {
+      // Check retry count to prevent infinite loops
+      let retryCount = 0;
+      if (typeof window !== "undefined") {
+        const storedCount = localStorage.getItem("401_retry_count");
+        retryCount = storedCount ? parseInt(storedCount, 10) : 0;
+        retryCount++;
+        localStorage.setItem("401_retry_count", retryCount.toString());
+      }
+
+      // If we've hit the limit, force a hard reset
+      if (retryCount > 5) {
+        console.error("Too many 401 errors, clearing local storage and forcing logout");
+        if (typeof window !== "undefined") {
+          localStorage.clear(); // Clear all local storage
+          clearAuthCookies(); // Clear cookies
+          localStorage.removeItem("401_retry_count"); // Ensure this is gone
+        }
+        window.location.href = ROUTES.AUTH.LOGIN;
+        return Promise.reject(error);
+      }
+
       // Clear stale auth cookies
       clearAuthCookies();
 

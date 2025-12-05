@@ -117,6 +117,12 @@ func (m *AuthMiddleware) RequireAuth() gin.HandlerFunc {
 
 		// If user was not authenticated by any method
 		if !authenticated {
+			// Clear cookies to prevent redirect loops
+			cookieDomain := utils.GetCookieDomain()
+			c.SetCookie(constants.CookieSession, "", -1, constants.CookiePathRoot, cookieDomain, true, true)
+			c.SetCookie(constants.CookieAuthToken, "", -1, constants.CookiePathRoot, cookieDomain, true, true)
+			c.SetCookie(constants.CookieCSRF, "", -1, constants.CookiePathRoot, cookieDomain, true, false)
+
 			utils.HandleAPIError(c, nil, common.ErrCodeUnauthorized, "Authentication required, please log in again")
 			c.Abort()
 			return
