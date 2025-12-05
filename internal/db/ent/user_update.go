@@ -8,16 +8,15 @@ import (
 	"fmt"
 	"time"
 
+	"entgo.io/ent/dialect/sql"
+	"entgo.io/ent/dialect/sql/sqlgraph"
+	"entgo.io/ent/schema/field"
+	"github.com/google/uuid"
 	"github.com/osa911/giraffecloud/internal/db/ent/predicate"
 	"github.com/osa911/giraffecloud/internal/db/ent/session"
 	"github.com/osa911/giraffecloud/internal/db/ent/token"
 	"github.com/osa911/giraffecloud/internal/db/ent/tunnel"
 	"github.com/osa911/giraffecloud/internal/db/ent/user"
-
-	"entgo.io/ent/dialect/sql"
-	"entgo.io/ent/dialect/sql/sqlgraph"
-	"entgo.io/ent/schema/field"
-	"github.com/google/uuid"
 )
 
 // UserUpdate is the builder for updating User entities.

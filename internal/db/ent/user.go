@@ -7,10 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/osa911/giraffecloud/internal/db/ent/user"
-
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
+	"github.com/osa911/giraffecloud/internal/db/ent/user"
 )
 
 // User is the model entity for the User schema.

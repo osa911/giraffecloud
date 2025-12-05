@@ -8,12 +8,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/osa911/giraffecloud/internal/db/ent/predicate"
-	"github.com/osa911/giraffecloud/internal/db/ent/usage"
-
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/osa911/giraffecloud/internal/db/ent/predicate"
+	"github.com/osa911/giraffecloud/internal/db/ent/usage"
 )
 
 // UsageUpdate is the builder for updating Usage entities.

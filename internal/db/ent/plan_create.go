@@ -8,10 +8,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/osa911/giraffecloud/internal/db/ent/plan"
-
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/osa911/giraffecloud/internal/db/ent/plan"
 )
 
 // PlanCreate is the builder for creating a Plan entity.

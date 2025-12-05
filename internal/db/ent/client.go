@@ -9,8 +9,13 @@ import (
 	"log"
 	"reflect"
 
+	"github.com/google/uuid"
 	"github.com/osa911/giraffecloud/internal/db/ent/migrate"
 
+	"entgo.io/ent"
+	"entgo.io/ent/dialect"
+	"entgo.io/ent/dialect/sql"
+	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/osa911/giraffecloud/internal/db/ent/clientversion"
 	"github.com/osa911/giraffecloud/internal/db/ent/plan"
 	"github.com/osa911/giraffecloud/internal/db/ent/session"
@@ -18,12 +23,6 @@ import (
 	"github.com/osa911/giraffecloud/internal/db/ent/tunnel"
 	"github.com/osa911/giraffecloud/internal/db/ent/usage"
 	"github.com/osa911/giraffecloud/internal/db/ent/user"
-
-	"entgo.io/ent"
-	"entgo.io/ent/dialect"
-	"entgo.io/ent/dialect/sql"
-	"entgo.io/ent/dialect/sql/sqlgraph"
-	"github.com/google/uuid"
 )
 
 // Client is the client that holds all ent builders.

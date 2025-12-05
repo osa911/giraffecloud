@@ -13,6 +13,7 @@ import (
 type Config struct {
 	// Server Configuration
 	Environment string `env:"ENV" envDefault:"development"`
+	ServerIP    string `env:"SERVER_IP"`
 	Port        string `env:"API_PORT" envDefault:"8080"`
 	LogLevel    string `env:"LOG_LEVEL" envDefault:"INFO"`
 	LogFile     string `env:"LOG_FILE"`

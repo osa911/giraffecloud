@@ -25,6 +25,10 @@ func (Tunnel) Fields() []ent.Field {
 		field.Bool("is_enabled").
 			Default(true).
 			StructTag(`json:"is_enabled"`),
+		field.Enum("dns_propagation_status").
+			Values("verified", "pending_dns").
+			Default("verified").
+			StructTag(`json:"dns_propagation_status"`),
 		field.Int("target_port").
 			Positive(),
 		field.Uint32("user_id"),

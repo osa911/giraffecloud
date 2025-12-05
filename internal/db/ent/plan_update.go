@@ -8,12 +8,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/osa911/giraffecloud/internal/db/ent/plan"
-	"github.com/osa911/giraffecloud/internal/db/ent/predicate"
-
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/osa911/giraffecloud/internal/db/ent/plan"
+	"github.com/osa911/giraffecloud/internal/db/ent/predicate"
 )
 
 // PlanUpdate is the builder for updating Plan entities.

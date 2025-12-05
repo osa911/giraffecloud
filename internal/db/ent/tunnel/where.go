@@ -5,10 +5,9 @@ package tunnel
 import (
 	"time"
 
-	"github.com/osa911/giraffecloud/internal/db/ent/predicate"
-
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
+	"github.com/osa911/giraffecloud/internal/db/ent/predicate"
 )
 
 // ID filters vertices based on their ID field.
@@ -389,6 +388,26 @@ func IsEnabledEQ(v bool) predicate.Tunnel {
 // IsEnabledNEQ applies the NEQ predicate on the "is_enabled" field.
 func IsEnabledNEQ(v bool) predicate.Tunnel {
 	return predicate.Tunnel(sql.FieldNEQ(FieldIsEnabled, v))
+}
+
+// DNSPropagationStatusEQ applies the EQ predicate on the "dns_propagation_status" field.
+func DNSPropagationStatusEQ(v DNSPropagationStatus) predicate.Tunnel {
+	return predicate.Tunnel(sql.FieldEQ(FieldDNSPropagationStatus, v))
+}
+
+// DNSPropagationStatusNEQ applies the NEQ predicate on the "dns_propagation_status" field.
+func DNSPropagationStatusNEQ(v DNSPropagationStatus) predicate.Tunnel {
+	return predicate.Tunnel(sql.FieldNEQ(FieldDNSPropagationStatus, v))
+}
+
+// DNSPropagationStatusIn applies the In predicate on the "dns_propagation_status" field.
+func DNSPropagationStatusIn(vs ...DNSPropagationStatus) predicate.Tunnel {
+	return predicate.Tunnel(sql.FieldIn(FieldDNSPropagationStatus, vs...))
+}
+
+// DNSPropagationStatusNotIn applies the NotIn predicate on the "dns_propagation_status" field.
+func DNSPropagationStatusNotIn(vs ...DNSPropagationStatus) predicate.Tunnel {
+	return predicate.Tunnel(sql.FieldNotIn(FieldDNSPropagationStatus, vs...))
 }
 
 // TargetPortEQ applies the EQ predicate on the "target_port" field.

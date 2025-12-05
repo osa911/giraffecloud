@@ -8,10 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/osa911/giraffecloud/internal/db/ent/clientversion"
-
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
+	"github.com/osa911/giraffecloud/internal/db/ent/clientversion"
 )
 
 // ClientVersion is the model entity for the ClientVersion schema.

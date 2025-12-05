@@ -73,8 +73,9 @@ func (r *tunnelRepository) GetByDomain(ctx context.Context, domain string) (*ent
 // TunnelUpdate represents the fields that can be updated
 // Domain is intentionally excluded - domains cannot be changed after creation
 type TunnelUpdate struct {
-	IsEnabled  *bool
-	TargetPort *int
+	IsEnabled            *bool
+	TargetPort           *int
+	DnsPropagationStatus *tunnel.DNSPropagationStatus
 }
 
 // Update updates a tunnel's configuration
@@ -90,6 +91,9 @@ func (r *tunnelRepository) Update(ctx context.Context, id uint32, updates interf
 	}
 	if u.TargetPort != nil {
 		update.SetTargetPort(*u.TargetPort)
+	}
+	if u.DnsPropagationStatus != nil {
+		update.SetDNSPropagationStatus(*u.DnsPropagationStatus)
 	}
 
 	return update.Save(ctx)

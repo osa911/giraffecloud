@@ -7,11 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/osa911/giraffecloud/internal/db/ent/tunnel"
-	"github.com/osa911/giraffecloud/internal/db/ent/user"
-
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
+	"github.com/osa911/giraffecloud/internal/db/ent/tunnel"
+	"github.com/osa911/giraffecloud/internal/db/ent/user"
 )
 
 // Tunnel is the model entity for the Tunnel schema.
@@ -31,6 +30,8 @@ type Tunnel struct {
 	ClientIP string `json:"client_ip,omitempty"`
 	// IsEnabled holds the value of the "is_enabled" field.
 	IsEnabled bool `json:"is_enabled"`
+	// DNSPropagationStatus holds the value of the "dns_propagation_status" field.
+	DNSPropagationStatus tunnel.DNSPropagationStatus `json:"dns_propagation_status"`
 	// TargetPort holds the value of the "target_port" field.
 	TargetPort int `json:"target_port,omitempty"`
 	// UserID holds the value of the "user_id" field.
@@ -70,7 +71,7 @@ func (*Tunnel) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case tunnel.FieldID, tunnel.FieldTargetPort, tunnel.FieldUserID:
 			values[i] = new(sql.NullInt64)
-		case tunnel.FieldDomain, tunnel.FieldToken, tunnel.FieldClientIP:
+		case tunnel.FieldDomain, tunnel.FieldToken, tunnel.FieldClientIP, tunnel.FieldDNSPropagationStatus:
 			values[i] = new(sql.NullString)
 		case tunnel.FieldCreatedAt, tunnel.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -130,6 +131,12 @@ func (t *Tunnel) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field is_enabled", values[i])
 			} else if value.Valid {
 				t.IsEnabled = value.Bool
+			}
+		case tunnel.FieldDNSPropagationStatus:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field dns_propagation_status", values[i])
+			} else if value.Valid {
+				t.DNSPropagationStatus = tunnel.DNSPropagationStatus(value.String)
 			}
 		case tunnel.FieldTargetPort:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -201,6 +208,9 @@ func (t *Tunnel) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("is_enabled=")
 	builder.WriteString(fmt.Sprintf("%v", t.IsEnabled))
+	builder.WriteString(", ")
+	builder.WriteString("dns_propagation_status=")
+	builder.WriteString(fmt.Sprintf("%v", t.DNSPropagationStatus))
 	builder.WriteString(", ")
 	builder.WriteString("target_port=")
 	builder.WriteString(fmt.Sprintf("%v", t.TargetPort))

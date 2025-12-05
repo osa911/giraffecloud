@@ -8,11 +8,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/osa911/giraffecloud/internal/db/ent/session"
-	"github.com/osa911/giraffecloud/internal/db/ent/user"
-
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/osa911/giraffecloud/internal/db/ent/session"
+	"github.com/osa911/giraffecloud/internal/db/ent/user"
 )
 
 // SessionCreate is the builder for creating a Session entity.

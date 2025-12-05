@@ -8,13 +8,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/osa911/giraffecloud/internal/db/ent/predicate"
-	"github.com/osa911/giraffecloud/internal/db/ent/tunnel"
-	"github.com/osa911/giraffecloud/internal/db/ent/user"
-
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/osa911/giraffecloud/internal/db/ent/predicate"
+	"github.com/osa911/giraffecloud/internal/db/ent/tunnel"
+	"github.com/osa911/giraffecloud/internal/db/ent/user"
 )
 
 // TunnelUpdate is the builder for updating Tunnel entities.
@@ -94,6 +93,20 @@ func (tu *TunnelUpdate) SetIsEnabled(b bool) *TunnelUpdate {
 func (tu *TunnelUpdate) SetNillableIsEnabled(b *bool) *TunnelUpdate {
 	if b != nil {
 		tu.SetIsEnabled(*b)
+	}
+	return tu
+}
+
+// SetDNSPropagationStatus sets the "dns_propagation_status" field.
+func (tu *TunnelUpdate) SetDNSPropagationStatus(tps tunnel.DNSPropagationStatus) *TunnelUpdate {
+	tu.mutation.SetDNSPropagationStatus(tps)
+	return tu
+}
+
+// SetNillableDNSPropagationStatus sets the "dns_propagation_status" field if the given value is not nil.
+func (tu *TunnelUpdate) SetNillableDNSPropagationStatus(tps *tunnel.DNSPropagationStatus) *TunnelUpdate {
+	if tps != nil {
+		tu.SetDNSPropagationStatus(*tps)
 	}
 	return tu
 }
@@ -203,6 +216,11 @@ func (tu *TunnelUpdate) check() error {
 			return &ValidationError{Name: "token", err: fmt.Errorf(`ent: validator failed for field "Tunnel.token": %w`, err)}
 		}
 	}
+	if v, ok := tu.mutation.DNSPropagationStatus(); ok {
+		if err := tunnel.DNSPropagationStatusValidator(v); err != nil {
+			return &ValidationError{Name: "dns_propagation_status", err: fmt.Errorf(`ent: validator failed for field "Tunnel.dns_propagation_status": %w`, err)}
+		}
+	}
 	if v, ok := tu.mutation.TargetPort(); ok {
 		if err := tunnel.TargetPortValidator(v); err != nil {
 			return &ValidationError{Name: "target_port", err: fmt.Errorf(`ent: validator failed for field "Tunnel.target_port": %w`, err)}
@@ -243,6 +261,9 @@ func (tu *TunnelUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	}
 	if value, ok := tu.mutation.IsEnabled(); ok {
 		_spec.SetField(tunnel.FieldIsEnabled, field.TypeBool, value)
+	}
+	if value, ok := tu.mutation.DNSPropagationStatus(); ok {
+		_spec.SetField(tunnel.FieldDNSPropagationStatus, field.TypeEnum, value)
 	}
 	if value, ok := tu.mutation.TargetPort(); ok {
 		_spec.SetField(tunnel.FieldTargetPort, field.TypeInt, value)
@@ -367,6 +388,20 @@ func (tuo *TunnelUpdateOne) SetNillableIsEnabled(b *bool) *TunnelUpdateOne {
 	return tuo
 }
 
+// SetDNSPropagationStatus sets the "dns_propagation_status" field.
+func (tuo *TunnelUpdateOne) SetDNSPropagationStatus(tps tunnel.DNSPropagationStatus) *TunnelUpdateOne {
+	tuo.mutation.SetDNSPropagationStatus(tps)
+	return tuo
+}
+
+// SetNillableDNSPropagationStatus sets the "dns_propagation_status" field if the given value is not nil.
+func (tuo *TunnelUpdateOne) SetNillableDNSPropagationStatus(tps *tunnel.DNSPropagationStatus) *TunnelUpdateOne {
+	if tps != nil {
+		tuo.SetDNSPropagationStatus(*tps)
+	}
+	return tuo
+}
+
 // SetTargetPort sets the "target_port" field.
 func (tuo *TunnelUpdateOne) SetTargetPort(i int) *TunnelUpdateOne {
 	tuo.mutation.ResetTargetPort()
@@ -485,6 +520,11 @@ func (tuo *TunnelUpdateOne) check() error {
 			return &ValidationError{Name: "token", err: fmt.Errorf(`ent: validator failed for field "Tunnel.token": %w`, err)}
 		}
 	}
+	if v, ok := tuo.mutation.DNSPropagationStatus(); ok {
+		if err := tunnel.DNSPropagationStatusValidator(v); err != nil {
+			return &ValidationError{Name: "dns_propagation_status", err: fmt.Errorf(`ent: validator failed for field "Tunnel.dns_propagation_status": %w`, err)}
+		}
+	}
 	if v, ok := tuo.mutation.TargetPort(); ok {
 		if err := tunnel.TargetPortValidator(v); err != nil {
 			return &ValidationError{Name: "target_port", err: fmt.Errorf(`ent: validator failed for field "Tunnel.target_port": %w`, err)}
@@ -542,6 +582,9 @@ func (tuo *TunnelUpdateOne) sqlSave(ctx context.Context) (_node *Tunnel, err err
 	}
 	if value, ok := tuo.mutation.IsEnabled(); ok {
 		_spec.SetField(tunnel.FieldIsEnabled, field.TypeBool, value)
+	}
+	if value, ok := tuo.mutation.DNSPropagationStatus(); ok {
+		_spec.SetField(tunnel.FieldDNSPropagationStatus, field.TypeEnum, value)
 	}
 	if value, ok := tuo.mutation.TargetPort(); ok {
 		_spec.SetField(tunnel.FieldTargetPort, field.TypeInt, value)

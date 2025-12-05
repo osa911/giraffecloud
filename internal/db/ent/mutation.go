@@ -9,6 +9,9 @@ import (
 	"sync"
 	"time"
 
+	"entgo.io/ent"
+	"entgo.io/ent/dialect/sql"
+	"github.com/google/uuid"
 	"github.com/osa911/giraffecloud/internal/db/ent/clientversion"
 	"github.com/osa911/giraffecloud/internal/db/ent/plan"
 	"github.com/osa911/giraffecloud/internal/db/ent/predicate"
@@ -17,10 +20,6 @@ import (
 	"github.com/osa911/giraffecloud/internal/db/ent/tunnel"
 	"github.com/osa911/giraffecloud/internal/db/ent/usage"
 	"github.com/osa911/giraffecloud/internal/db/ent/user"
-
-	"entgo.io/ent"
-	"entgo.io/ent/dialect/sql"
-	"github.com/google/uuid"
 )
 
 const (
@@ -3229,23 +3228,24 @@ func (m *TokenMutation) ResetEdge(name string) error {
 // TunnelMutation represents an operation that mutates the Tunnel nodes in the graph.
 type TunnelMutation struct {
 	config
-	op             Op
-	typ            string
-	id             *int
-	created_at     *time.Time
-	updated_at     *time.Time
-	domain         *string
-	token          *string
-	client_ip      *string
-	is_enabled     *bool
-	target_port    *int
-	addtarget_port *int
-	clearedFields  map[string]struct{}
-	owner          *uint32
-	clearedowner   bool
-	done           bool
-	oldValue       func(context.Context) (*Tunnel, error)
-	predicates     []predicate.Tunnel
+	op                     Op
+	typ                    string
+	id                     *int
+	created_at             *time.Time
+	updated_at             *time.Time
+	domain                 *string
+	token                  *string
+	client_ip              *string
+	is_enabled             *bool
+	dns_propagation_status *tunnel.DNSPropagationStatus
+	target_port            *int
+	addtarget_port         *int
+	clearedFields          map[string]struct{}
+	owner                  *uint32
+	clearedowner           bool
+	done                   bool
+	oldValue               func(context.Context) (*Tunnel, error)
+	predicates             []predicate.Tunnel
 }
 
 var _ ent.Mutation = (*TunnelMutation)(nil)
@@ -3575,6 +3575,42 @@ func (m *TunnelMutation) ResetIsEnabled() {
 	m.is_enabled = nil
 }
 
+// SetDNSPropagationStatus sets the "dns_propagation_status" field.
+func (m *TunnelMutation) SetDNSPropagationStatus(tps tunnel.DNSPropagationStatus) {
+	m.dns_propagation_status = &tps
+}
+
+// DNSPropagationStatus returns the value of the "dns_propagation_status" field in the mutation.
+func (m *TunnelMutation) DNSPropagationStatus() (r tunnel.DNSPropagationStatus, exists bool) {
+	v := m.dns_propagation_status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDNSPropagationStatus returns the old "dns_propagation_status" field's value of the Tunnel entity.
+// If the Tunnel object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TunnelMutation) OldDNSPropagationStatus(ctx context.Context) (v tunnel.DNSPropagationStatus, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDNSPropagationStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDNSPropagationStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDNSPropagationStatus: %w", err)
+	}
+	return oldValue.DNSPropagationStatus, nil
+}
+
+// ResetDNSPropagationStatus resets all changes to the "dns_propagation_status" field.
+func (m *TunnelMutation) ResetDNSPropagationStatus() {
+	m.dns_propagation_status = nil
+}
+
 // SetTargetPort sets the "target_port" field.
 func (m *TunnelMutation) SetTargetPort(i int) {
 	m.target_port = &i
@@ -3741,7 +3777,7 @@ func (m *TunnelMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *TunnelMutation) Fields() []string {
-	fields := make([]string, 0, 8)
+	fields := make([]string, 0, 9)
 	if m.created_at != nil {
 		fields = append(fields, tunnel.FieldCreatedAt)
 	}
@@ -3759,6 +3795,9 @@ func (m *TunnelMutation) Fields() []string {
 	}
 	if m.is_enabled != nil {
 		fields = append(fields, tunnel.FieldIsEnabled)
+	}
+	if m.dns_propagation_status != nil {
+		fields = append(fields, tunnel.FieldDNSPropagationStatus)
 	}
 	if m.target_port != nil {
 		fields = append(fields, tunnel.FieldTargetPort)
@@ -3786,6 +3825,8 @@ func (m *TunnelMutation) Field(name string) (ent.Value, bool) {
 		return m.ClientIP()
 	case tunnel.FieldIsEnabled:
 		return m.IsEnabled()
+	case tunnel.FieldDNSPropagationStatus:
+		return m.DNSPropagationStatus()
 	case tunnel.FieldTargetPort:
 		return m.TargetPort()
 	case tunnel.FieldUserID:
@@ -3811,6 +3852,8 @@ func (m *TunnelMutation) OldField(ctx context.Context, name string) (ent.Value, 
 		return m.OldClientIP(ctx)
 	case tunnel.FieldIsEnabled:
 		return m.OldIsEnabled(ctx)
+	case tunnel.FieldDNSPropagationStatus:
+		return m.OldDNSPropagationStatus(ctx)
 	case tunnel.FieldTargetPort:
 		return m.OldTargetPort(ctx)
 	case tunnel.FieldUserID:
@@ -3865,6 +3908,13 @@ func (m *TunnelMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetIsEnabled(v)
+		return nil
+	case tunnel.FieldDNSPropagationStatus:
+		v, ok := value.(tunnel.DNSPropagationStatus)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDNSPropagationStatus(v)
 		return nil
 	case tunnel.FieldTargetPort:
 		v, ok := value.(int)
@@ -3970,6 +4020,9 @@ func (m *TunnelMutation) ResetField(name string) error {
 		return nil
 	case tunnel.FieldIsEnabled:
 		m.ResetIsEnabled()
+		return nil
+	case tunnel.FieldDNSPropagationStatus:
+		m.ResetDNSPropagationStatus()
 		return nil
 	case tunnel.FieldTargetPort:
 		m.ResetTargetPort()

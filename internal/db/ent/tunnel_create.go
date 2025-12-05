@@ -8,11 +8,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/osa911/giraffecloud/internal/db/ent/tunnel"
-	"github.com/osa911/giraffecloud/internal/db/ent/user"
-
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/osa911/giraffecloud/internal/db/ent/tunnel"
+	"github.com/osa911/giraffecloud/internal/db/ent/user"
 )
 
 // TunnelCreate is the builder for creating a Tunnel entity.
@@ -90,6 +89,20 @@ func (tc *TunnelCreate) SetNillableIsEnabled(b *bool) *TunnelCreate {
 	return tc
 }
 
+// SetDNSPropagationStatus sets the "dns_propagation_status" field.
+func (tc *TunnelCreate) SetDNSPropagationStatus(tps tunnel.DNSPropagationStatus) *TunnelCreate {
+	tc.mutation.SetDNSPropagationStatus(tps)
+	return tc
+}
+
+// SetNillableDNSPropagationStatus sets the "dns_propagation_status" field if the given value is not nil.
+func (tc *TunnelCreate) SetNillableDNSPropagationStatus(tps *tunnel.DNSPropagationStatus) *TunnelCreate {
+	if tps != nil {
+		tc.SetDNSPropagationStatus(*tps)
+	}
+	return tc
+}
+
 // SetTargetPort sets the "target_port" field.
 func (tc *TunnelCreate) SetTargetPort(i int) *TunnelCreate {
 	tc.mutation.SetTargetPort(i)
@@ -160,6 +173,10 @@ func (tc *TunnelCreate) defaults() {
 		v := tunnel.DefaultIsEnabled
 		tc.mutation.SetIsEnabled(v)
 	}
+	if _, ok := tc.mutation.DNSPropagationStatus(); !ok {
+		v := tunnel.DefaultDNSPropagationStatus
+		tc.mutation.SetDNSPropagationStatus(v)
+	}
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -188,6 +205,14 @@ func (tc *TunnelCreate) check() error {
 	}
 	if _, ok := tc.mutation.IsEnabled(); !ok {
 		return &ValidationError{Name: "is_enabled", err: errors.New(`ent: missing required field "Tunnel.is_enabled"`)}
+	}
+	if _, ok := tc.mutation.DNSPropagationStatus(); !ok {
+		return &ValidationError{Name: "dns_propagation_status", err: errors.New(`ent: missing required field "Tunnel.dns_propagation_status"`)}
+	}
+	if v, ok := tc.mutation.DNSPropagationStatus(); ok {
+		if err := tunnel.DNSPropagationStatusValidator(v); err != nil {
+			return &ValidationError{Name: "dns_propagation_status", err: fmt.Errorf(`ent: validator failed for field "Tunnel.dns_propagation_status": %w`, err)}
+		}
 	}
 	if _, ok := tc.mutation.TargetPort(); !ok {
 		return &ValidationError{Name: "target_port", err: errors.New(`ent: missing required field "Tunnel.target_port"`)}
@@ -252,6 +277,10 @@ func (tc *TunnelCreate) createSpec() (*Tunnel, *sqlgraph.CreateSpec) {
 	if value, ok := tc.mutation.IsEnabled(); ok {
 		_spec.SetField(tunnel.FieldIsEnabled, field.TypeBool, value)
 		_node.IsEnabled = value
+	}
+	if value, ok := tc.mutation.DNSPropagationStatus(); ok {
+		_spec.SetField(tunnel.FieldDNSPropagationStatus, field.TypeEnum, value)
+		_node.DNSPropagationStatus = value
 	}
 	if value, ok := tc.mutation.TargetPort(); ok {
 		_spec.SetField(tunnel.FieldTargetPort, field.TypeInt, value)

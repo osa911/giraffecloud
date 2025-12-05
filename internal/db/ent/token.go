@@ -7,12 +7,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/osa911/giraffecloud/internal/db/ent/token"
-	"github.com/osa911/giraffecloud/internal/db/ent/user"
-
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"github.com/google/uuid"
+	"github.com/osa911/giraffecloud/internal/db/ent/token"
+	"github.com/osa911/giraffecloud/internal/db/ent/user"
 )
 
 // Token is the model entity for the Token schema.

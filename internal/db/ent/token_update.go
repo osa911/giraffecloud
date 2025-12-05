@@ -8,13 +8,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/osa911/giraffecloud/internal/db/ent/predicate"
-	"github.com/osa911/giraffecloud/internal/db/ent/token"
-	"github.com/osa911/giraffecloud/internal/db/ent/user"
-
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/osa911/giraffecloud/internal/db/ent/predicate"
+	"github.com/osa911/giraffecloud/internal/db/ent/token"
+	"github.com/osa911/giraffecloud/internal/db/ent/user"
 )
 
 // TokenUpdate is the builder for updating Token entities.

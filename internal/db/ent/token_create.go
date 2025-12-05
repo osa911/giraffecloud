@@ -8,12 +8,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/osa911/giraffecloud/internal/db/ent/token"
-	"github.com/osa911/giraffecloud/internal/db/ent/user"
-
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/google/uuid"
+	"github.com/osa911/giraffecloud/internal/db/ent/token"
+	"github.com/osa911/giraffecloud/internal/db/ent/user"
 )
 
 // TokenCreate is the builder for creating a Token entity.

@@ -7,13 +7,12 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/osa911/giraffecloud/internal/db/ent/plan"
-	"github.com/osa911/giraffecloud/internal/db/ent/predicate"
-
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/osa911/giraffecloud/internal/db/ent/plan"
+	"github.com/osa911/giraffecloud/internal/db/ent/predicate"
 )
 
 // PlanQuery is the builder for querying Plan entities.

@@ -1,4 +1,4 @@
-h1:LSme103xKLOGXGTcpe5NUZ93GgbnJFc1vVPT5FuycEA=
+h1:m5TuITwB94XhrzzIAAajXCz/SjCVAzw2pvlfCEhqmhg=
 20250413231213_init.sql h1:aFPmluxLCjb7pS/D/SssJ3hvqFimX3Kyu88Mcg8ADW0=
 20250418161339_add_token_table.sql h1:ew+KUbsaqDx40XiJDvxBmg62cCMgIIWh/wrUvsvbNAY=
 20250728202348_add_client_version_and_tunnels_table.sql h1:j07lj6f382sTCK1TkDdUvfuxsPP4HAA1OebOfHcjgOA=
@@ -6,3 +6,4 @@ h1:LSme103xKLOGXGTcpe5NUZ93GgbnJFc1vVPT5FuycEA=
 20250813162608_add_usage_unique_index.sql h1:RrYiXbxjL+sxjQe4mAJBz5eoueRlF7Uepf92DoeEnQg=
 20250813185940_add_plan_table_and_user_plan.sql h1:j1mrInlrMTvc66d8FnjWoCDNNSqcRELocrz0ouc8Blc=
 20251119153212_rename_tunnel_is_active_to_is_enabled.sql h1:h0wkmhmc2ANPYPBgXf/7lob8MLRNC7BtjrfoVcJS4cY=
+20251205123339_add_dns_propagation_status.sql h1:ZTJ0TOO/bdJpXY3xLBHdDsGWfRu6qsllr1nko4c9zD0=

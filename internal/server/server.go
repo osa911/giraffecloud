@@ -20,6 +20,7 @@ import (
 	"github.com/osa911/giraffecloud/internal/repository"
 	"github.com/osa911/giraffecloud/internal/server/routes"
 	"github.com/osa911/giraffecloud/internal/service"
+	"github.com/osa911/giraffecloud/internal/tasks"
 	"github.com/osa911/giraffecloud/internal/tunnel"
 
 	"github.com/gin-gonic/gin"
@@ -30,10 +31,11 @@ type serverManager struct {
 	httpServer   *http.Server
 	tunnelRouter *tunnel.HybridTunnelRouter // Changed from TunnelServer to HybridTunnelRouter
 	usageService service.UsageService
+	dnsMonitor   *tasks.DNSMonitor
 }
 
 // newServerManager creates a new server manager
-func newServerManager(router *gin.Engine, tunnelRouter *tunnel.HybridTunnelRouter, usageService service.UsageService, port string) *serverManager {
+func newServerManager(router *gin.Engine, tunnelRouter *tunnel.HybridTunnelRouter, usageService service.UsageService, dnsMonitor *tasks.DNSMonitor, port string) *serverManager {
 	// Configure http.Server with environment-specific settings
 	httpServer := &http.Server{
 		Addr:    ":" + port,
@@ -60,6 +62,7 @@ func newServerManager(router *gin.Engine, tunnelRouter *tunnel.HybridTunnelRoute
 		httpServer:   httpServer,
 		tunnelRouter: tunnelRouter, // Changed from tunnelServer
 		usageService: usageService,
+		dnsMonitor:   dnsMonitor,
 	}
 }
 
@@ -110,6 +113,11 @@ func (sm *serverManager) shutdown() error {
 		if err := sm.usageService.Stop(ctx); err != nil {
 			logger.Error("Usage service shutdown error: %v", err)
 		}
+	}
+
+	// Shutdown DNS monitor
+	if sm.dnsMonitor != nil {
+		sm.dnsMonitor.Stop()
 	}
 
 	logger.Info("Servers shutdown complete")
@@ -223,7 +231,7 @@ func (s *Server) Init() error {
 
 	// Initialize tunnel service
 	logger.Info("Initializing tunnel service...")
-	tunnelService := service.NewTunnelService(repos.Tunnel, caddyService)
+	tunnelService := service.NewTunnelService(repos.Tunnel, caddyService, s.config.ServerIP)
 	logger.Info("Tunnel service initialized")
 
 	// Initialize Hybrid Tunnel Router (Production-Grade Architecture)
@@ -251,6 +259,12 @@ func (s *Server) Init() error {
 	s.tunnelRouter.SetUsageRecorder(usageService)
 	// Adapt service.QuotaService to tunnel.QuotaChecker
 	s.tunnelRouter.SetQuotaChecker(quotaAdapter{q: quotaService})
+
+	// Initialize DNS Monitor
+	logger.Info("Initializing DNS Monitor...")
+	s.dnsMonitor = tasks.NewDNSMonitor(s.db.DB, caddyService, s.config)
+	s.dnsMonitor.Start()
+	logger.Info("DNS Monitor initialized")
 
 	// Store usage service for lifecycle management
 	s.usageService = usageService
@@ -441,7 +455,7 @@ func (s *Server) Start() error {
 	}()
 
 	// Create server manager for the main Gin HTTP API (if needed)
-	manager := newServerManager(s.router, s.tunnelRouter, s.usageService, cfg.Port)
+	manager := newServerManager(s.router, s.tunnelRouter, s.usageService, s.dnsMonitor, cfg.Port)
 
 	// Start servers
 	return manager.start()

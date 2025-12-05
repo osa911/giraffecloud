@@ -5,6 +5,7 @@ package ent
 import (
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/osa911/giraffecloud/internal/db/ent/clientversion"
 	"github.com/osa911/giraffecloud/internal/db/ent/plan"
 	"github.com/osa911/giraffecloud/internal/db/ent/schema"
@@ -13,8 +14,6 @@ import (
 	"github.com/osa911/giraffecloud/internal/db/ent/tunnel"
 	"github.com/osa911/giraffecloud/internal/db/ent/usage"
 	"github.com/osa911/giraffecloud/internal/db/ent/user"
-
-	"github.com/google/uuid"
 )
 
 // The init function reads all schema descriptors with runtime code
@@ -155,7 +154,7 @@ func init() {
 	// tunnel.DefaultIsEnabled holds the default value on creation for the is_enabled field.
 	tunnel.DefaultIsEnabled = tunnelDescIsEnabled.Default.(bool)
 	// tunnelDescTargetPort is the schema descriptor for target_port field.
-	tunnelDescTargetPort := tunnelFields[4].Descriptor()
+	tunnelDescTargetPort := tunnelFields[5].Descriptor()
 	// tunnel.TargetPortValidator is a validator for the "target_port" field. It is called by the builders before save.
 	tunnel.TargetPortValidator = tunnelDescTargetPort.Validators[0].(func(int) error)
 	usageMixin := schema.Usage{}.Mixin()

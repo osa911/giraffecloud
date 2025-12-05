@@ -9,9 +9,8 @@ import (
 	// required by schema hooks.
 	_ "github.com/osa911/giraffecloud/internal/db/ent/runtime"
 
-	"github.com/osa911/giraffecloud/internal/db/ent/migrate"
-
 	"entgo.io/ent/dialect/sql/schema"
+	"github.com/osa911/giraffecloud/internal/db/ent/migrate"
 )
 
 type (

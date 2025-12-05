@@ -1,9 +1,15 @@
 // Tunnel response (no token)
+export enum DnsPropagationStatus {
+  VERIFIED = 'verified',
+  PENDING_DNS = 'pending_dns',
+}
+
 export interface Tunnel {
   id: number;
   domain: string;
   target_port: number;
   is_enabled: boolean;
+  dns_propagation_status: DnsPropagationStatus;
   client_ip?: string;
   created_at: string;
   updated_at: string;

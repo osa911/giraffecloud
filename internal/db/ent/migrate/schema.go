@@ -114,6 +114,7 @@ var (
 		{Name: "token", Type: field.TypeString, Unique: true},
 		{Name: "client_ip", Type: field.TypeString, Nullable: true},
 		{Name: "is_enabled", Type: field.TypeBool, Default: true},
+		{Name: "dns_propagation_status", Type: field.TypeEnum, Enums: []string{"verified", "pending_dns"}, Default: "verified"},
 		{Name: "target_port", Type: field.TypeInt},
 		{Name: "user_id", Type: field.TypeUint32},
 	}
@@ -125,7 +126,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "tunnels_users_tunnels",
-				Columns:    []*schema.Column{TunnelsColumns[8]},
+				Columns:    []*schema.Column{TunnelsColumns[9]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.NoAction,
 			},

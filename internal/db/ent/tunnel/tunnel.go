@@ -3,6 +3,7 @@
 package tunnel
 
 import (
+	"fmt"
 	"time"
 
 	"entgo.io/ent/dialect/sql"
@@ -26,6 +27,8 @@ const (
 	FieldClientIP = "client_ip"
 	// FieldIsEnabled holds the string denoting the is_enabled field in the database.
 	FieldIsEnabled = "is_enabled"
+	// FieldDNSPropagationStatus holds the string denoting the dns_propagation_status field in the database.
+	FieldDNSPropagationStatus = "dns_propagation_status"
 	// FieldTargetPort holds the string denoting the target_port field in the database.
 	FieldTargetPort = "target_port"
 	// FieldUserID holds the string denoting the user_id field in the database.
@@ -52,6 +55,7 @@ var Columns = []string{
 	FieldToken,
 	FieldClientIP,
 	FieldIsEnabled,
+	FieldDNSPropagationStatus,
 	FieldTargetPort,
 	FieldUserID,
 }
@@ -82,6 +86,32 @@ var (
 	// TargetPortValidator is a validator for the "target_port" field. It is called by the builders before save.
 	TargetPortValidator func(int) error
 )
+
+// DNSPropagationStatus defines the type for the "dns_propagation_status" enum field.
+type DNSPropagationStatus string
+
+// DNSPropagationStatusVerified is the default value of the DNSPropagationStatus enum.
+const DefaultDNSPropagationStatus = DNSPropagationStatusVerified
+
+// DNSPropagationStatus values.
+const (
+	DNSPropagationStatusVerified   DNSPropagationStatus = "verified"
+	DNSPropagationStatusPendingDNS DNSPropagationStatus = "pending_dns"
+)
+
+func (dps DNSPropagationStatus) String() string {
+	return string(dps)
+}
+
+// DNSPropagationStatusValidator is a validator for the "dns_propagation_status" field enum values. It is called by the builders before save.
+func DNSPropagationStatusValidator(dps DNSPropagationStatus) error {
+	switch dps {
+	case DNSPropagationStatusVerified, DNSPropagationStatusPendingDNS:
+		return nil
+	default:
+		return fmt.Errorf("tunnel: invalid enum value for dns_propagation_status field: %q", dps)
+	}
+}
 
 // OrderOption defines the ordering options for the Tunnel queries.
 type OrderOption func(*sql.Selector)
@@ -119,6 +149,11 @@ func ByClientIP(opts ...sql.OrderTermOption) OrderOption {
 // ByIsEnabled orders the results by the is_enabled field.
 func ByIsEnabled(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldIsEnabled, opts...).ToFunc()
+}
+
+// ByDNSPropagationStatus orders the results by the dns_propagation_status field.
+func ByDNSPropagationStatus(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldDNSPropagationStatus, opts...).ToFunc()
 }
 
 // ByTargetPort orders the results by the target_port field.

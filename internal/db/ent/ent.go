@@ -9,6 +9,9 @@ import (
 	"reflect"
 	"sync"
 
+	"entgo.io/ent"
+	"entgo.io/ent/dialect/sql"
+	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/osa911/giraffecloud/internal/db/ent/clientversion"
 	"github.com/osa911/giraffecloud/internal/db/ent/plan"
 	"github.com/osa911/giraffecloud/internal/db/ent/session"
@@ -16,10 +19,6 @@ import (
 	"github.com/osa911/giraffecloud/internal/db/ent/tunnel"
 	"github.com/osa911/giraffecloud/internal/db/ent/usage"
 	"github.com/osa911/giraffecloud/internal/db/ent/user"
-
-	"entgo.io/ent"
-	"entgo.io/ent/dialect/sql"
-	"entgo.io/ent/dialect/sql/sqlgraph"
 )
 
 // ent aliases to avoid import conflicts in user's code.

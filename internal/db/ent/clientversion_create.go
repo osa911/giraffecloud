@@ -8,10 +8,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/osa911/giraffecloud/internal/db/ent/clientversion"
-
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/osa911/giraffecloud/internal/db/ent/clientversion"
 )
 
 // ClientVersionCreate is the builder for creating a ClientVersion entity.

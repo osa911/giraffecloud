@@ -7,15 +7,14 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/osa911/giraffecloud/internal/db/ent/predicate"
-	"github.com/osa911/giraffecloud/internal/db/ent/token"
-	"github.com/osa911/giraffecloud/internal/db/ent/user"
-
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/google/uuid"
+	"github.com/osa911/giraffecloud/internal/db/ent/predicate"
+	"github.com/osa911/giraffecloud/internal/db/ent/token"
+	"github.com/osa911/giraffecloud/internal/db/ent/user"
 )
 
 // TokenQuery is the builder for querying Token entities.

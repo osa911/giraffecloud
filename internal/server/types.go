@@ -7,6 +7,7 @@ import (
 	"github.com/osa911/giraffecloud/internal/db"
 	"github.com/osa911/giraffecloud/internal/repository"
 	"github.com/osa911/giraffecloud/internal/service"
+	"github.com/osa911/giraffecloud/internal/tasks"
 	"github.com/osa911/giraffecloud/internal/tunnel"
 
 	"github.com/gin-gonic/gin"
@@ -19,6 +20,7 @@ type Server struct {
 	tunnelRouter *tunnel.HybridTunnelRouter // Changed from TunnelServer to HybridTunnelRouter
 	config       *config.Config
 	usageService service.UsageService
+	dnsMonitor   *tasks.DNSMonitor
 }
 
 // Repositories holds all repository instances

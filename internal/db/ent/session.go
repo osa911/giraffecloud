@@ -7,11 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/osa911/giraffecloud/internal/db/ent/session"
-	"github.com/osa911/giraffecloud/internal/db/ent/user"
-
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
+	"github.com/osa911/giraffecloud/internal/db/ent/session"
+	"github.com/osa911/giraffecloud/internal/db/ent/user"
 )
 
 // Session is the model entity for the Session schema.

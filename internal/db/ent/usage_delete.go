@@ -5,12 +5,11 @@ package ent
 import (
 	"context"
 
-	"github.com/osa911/giraffecloud/internal/db/ent/predicate"
-	"github.com/osa911/giraffecloud/internal/db/ent/usage"
-
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/osa911/giraffecloud/internal/db/ent/predicate"
+	"github.com/osa911/giraffecloud/internal/db/ent/usage"
 )
 
 // UsageDelete is the builder for deleting a Usage entity.

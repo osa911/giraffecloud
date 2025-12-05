@@ -20,14 +20,20 @@ import {
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { MoreHorizontal, Plus, Pencil, Trash, ExternalLink } from "lucide-react";
+import { MoreHorizontal, Plus, Pencil, Trash, ExternalLink, AlertTriangle, RefreshCw } from "lucide-react";
 import { format } from "date-fns";
 import TunnelDialog from "./TunnelDialog";
 import { useTunnels } from "@/hooks/useTunnels";
-import type { Tunnel } from "@/types/tunnel";
+import { type Tunnel, DnsPropagationStatus } from "@/types/tunnel";
 import clientApi from "@/services/apiClient/clientApiClient";
 import { toast } from "@/lib/toast";
 import Link from "next/link";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 import {
   AlertDialog,
@@ -45,6 +51,14 @@ export default function TunnelList() {
   const [selectedTunnel, setSelectedTunnel] = useState<Tunnel | null>(null);
   const [tunnelToDelete, setTunnelToDelete] = useState<Tunnel | null>(null);
   const { tunnels, isLoading, mutate } = useTunnels();
+  const [verifyingId, setVerifyingId] = useState<number | null>(null);
+
+  const baseDomain = process.env.NEXT_PUBLIC_BASE_DOMAIN || "giraffecloud.xyz";
+  const serverIP = process.env.NEXT_PUBLIC_SERVER_IP || "your-server-ip";
+
+  const isCustomDomain = (domain: string) => {
+    return !domain.endsWith(`.${baseDomain}`);
+  };
 
   const handleOpenDialog = (tunnel?: Tunnel) => {
     setSelectedTunnel(tunnel || null);
@@ -58,15 +72,26 @@ export default function TunnelList() {
 
   const handleToggleActive = async (tunnel: Tunnel) => {
     try {
+      if (!tunnel.is_enabled) {
+        setVerifyingId(tunnel.id);
+      }
+
       // Optimistic update could be done here, but for simplicity we wait
       await clientApi().put<Tunnel>(`/tunnels/${tunnel.id}`, {
         is_enabled: !tunnel.is_enabled,
       });
       mutate(); // Refresh the tunnels list
       toast.success(`Tunnel ${!tunnel.is_enabled ? "enabled" : "disabled"}`);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error updating tunnel status:", error);
-      toast.error("Failed to update tunnel status");
+      // If enabling failed, it might be due to DNS verification
+      if (!tunnel.is_enabled) {
+         toast.error(error.response?.data?.error || "DNS verification failed. Please check your DNS records.");
+      } else {
+         toast.error("Failed to update tunnel status");
+      }
+    } finally {
+      setVerifyingId(null);
     }
   };
 
@@ -131,10 +156,32 @@ export default function TunnelList() {
                     </TableCell>
                     <TableCell>{tunnel.target_port}</TableCell>
                     <TableCell>
-                      <Switch
-                        checked={tunnel.is_enabled}
-                        onCheckedChange={() => handleToggleActive(tunnel)}
-                      />
+                      <div className="flex items-center space-x-2">
+                        <Switch
+                          checked={tunnel.is_enabled}
+                          onCheckedChange={() => handleToggleActive(tunnel)}
+                          disabled={verifyingId === tunnel.id}
+                        />
+                        {isCustomDomain(tunnel.domain) && tunnel.dns_propagation_status === DnsPropagationStatus.PENDING_DNS && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <div className="flex items-center text-amber-500 cursor-help">
+                                  <AlertTriangle className="h-4 w-4 mr-1" />
+                                  <span className="text-xs font-medium">Pending DNS</span>
+                                </div>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Waiting for domain to point to <strong>{serverIP}</strong></p>
+                                <p className="text-xs text-muted-foreground mt-1">Click the switch to verify & enable</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
+                        {verifyingId === tunnel.id && (
+                           <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>{format(new Date(tunnel.created_at), "PPp")}</TableCell>
                     <TableCell>{format(new Date(tunnel.updated_at), "PPp")}</TableCell>

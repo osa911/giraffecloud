@@ -5,10 +5,9 @@ package session
 import (
 	"time"
 
-	"github.com/osa911/giraffecloud/internal/db/ent/predicate"
-
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
+	"github.com/osa911/giraffecloud/internal/db/ent/predicate"
 )
 
 // ID filters vertices based on their ID field.
