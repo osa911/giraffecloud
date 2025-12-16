@@ -33,6 +33,7 @@ import type { Tunnel, TunnelCreateResponse } from "@/types/tunnel";
 import clientApi from "@/services/apiClient/clientApiClient";
 import { getFreeSubdomain } from "@/hooks/useTunnels";
 import { isReservedDomain, getReservedDomainError } from "@/config/domains";
+import { ApiErrorCode } from "@/types/api-errors";
 
 interface TunnelDialogProps {
   open: boolean;
@@ -187,9 +188,32 @@ export default function TunnelDialog({
 
       onSuccess();
       onOpenChange(false);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving tunnel:", error);
-      toast.error("Failed to save tunnel");
+
+      // Try to parse specific backend errors
+      const errorData = error?.response?.data?.error;
+
+      if (errorData) {
+        // Handle Validation Errors
+        if (errorData.code === ApiErrorCode.Validation) {
+          // If the message contains "domain", it's likely a domain error
+          if (errorData.message?.toLowerCase().includes("domain")) {
+            form.setError("domain", { message: errorData.message });
+            return; // processed, no toast needed (or let global handle it)
+          }
+        }
+
+        // Handle Conflict Errors (Duplicate Port)
+        if (errorData.code === ApiErrorCode.Conflict) {
+           form.setError("target_port", { message: errorData.message });
+           return;
+        }
+      }
+
+      // Fallback for unhandled errors - the global interceptor will likely show a toast too
+      // or we can show one here if we want to be sure.
+      // toast.error("Failed to save tunnel");
     } finally {
       setIsSubmitting(false);
     }

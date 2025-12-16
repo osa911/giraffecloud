@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"strconv"
 
 	"github.com/osa911/giraffecloud/internal/api/constants"
@@ -134,6 +135,14 @@ func (h *TunnelHandler) CreateTunnel(c *gin.Context) {
 	userID := c.MustGet(constants.ContextKeyUserID).(uint32)
 	tunnel, err := h.tunnelService.CreateTunnel(c.Request.Context(), userID, req.Domain, req.TargetPort)
 	if err != nil {
+		if errors.Is(err, service.ErrValidation) {
+			utils.HandleAPIError(c, err, common.ErrCodeValidation, err.Error())
+			return
+		}
+		if errors.Is(err, service.ErrConflict) {
+			utils.HandleAPIError(c, err, common.ErrCodeConflict, err.Error())
+			return
+		}
 		logging.GetGlobalLogger().Error("CreateTunnel: Failed to create tunnel for userID=%d, req=%+v, error: %v", userID, req, err)
 		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to create tunnel")
 		return
@@ -192,6 +201,10 @@ func (h *TunnelHandler) DeleteTunnel(c *gin.Context) {
 	}
 
 	if err := h.tunnelService.DeleteTunnel(c.Request.Context(), userID, uint32(tunnelID)); err != nil {
+		if errors.Is(err, service.ErrNotFound) {
+			utils.HandleAPIError(c, err, common.ErrCodeNotFound, "Tunnel not found")
+			return
+		}
 		logging.GetGlobalLogger().Error("DeleteTunnel: Failed to delete tunnel for userID=%d, tunnelID=%d, error: %v", userID, tunnelID, err)
 		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to delete tunnel")
 		return
@@ -227,6 +240,14 @@ func (h *TunnelHandler) UpdateTunnel(c *gin.Context) {
 
 	tunnel, err := h.tunnelService.UpdateTunnel(c.Request.Context(), userID, uint32(tunnelID), updates)
 	if err != nil {
+		if errors.Is(err, service.ErrValidation) {
+			utils.HandleAPIError(c, err, common.ErrCodeValidation, err.Error())
+			return
+		}
+		if errors.Is(err, service.ErrConflict) {
+			utils.HandleAPIError(c, err, common.ErrCodeConflict, err.Error())
+			return
+		}
 		logging.GetGlobalLogger().Error("UpdateTunnel: Failed to update tunnel for userID=%d, tunnelID=%d, req=%+v, error: %v", userID, tunnelID, req, err)
 		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to update tunnel")
 		return
