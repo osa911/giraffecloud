@@ -11,7 +11,7 @@ import (
 // CheckIfIP checks if a string is an IP address
 func IsIPAddress(host string) bool {
 	var logger = logging.GetGlobalLogger()
-	logger.Info("isIPAddress_host", host)
+	logger.Info("isIPAddress_host: %s", host)
 	// Simple check for IPv4 - looks for 4 segments of numbers separated by dots
 	ipv4Parts := strings.Split(host, ".")
 	if len(ipv4Parts) == 4 {

@@ -120,7 +120,7 @@ func (s *TokenService) ValidateToken(ctx context.Context, tokenStr string) (*map
 	// Validate token entropy first
 	logger.Info("ValidateToken: Validating token entropy: %s", tokenStr)
 	if err := validateTokenEntropy(tokenStr); err != nil {
-		logger.Error("ValidateToken: Invalid token format: %w", err)
+		logger.Error("ValidateToken: Invalid token format: %v", err)
 		return nil, fmt.Errorf("invalid token format: %w", err)
 	}
 
@@ -131,7 +131,7 @@ func (s *TokenService) ValidateToken(ctx context.Context, tokenStr string) (*map
 			logger.Error("ValidateToken: Token not found")
 			return nil, fmt.Errorf("invalid token: %w", ErrNotFound)
 		}
-		logger.Error("ValidateToken: Failed to get token by value: %w", err)
+		logger.Error("ValidateToken: Failed to get token by value: %v", err)
 		return nil, fmt.Errorf("invalid token")
 	}
 
@@ -146,7 +146,7 @@ func (s *TokenService) ValidateToken(ctx context.Context, tokenStr string) (*map
 	}
 
 	if err := s.tokenRepo.UpdateLastUsed(ctx, tokenRecord.ID); err != nil {
-		logger.Error("ValidateToken: Failed to update last used time: %w", err)
+		logger.Error("ValidateToken: Failed to update last used time: %v", err)
 		return nil, fmt.Errorf("failed to update last used time: %w", err)
 	}
 

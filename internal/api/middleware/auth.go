@@ -47,17 +47,17 @@ func (m *AuthMiddleware) RequireAuth() gin.HandlerFunc {
 		var logger = logging.GetGlobalLogger()
 		// First check for session cookie (Firebase session cookie)
 		sessionCookie, err := c.Cookie(constants.CookieSession)
-		logger.Info("sessionCookie", sessionCookie)
+		logger.Info("sessionCookie: %v", sessionCookie)
 		if err == nil && sessionCookie != "" {
 			// Verify the session cookie
 			firebaseToken, err := firebase.GetAuthClient().VerifySessionCookieAndCheckRevoked(c.Request.Context(), sessionCookie)
-			logger.Info("firebaseToken", firebaseToken)
-			logger.Info("err", err)
+			logger.Info("firebaseToken: %v", firebaseToken)
+			logger.Info("err: %v", err)
 			if err == nil {
 				// Look up user by Firebase UID
 				currentUser, err = m.authRepo.GetUserByFirebaseUID(c.Request.Context(), firebaseToken.UID)
-				logger.Info("currentUser", currentUser)
-				logger.Info("err", err)
+				logger.Info("currentUser: %v", currentUser)
+				logger.Info("err: %v", err)
 				if err == nil {
 					authenticated = true
 				}
@@ -67,24 +67,24 @@ func (m *AuthMiddleware) RequireAuth() gin.HandlerFunc {
 		// If not authenticated, check for auth_token cookie (our API token)
 		if !authenticated {
 			cookieAuthToken, err := c.Cookie(constants.CookieAuthToken)
-			logger.Info("cookieAuthToken", cookieAuthToken)
-			logger.Info("err", err)
+			logger.Info("cookieAuthToken: %v", cookieAuthToken)
+			logger.Info("err: %v", err)
 			if err == nil && cookieAuthToken != "" {
 				// Look up session
 				currentSession, err := m.sessionRepo.GetActiveByToken(c.Request.Context(), cookieAuthToken)
-				logger.Info("currentSession", currentSession)
-				logger.Info("err", err)
+				logger.Info("currentSession: %v", currentSession)
+				logger.Info("err: %v", err)
 				if err == nil {
 					// Update session last used
 					_, err = m.sessionRepo.UpdateLastUsed(c.Request.Context(), currentSession, nil)
-					logger.Info("err", err)
+					logger.Info("err: %v", err)
 					if err != nil {
 						utils.LogError(err, "Failed to update session last used time")
 					}
 
 					currentUser, err = m.sessionRepo.GetSessionOwner(c.Request.Context(), currentSession)
-					logger.Info("currentUser", currentUser)
-					logger.Info("err", err)
+					logger.Info("currentUser: %v", currentUser)
+					logger.Info("err: %v", err)
 					if err == nil {
 						authenticated = true
 					}
@@ -95,19 +95,19 @@ func (m *AuthMiddleware) RequireAuth() gin.HandlerFunc {
 		// If not authenticated, check for Bearer token in Authorization header (CLI token)
 		if !authenticated {
 			cliAuthHeader := c.GetHeader(constants.HeaderAuthorization)
-			logger.Info("cliAuthHeader", cliAuthHeader)
+			logger.Info("cliAuthHeader: %v", cliAuthHeader)
 			if strings.HasPrefix(cliAuthHeader, "Bearer ") {
 				token := strings.TrimPrefix(cliAuthHeader, "Bearer ")
 
 				// Validate token using TokenService
 				cliTokenRecord, err := m.tokenService.ValidateToken(c.Request.Context(), token)
-				logger.Info("cliTokenRecord", cliTokenRecord)
-				logger.Info("err", err)
+				logger.Info("cliTokenRecord: %v", cliTokenRecord)
+				logger.Info("err: %v", err)
 				if err == nil {
 					// Get user from token using UserRepository
 					currentUser, err = m.userRepo.Get(c.Request.Context(), cliTokenRecord.UserID)
-					logger.Info("currentUser", currentUser)
-					logger.Info("err", err)
+					logger.Info("currentUser: %v", currentUser)
+					logger.Info("err: %v", err)
 					if err == nil {
 						authenticated = true
 					}
