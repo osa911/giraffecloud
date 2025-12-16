@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"time"
 
 	"github.com/osa911/giraffecloud/internal/api/mapper"
@@ -46,6 +47,12 @@ func (r *TokenRepositoryImpl) List(ctx context.Context, userID uint32) ([]*mappe
 		Order(ent.Desc(token.FieldCreatedAt)).
 		All(ctx)
 	if err != nil {
+		if ent.IsNotFound(err) {
+			// List returning empty is fine, but if specific error occurs we might want to wrap.
+			// ent.All() usually returns empty slice not NotFound error for empty results.
+			// So checking IsNotFound might be redundant here but harmless.
+			return nil, nil // Or []
+		}
 		return nil, err
 	}
 
@@ -69,6 +76,9 @@ func (r *TokenRepositoryImpl) List(ctx context.Context, userID uint32) ([]*mappe
 func (r *TokenRepositoryImpl) GetByID(ctx context.Context, id uuid.UUID) (*mapper.Token, error) {
 	t, err := r.client.Token.Get(ctx, id)
 	if err != nil {
+		if ent.IsNotFound(err) {
+			return nil, fmt.Errorf("%w: token not found", ErrNotFound)
+		}
 		return nil, err
 	}
 
@@ -94,6 +104,9 @@ func (r *TokenRepositoryImpl) GetByToken(ctx context.Context, tokenStr string) (
 		).
 		Only(ctx)
 	if err != nil {
+		if ent.IsNotFound(err) {
+			return nil, fmt.Errorf("%w: token not found", ErrNotFound)
+		}
 		return nil, err
 	}
 
@@ -110,13 +123,27 @@ func (r *TokenRepositoryImpl) GetByToken(ctx context.Context, tokenStr string) (
 }
 
 func (r *TokenRepositoryImpl) UpdateLastUsed(ctx context.Context, id uuid.UUID) error {
-	return r.client.Token.UpdateOneID(id).
+	err := r.client.Token.UpdateOneID(id).
 		SetLastUsedAt(time.Now()).
 		Exec(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return fmt.Errorf("%w: token not found", ErrNotFound)
+		}
+		return err
+	}
+	return nil
 }
 
 func (r *TokenRepositoryImpl) Revoke(ctx context.Context, id uuid.UUID) error {
-	return r.client.Token.UpdateOneID(id).
+	err := r.client.Token.UpdateOneID(id).
 		SetRevokedAt(time.Now()).
 		Exec(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return fmt.Errorf("%w: token not found", ErrNotFound)
+		}
+		return err
+	}
+	return nil
 }

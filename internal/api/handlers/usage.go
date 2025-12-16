@@ -7,7 +7,7 @@ import (
 	"github.com/osa911/giraffecloud/internal/api/constants"
 	"github.com/osa911/giraffecloud/internal/api/dto/common"
 	"github.com/osa911/giraffecloud/internal/db/ent"
-	"github.com/osa911/giraffecloud/internal/db/ent/usage"
+	"github.com/osa911/giraffecloud/internal/repository"
 	"github.com/osa911/giraffecloud/internal/service"
 	"github.com/osa911/giraffecloud/internal/utils"
 
@@ -15,12 +15,12 @@ import (
 )
 
 type UsageHandler struct {
-	db    *ent.Client
-	quota service.QuotaService
+	usageRepo repository.UsageRepository
+	quota     service.QuotaService
 }
 
-func NewUsageHandler(db *ent.Client, quota service.QuotaService) *UsageHandler {
-	return &UsageHandler{db: db, quota: quota}
+func NewUsageHandler(usageRepo repository.UsageRepository, quota service.QuotaService) *UsageHandler {
+	return &UsageHandler{usageRepo: usageRepo, quota: quota}
 }
 
 // GetSummary returns current cycle usage summary for the authenticated user
@@ -41,12 +41,7 @@ func (h *UsageHandler) GetSummary(c *gin.Context) {
 	userID := currentUser.ID
 
 	// Today summary (daily aggregation)
-	dayStart := time.Now().UTC().Truncate(24 * time.Hour)
-	dayRows, err := h.db.Usage.Query().
-		Where(
-			usage.PeriodStartEQ(dayStart),
-			usage.UserIDEQ(uint32(userID)),
-		).All(c)
+	dayRows, err := h.usageRepo.GetDailyUsage(c, uint32(userID), time.Now().UTC())
 	if err != nil {
 		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to fetch usage")
 		return
@@ -63,7 +58,7 @@ func (h *UsageHandler) GetSummary(c *gin.Context) {
 
 	utils.HandleSuccess(c, gin.H{
 		"day": gin.H{
-			"period_start": dayStart,
+			"period_start": time.Now().UTC().Truncate(24 * time.Hour),
 			"bytes_in":     dayIn,
 			"bytes_out":    dayOut,
 			"requests":     dayReq,
@@ -78,6 +73,7 @@ func (h *UsageHandler) GetSummary(c *gin.Context) {
 
 // GetDailyHistory returns daily usage for the last N days
 func (h *UsageHandler) GetDailyHistory(c *gin.Context) {
+	// ... (user check logic same as before) ...
 	// Get user from context (set by auth middleware)
 	userModel, exists := c.Get(constants.ContextKeyUser)
 	if !exists {
@@ -106,13 +102,7 @@ func (h *UsageHandler) GetDailyHistory(c *gin.Context) {
 	startDate := now.AddDate(0, 0, -days).Truncate(24 * time.Hour)
 
 	// Fetch usage data for the last N days
-	usageRows, err := h.db.Usage.Query().
-		Where(
-			usage.UserIDEQ(uint32(userID)),
-			usage.PeriodStartGTE(startDate),
-		).
-		Order(ent.Asc(usage.FieldPeriodStart)).
-		All(c)
+	usageRows, err := h.usageRepo.GetUsageHistory(c, uint32(userID), startDate)
 
 	if err != nil {
 		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to fetch usage history")

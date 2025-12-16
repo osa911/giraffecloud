@@ -30,6 +30,7 @@ type Repositories struct {
 	Session repository.SessionRepository
 	Token   repository.TokenRepository
 	Tunnel  repository.TunnelRepository
+	Usage   repository.UsageRepository
 }
 
 // quotaAdapter bridges service.QuotaService to tunnel.QuotaChecker

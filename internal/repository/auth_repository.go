@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/osa911/giraffecloud/internal/db/ent"
@@ -23,16 +24,30 @@ func NewAuthRepository(client *ent.Client) AuthRepository {
 
 // GetUserByFirebaseUID returns a user by Firebase UID
 func (r *authRepository) GetUserByFirebaseUID(ctx context.Context, firebaseUID string) (*ent.User, error) {
-	return r.client.User.Query().
+	u, err := r.client.User.Query().
 		Where(user.FirebaseUID(firebaseUID)).
 		Only(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return nil, fmt.Errorf("%w: user not found", ErrNotFound)
+		}
+		return nil, err
+	}
+	return u, nil
 }
 
 // GetUserByEmail returns a user by email
 func (r *authRepository) GetUserByEmail(ctx context.Context, email string) (*ent.User, error) {
-	return r.client.User.Query().
+	u, err := r.client.User.Query().
 		Where(user.Email(email)).
 		Only(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return nil, fmt.Errorf("%w: user not found", ErrNotFound)
+		}
+		return nil, err
+	}
+	return u, nil
 }
 
 // CreateUser creates a new user

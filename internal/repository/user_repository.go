@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/osa911/giraffecloud/internal/db/ent"
 	"github.com/osa911/giraffecloud/internal/db/ent/user"
@@ -20,13 +21,27 @@ func NewUserRepository(client *ent.Client) UserRepository {
 }
 
 func (r *userRepository) Get(ctx context.Context, id uint32) (*ent.User, error) {
-	return r.client.User.Get(ctx, id)
+	u, err := r.client.User.Get(ctx, id)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return nil, fmt.Errorf("%w: user not found", ErrNotFound)
+		}
+		return nil, err
+	}
+	return u, nil
 }
 
 func (r *userRepository) GetByFirebaseUID(ctx context.Context, firebaseUID string) (*ent.User, error) {
-	return r.client.User.Query().
+	u, err := r.client.User.Query().
 		Where(user.FirebaseUID(firebaseUID)).
 		Only(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return nil, fmt.Errorf("%w: user not found", ErrNotFound)
+		}
+		return nil, err
+	}
+	return u, nil
 }
 
 func (r *userRepository) Create(ctx context.Context, user *ent.UserCreate) (*ent.User, error) {
@@ -34,11 +49,25 @@ func (r *userRepository) Create(ctx context.Context, user *ent.UserCreate) (*ent
 }
 
 func (r *userRepository) Update(ctx context.Context, id uint32, update *ent.UserUpdateOne) (*ent.User, error) {
-	return update.Save(ctx)
+	u, err := update.Save(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return nil, fmt.Errorf("%w: user not found", ErrNotFound)
+		}
+		return nil, err
+	}
+	return u, nil
 }
 
 func (r *userRepository) Delete(ctx context.Context, id uint32) error {
-	return r.client.User.DeleteOneID(id).Exec(ctx)
+	err := r.client.User.DeleteOneID(id).Exec(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return fmt.Errorf("%w: user not found", ErrNotFound)
+		}
+		return err
+	}
+	return nil
 }
 
 func (r *userRepository) List(ctx context.Context, offset, limit int) ([]*ent.User, error) {

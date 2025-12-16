@@ -3,6 +3,7 @@ package handlers
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -105,7 +106,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	// Check if user exists in database with this Firebase UID
 	existingUser, err := h.authRepo.GetUserByFirebaseUID(c.Request.Context(), decodedToken.UID)
 	if err != nil {
-		if ent.IsNotFound(err) {
+		if errors.Is(err, repository.ErrNotFound) {
 			// User not found in our database, but authenticated with Firebase
 			// Create a new user with minimal data from Firebase
 			email := decodedToken.Claims["email"].(string)
@@ -259,7 +260,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 			User: *userResponse,
 		})
 		return
-	} else if !ent.IsNotFound(err) {
+	} else if !errors.Is(err, repository.ErrNotFound) {
 		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Database error")
 		return
 	}
@@ -269,7 +270,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	if err == nil {
 		utils.HandleAPIError(c, nil, common.ErrCodeConflict, "Wrong credentials")
 		return
-	} else if !ent.IsNotFound(err) {
+	} else if !errors.Is(err, repository.ErrNotFound) {
 		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Database error")
 		return
 	}

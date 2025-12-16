@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"github.com/osa911/giraffecloud/internal/api/constants"
@@ -49,12 +50,20 @@ func (h *SessionHandler) RevokeSession(c *gin.Context) {
 
 	session, err := h.sessionRepo.GetUserSession(context.Background(), sessionID, uint32(userID))
 	if err != nil {
-		utils.HandleAPIError(c, err, common.ErrCodeNotFound, "Session not found")
+		if errors.Is(err, repository.ErrNotFound) {
+			utils.HandleAPIError(c, err, common.ErrCodeNotFound, "Session not found")
+			return
+		}
+		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to retrieve session")
 		return
 	}
 
 	// Mark session as inactive
 	if err := h.sessionRepo.Revoke(context.Background(), session); err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			utils.HandleAPIError(c, err, common.ErrCodeNotFound, "Session not found")
+			return
+		}
 		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to revoke session")
 		return
 	}

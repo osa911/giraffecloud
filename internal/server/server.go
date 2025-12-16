@@ -295,7 +295,7 @@ func (s *Server) Init() error {
 		TunnelCertificate: handlers.NewTunnelCertificateHandler(),
 		Webhook:           handlers.NewWebhookHandler(),
 		Admin:             handlers.NewAdminHandler(versionService),
-		Usage:             handlers.NewUsageHandler(s.db.DB, quotaService),
+		Usage:             handlers.NewUsageHandler(repos.Usage, quotaService),
 		Contact:           handlers.NewContactHandler(),
 	}
 	logger.Info("Handlers initialized")
@@ -336,12 +336,16 @@ func (s *Server) initializeRepositories() *Repositories {
 	logger.Info("Creating Tunnel repository...")
 	tunnelRepo := repository.NewTunnelRepository(s.db.DB)
 
+	logger.Info("Creating Usage repository...")
+	usageRepo := repository.NewUsageRepository(s.db.DB)
+
 	return &Repositories{
 		User:    userRepo,
 		Auth:    authRepo,
 		Session: sessionRepo,
 		Token:   tokenRepo,
 		Tunnel:  tunnelRepo,
+		Usage:   usageRepo,
 	}
 }
 

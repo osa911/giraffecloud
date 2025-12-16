@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"errors"
+
 	"github.com/osa911/giraffecloud/internal/api/constants"
 	"github.com/osa911/giraffecloud/internal/api/dto/common"
 	"github.com/osa911/giraffecloud/internal/api/dto/v1/token"
@@ -68,6 +70,10 @@ func (h *TokenHandler) RevokeToken(c *gin.Context) {
 	}
 
 	if err := h.tokenService.RevokeToken(c.Request.Context(), tokenID); err != nil {
+		if errors.Is(err, service.ErrNotFound) {
+			utils.HandleAPIError(c, err, common.ErrCodeNotFound, "Token not found")
+			return
+		}
 		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to revoke token")
 		return
 	}

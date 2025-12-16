@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"strconv"
 
 	"github.com/osa911/giraffecloud/internal/api/constants"
@@ -76,7 +77,11 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 	// Fetch user from database to ensure we have the latest data
 	dbUser, err := h.repository.Get(context.Background(), currentUser.ID)
 	if err != nil {
-		utils.HandleAPIError(c, err, common.ErrCodeNotFound, "User not found")
+		if errors.Is(err, repository.ErrNotFound) {
+			utils.HandleAPIError(c, err, common.ErrCodeNotFound, "User not found")
+			return
+		}
+		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to get user")
 		return
 	}
 
@@ -89,6 +94,10 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 	// Apply update
 	updatedUser, err := h.repository.Update(context.Background(), dbUser.ID, update)
 	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			utils.HandleAPIError(c, err, common.ErrCodeNotFound, "User not found")
+			return
+		}
 		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to update profile")
 		return
 	}
@@ -101,6 +110,10 @@ func (h *UserHandler) DeleteProfile(c *gin.Context) {
 	userID := uint32(c.GetUint(constants.ContextKeyUserID))
 
 	if err := h.repository.Delete(context.Background(), userID); err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			utils.HandleAPIError(c, err, common.ErrCodeNotFound, "User not found")
+			return
+		}
 		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to delete user")
 		return
 	}
@@ -162,7 +175,11 @@ func (h *UserHandler) GetUser(c *gin.Context) {
 	// Fetch user from database
 	dbUser, err := h.repository.Get(context.Background(), uint32(userID))
 	if err != nil {
-		utils.HandleAPIError(c, err, common.ErrCodeNotFound, "User not found")
+		if errors.Is(err, repository.ErrNotFound) {
+			utils.HandleAPIError(c, err, common.ErrCodeNotFound, "User not found")
+			return
+		}
+		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to get user")
 		return
 	}
 
@@ -180,7 +197,11 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 	// Fetch user from database
 	dbUser, err := h.repository.Get(context.Background(), uint32(userID))
 	if err != nil {
-		utils.HandleAPIError(c, err, common.ErrCodeNotFound, "User not found")
+		if errors.Is(err, repository.ErrNotFound) {
+			utils.HandleAPIError(c, err, common.ErrCodeNotFound, "User not found")
+			return
+		}
+		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to get user")
 		return
 	}
 
@@ -204,6 +225,10 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 	// Apply update
 	updatedUser, err := h.repository.Update(context.Background(), dbUser.ID, update)
 	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			utils.HandleAPIError(c, err, common.ErrCodeNotFound, "User not found")
+			return
+		}
 		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to update user")
 		return
 	}
@@ -220,6 +245,10 @@ func (h *UserHandler) DeleteUser(c *gin.Context) {
 	}
 
 	if err := h.repository.Delete(context.Background(), uint32(userID)); err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			utils.HandleAPIError(c, err, common.ErrCodeNotFound, "User not found")
+			return
+		}
 		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to delete user")
 		return
 	}

@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/osa911/giraffecloud/internal/db/ent"
@@ -23,19 +24,33 @@ func NewSessionRepository(client *ent.Client) SessionRepository {
 
 // Get returns a session by ID
 func (r *sessionRepository) Get(ctx context.Context, id uint32) (*ent.Session, error) {
-	return r.client.Session.Get(ctx, id)
+	s, err := r.client.Session.Get(ctx, id)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return nil, fmt.Errorf("%w: session not found", ErrNotFound)
+		}
+		return nil, err
+	}
+	return s, nil
 }
 
 // GetByToken returns a session by token
 func (r *sessionRepository) GetByToken(ctx context.Context, token string) (*ent.Session, error) {
-	return r.client.Session.Query().
+	s, err := r.client.Session.Query().
 		Where(session.Token(token)).
 		Only(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return nil, fmt.Errorf("%w: session not found", ErrNotFound)
+		}
+		return nil, err
+	}
+	return s, nil
 }
 
 // GetActiveByToken returns an active and non-expired session by token
 func (r *sessionRepository) GetActiveByToken(ctx context.Context, token string) (*ent.Session, error) {
-	return r.client.Session.Query().
+	s, err := r.client.Session.Query().
 		Where(
 			session.Token(token),
 			session.IsActive(true),
@@ -43,6 +58,13 @@ func (r *sessionRepository) GetActiveByToken(ctx context.Context, token string) 
 		).
 		WithOwner().
 		Only(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return nil, fmt.Errorf("%w: session not found", ErrNotFound)
+		}
+		return nil, err
+	}
+	return s, nil
 }
 
 // Create creates a new session
@@ -65,7 +87,14 @@ func (r *sessionRepository) CreateForUser(ctx context.Context, userID uint32, to
 
 // Update updates an existing session
 func (r *sessionRepository) Update(ctx context.Context, id uint32, update *ent.SessionUpdateOne) (*ent.Session, error) {
-	return update.Save(ctx)
+	s, err := update.Save(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return nil, fmt.Errorf("%w: session not found", ErrNotFound)
+		}
+		return nil, err
+	}
+	return s, nil
 }
 
 // UpdateLastUsed updates session's last used timestamp and optionally extends expiration
@@ -77,12 +106,26 @@ func (r *sessionRepository) UpdateLastUsed(ctx context.Context, session *ent.Ses
 		update.SetExpiresAt(*newExpiration)
 	}
 
-	return update.Save(ctx)
+	s, err := update.Save(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return nil, fmt.Errorf("%w: session not found", ErrNotFound)
+		}
+		return nil, err
+	}
+	return s, nil
 }
 
 // Delete deletes a session by ID
 func (r *sessionRepository) Delete(ctx context.Context, id uint32) error {
-	return r.client.Session.DeleteOneID(id).Exec(ctx)
+	err := r.client.Session.DeleteOneID(id).Exec(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return fmt.Errorf("%w: session not found", ErrNotFound)
+		}
+		return err
+	}
+	return nil
 }
 
 // DeleteExpired deletes all expired sessions
@@ -105,24 +148,45 @@ func (r *sessionRepository) GetActiveSessions(ctx context.Context, userID uint32
 
 // GetUserSession returns a specific session for a user
 func (r *sessionRepository) GetUserSession(ctx context.Context, sessionID string, userID uint32) (*ent.Session, error) {
-	return r.client.Session.Query().
+	s, err := r.client.Session.Query().
 		Where(
 			session.Token(sessionID),
 			session.HasOwnerWith(user.ID(userID)),
 		).
 		Only(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return nil, fmt.Errorf("%w: session not found", ErrNotFound)
+		}
+		return nil, err
+	}
+	return s, nil
 }
 
 // GetSessionOwner returns the owner of a session
 func (r *sessionRepository) GetSessionOwner(ctx context.Context, session *ent.Session) (*ent.User, error) {
-	return r.client.Session.QueryOwner(session).Only(ctx)
+	u, err := r.client.Session.QueryOwner(session).Only(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return nil, fmt.Errorf("%w: owner not found", ErrNotFound)
+		}
+		return nil, err
+	}
+	return u, nil
 }
 
 // Revoke marks a session as inactive
 func (r *sessionRepository) Revoke(ctx context.Context, session *ent.Session) error {
-	return r.client.Session.UpdateOneID(session.ID).
+	err := r.client.Session.UpdateOneID(session.ID).
 		SetIsActive(false).
 		Exec(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return fmt.Errorf("%w: session not found", ErrNotFound)
+		}
+		return err
+	}
+	return nil
 }
 
 // RevokeByToken marks a session as inactive by its token

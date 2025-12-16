@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 
@@ -223,7 +224,7 @@ func (s *tunnelService) DeleteTunnel(ctx context.Context, userID uint32, tunnelI
 	// Get tunnel first to get the domain
 	tunnel, err := s.repo.GetByID(ctx, tunnelID)
 	if err != nil {
-		if ent.IsNotFound(err) {
+		if errors.Is(err, repository.ErrNotFound) {
 			return fmt.Errorf("%w: tunnel not found", ErrNotFound)
 		}
 		return fmt.Errorf("failed to get tunnel: %w", err)
@@ -248,7 +249,7 @@ func (s *tunnelService) UpdateTunnel(ctx context.Context, userID uint32, tunnelI
 	// Get current tunnel state
 	currentTunnel, err := s.repo.GetByID(ctx, tunnelID)
 	if err != nil {
-		if ent.IsNotFound(err) {
+		if errors.Is(err, repository.ErrNotFound) {
 			return nil, fmt.Errorf("%w: tunnel not found", ErrNotFound)
 		}
 		logger.Error("[DEBUG] Failed to get tunnel: %v", err)

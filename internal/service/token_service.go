@@ -105,7 +105,14 @@ func (s *TokenService) ListTokens(ctx context.Context, userID uint32) ([]*token.
 }
 
 func (s *TokenService) RevokeToken(ctx context.Context, id uuid.UUID) error {
-	return s.tokenRepo.Revoke(ctx, id)
+	err := s.tokenRepo.Revoke(ctx, id)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return fmt.Errorf("token not found: %w", ErrNotFound)
+		}
+		return err
+	}
+	return nil
 }
 
 func (s *TokenService) ValidateToken(ctx context.Context, tokenStr string) (*mapper.Token, error) {
@@ -120,6 +127,10 @@ func (s *TokenService) ValidateToken(ctx context.Context, tokenStr string) (*map
 	logger.Info("ValidateToken: Using GetByToken for token lookup")
 	tokenRecord, err := s.tokenRepo.GetByToken(ctx, tokenStr)
 	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			logger.Error("ValidateToken: Token not found")
+			return nil, fmt.Errorf("invalid token: %w", ErrNotFound)
+		}
 		logger.Error("ValidateToken: Failed to get token by value: %w", err)
 		return nil, fmt.Errorf("invalid token")
 	}

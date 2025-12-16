@@ -43,9 +43,16 @@ func (r *tunnelRepository) Create(ctx context.Context, t *ent.Tunnel) (*ent.Tunn
 
 // GetByID retrieves a tunnel by its ID
 func (r *tunnelRepository) GetByID(ctx context.Context, id uint32) (*ent.Tunnel, error) {
-	return r.client.Tunnel.Query().
+	t, err := r.client.Tunnel.Query().
 		Where(tunnel.ID(int(id))).
 		Only(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return nil, fmt.Errorf("%w: tunnel not found", ErrNotFound)
+		}
+		return nil, err
+	}
+	return t, nil
 }
 
 // GetByUserID retrieves all tunnels for a user, ordered by ID
@@ -58,16 +65,30 @@ func (r *tunnelRepository) GetByUserID(ctx context.Context, userID uint32) ([]*e
 
 // GetByToken retrieves a tunnel configuration by its token
 func (r *tunnelRepository) GetByToken(ctx context.Context, token string) (*ent.Tunnel, error) {
-	return r.client.Tunnel.Query().
+	t, err := r.client.Tunnel.Query().
 		Where(tunnel.TokenEQ(token)).
 		Only(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return nil, fmt.Errorf("%w: tunnel not found", ErrNotFound)
+		}
+		return nil, err
+	}
+	return t, nil
 }
 
 // GetByDomain retrieves a tunnel by its domain
 func (r *tunnelRepository) GetByDomain(ctx context.Context, domain string) (*ent.Tunnel, error) {
-	return r.client.Tunnel.Query().
+	t, err := r.client.Tunnel.Query().
 		Where(tunnel.DomainEQ(domain)).
 		Only(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return nil, fmt.Errorf("%w: tunnel not found", ErrNotFound)
+		}
+		return nil, err
+	}
+	return t, nil
 }
 
 // TunnelUpdate represents the fields that can be updated
@@ -96,19 +117,40 @@ func (r *tunnelRepository) Update(ctx context.Context, id uint32, updates interf
 		update.SetDNSPropagationStatus(*u.DnsPropagationStatus)
 	}
 
-	return update.Save(ctx)
+	t, err := update.Save(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return nil, fmt.Errorf("%w: tunnel not found", ErrNotFound)
+		}
+		return nil, err
+	}
+	return t, nil
 }
 
 // Delete deletes a tunnel
 func (r *tunnelRepository) Delete(ctx context.Context, id uint32) error {
-	return r.client.Tunnel.DeleteOneID(int(id)).Exec(ctx)
+	err := r.client.Tunnel.DeleteOneID(int(id)).Exec(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return fmt.Errorf("%w: tunnel not found", ErrNotFound)
+		}
+		return err
+	}
+	return nil
 }
 
 // UpdateClientIP updates the client IP address for a tunnel
 func (r *tunnelRepository) UpdateClientIP(ctx context.Context, id uint32, clientIP string) error {
-	return r.client.Tunnel.UpdateOneID(int(id)).
+	err := r.client.Tunnel.UpdateOneID(int(id)).
 		SetClientIP(clientIP).
 		Exec(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return fmt.Errorf("%w: tunnel not found", ErrNotFound)
+		}
+		return err
+	}
+	return nil
 }
 
 // GetActive retrieves all active tunnels
