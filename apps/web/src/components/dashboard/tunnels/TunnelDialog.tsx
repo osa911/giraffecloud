@@ -42,9 +42,16 @@ interface TunnelDialogProps {
   existingTunnels?: Tunnel[];
 }
 
+const domainRegex = /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/;
+
 const formSchema = z.object({
-  domain: z.string().min(1, "Domain is required"),
-  target_port: z.number().min(1).max(65535),
+  domain: z.string()
+    .min(1, "Domain is required")
+    .regex(domainRegex, "Invalid domain format (e.g., example.com)"),
+  target_port: z.number()
+    .int("Port must be an integer")
+    .min(1, "Port must be at least 1")
+    .max(65535, "Port must be at most 65535"),
   is_enabled: z.boolean(),
 });
 

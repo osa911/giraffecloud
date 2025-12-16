@@ -126,6 +126,11 @@ func (h *TunnelHandler) CreateTunnel(c *gin.Context) {
 		return
 	}
 
+	if req.Domain != "" && !utils.IsValidDomain(req.Domain) {
+		utils.HandleAPIError(c, nil, common.ErrCodeValidation, "Invalid domain format")
+		return
+	}
+
 	userID := c.MustGet(constants.ContextKeyUserID).(uint32)
 	tunnel, err := h.tunnelService.CreateTunnel(c.Request.Context(), userID, req.Domain, req.TargetPort)
 	if err != nil {
