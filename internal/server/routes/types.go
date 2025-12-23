@@ -19,6 +19,7 @@ type Handlers struct {
 	Admin             *handlers.AdminHandler
 	Usage             *handlers.UsageHandler
 	Contact           *handlers.ContactHandler
+	Caddy             *handlers.CaddyHandler
 }
 
 // Middleware contains all the middleware

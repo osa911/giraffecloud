@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"sync"
 
+	"github.com/osa911/giraffecloud/internal/config"
 	"github.com/osa911/giraffecloud/internal/logging"
 	"github.com/osa911/giraffecloud/internal/tunnel"
 )
@@ -28,15 +29,17 @@ type caddyService struct {
 	baseURL     string
 	mu          sync.RWMutex
 	connections *tunnel.ConnectionManager
+	config      *config.Config
 }
 
 // NewCaddyService creates a new Caddy service instance
-func NewCaddyService(connections *tunnel.ConnectionManager) CaddyService {
+func NewCaddyService(connections *tunnel.ConnectionManager, cfg *config.Config) CaddyService {
 	return &caddyService{
 		logger:      logging.GetGlobalLogger(),
 		client:      &http.Client{},
 		baseURL:     "http://172.20.0.4:2019",
 		connections: connections,
+		config:      cfg,
 	}
 }
 
@@ -67,9 +70,12 @@ func (s *caddyService) ConfigureRoute(domain string, targetIP string, targetPort
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// First, ensure the domain is in the TLS automation policy
-	if err := s.ensureTLSPolicy(domain); err != nil {
-		return fmt.Errorf("failed to configure TLS policy: %w", err)
+	// If it's a subdomain of the base domain, we use the wildcard policy.
+	// Otherwise, we let On-Demand TLS handle it (configured in LoadConfig).
+	if isSubdomain(domain, s.config.BaseDomain) {
+		if err := s.ensureWildcardPolicy(s.config.BaseDomain); err != nil {
+			return fmt.Errorf("failed to ensure wildcard policy: %w", err)
+		}
 	}
 
 	// Create route configuration
@@ -155,8 +161,18 @@ func (s *caddyService) ConfigureRoute(domain string, targetIP string, targetPort
 	return nil
 }
 
-// ensureTLSPolicy ensures that the domain is included in Caddy's TLS automation policy
-func (s *caddyService) ensureTLSPolicy(domain string) error {
+// isSubdomain checks if a domain is a subdomain of a base domain
+func isSubdomain(domain, base string) bool {
+	if domain == base {
+		return true
+	}
+	return len(domain) > len(base) && domain[len(domain)-len(base)-1] == '.' && domain[len(domain)-len(base):] == base
+}
+
+// ensureWildcardPolicy ensures that the wildcard policy for a base domain exists
+func (s *caddyService) ensureWildcardPolicy(baseDomain string) error {
+	wildcard := "*." + baseDomain
+
 	// Get current config
 	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/config/", s.baseURL), nil)
 	if err != nil {
@@ -174,107 +190,92 @@ func (s *caddyService) ensureTLSPolicy(domain string) error {
 		return fmt.Errorf("failed to decode current config: %w", err)
 	}
 
-	// Navigate to TLS automation policies
-	apps, ok := currentConfig["apps"].(map[string]interface{})
-	if !ok {
-		return fmt.Errorf("invalid config structure: apps not found")
-	}
-
-	tls, ok := apps["tls"].(map[string]interface{})
-	if !ok {
-		tls = make(map[string]interface{})
-		apps["tls"] = tls
-	}
-
-	automation, ok := tls["automation"].(map[string]interface{})
-	if !ok {
-		automation = make(map[string]interface{})
-		tls["automation"] = automation
-	}
-
+	apps, _ := currentConfig["apps"].(map[string]interface{})
+	tls, _ := apps["tls"].(map[string]interface{})
+	automation, _ := tls["automation"].(map[string]interface{})
 	policies, ok := automation["policies"].([]interface{})
-	if !ok || len(policies) == 0 {
-		// Create default policy if none exists
-		policies = []interface{}{
-			map[string]interface{}{
-				"subjects": []string{"giraffecloud.xyz", "*.giraffecloud.xyz"},
-				"issuers": []interface{}{
-					map[string]interface{}{
-						"module": "acme",
-						"ca":     "https://acme-v02.api.letsencrypt.org/directory",
-						"challenges": map[string]interface{}{
-							"http": map[string]interface{}{
-								"disabled": false,
-							},
-							"dns": map[string]interface{}{
-								"disabled": true,
-							},
-							"tls-alpn": map[string]interface{}{
-								"disabled": true,
-							},
-						},
-					},
-				},
-			},
-		}
-		automation["policies"] = policies
-	}
-
-	// Check if domain is already in policy
-	policy := policies[0].(map[string]interface{})
-	subjects, ok := policy["subjects"].([]interface{})
 	if !ok {
-		subjects = []interface{}{}
+		policies = []interface{}{}
 	}
 
-	// Convert subjects to strings for comparison
-	subjectStrings := make([]string, len(subjects))
-	for i, s := range subjects {
-		subjectStrings[i] = s.(string)
-	}
-
-	// Add domain if not already present
-	domainFound := false
-	for _, s := range subjectStrings {
-		if s == domain {
-			domainFound = true
+	// Check if wildcard policy already exists
+	found := false
+	for _, p := range policies {
+		policy := p.(map[string]interface{})
+		subjects, ok := policy["subjects"].([]interface{})
+		if !ok {
+			continue
+		}
+		for _, s := range subjects {
+			if s == wildcard {
+				found = true
+				break
+			}
+		}
+		if found {
 			break
 		}
 	}
 
-	if !domainFound {
-		subjectStrings = append(subjectStrings, domain)
-		policy["subjects"] = subjectStrings
-	}
+	if !found {
+		// Create a wildcard policy with Cloudflare DNS challenge
+		issuer := map[string]interface{}{
+			"module": "acme",
+		}
 
-	// Update config if domain was added
-	if !domainFound {
+		// Inject Cloudflare token if configured
+		if s.config.CloudflareToken != "" {
+			issuer["challenges"] = map[string]interface{}{
+				"dns": map[string]interface{}{
+					"provider": map[string]interface{}{
+						"name":      "cloudflare",
+						"api_token": s.config.CloudflareToken,
+					},
+				},
+			}
+		} else {
+			s.logger.Warn("Cloudflare API token not configured. Wildcard certificate for %s may fail.", baseDomain)
+		}
+
+		newPolicy := map[string]interface{}{
+			"subjects": []string{wildcard, baseDomain},
+			"issuers":  []interface{}{issuer},
+		}
+		automation["policies"] = append([]interface{}{newPolicy}, policies...)
+
 		jsonConfig, err := json.Marshal(currentConfig)
 		if err != nil {
-			return fmt.Errorf("failed to marshal updated config: %w", err)
+			return err
 		}
 
 		req, err = http.NewRequest(http.MethodPost, fmt.Sprintf("%s/load", s.baseURL), bytes.NewBuffer(jsonConfig))
 		if err != nil {
-			return fmt.Errorf("failed to create request: %w", err)
+			return err
 		}
-
 		req.Header.Set("Content-Type", "application/json")
-
 		resp, err = s.client.Do(req)
 		if err != nil {
-			return fmt.Errorf("failed to send request: %w", err)
+			return err
 		}
 		defer resp.Body.Close()
-
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(resp.Body)
-			return fmt.Errorf("failed to update TLS policy (status %d): %s", resp.StatusCode, string(body))
+			return fmt.Errorf("failed to update wildcard policy (status %d): %s", resp.StatusCode, string(body))
 		}
-
-		s.logger.Info("Successfully added domain %s to TLS automation policy", domain)
+		s.logger.Info("Successfully added wildcard policy for %s", baseDomain)
 	}
 
+	return nil
+}
+
+// ensureTLSPolicy is now deprecated and kept for backward compatibility if needed,
+// but renamed/internally bypassed to avoid linear subject growth.
+func (s *caddyService) ensureTLSPolicy(domain string) error {
+	// Custom domains are now handled by On-Demand TLS (see LoadConfig).
+	// Subdomains of the base domain are handled by ensureWildcardPolicy.
+	if isSubdomain(domain, s.config.BaseDomain) {
+		return s.ensureWildcardPolicy(s.config.BaseDomain)
+	}
 	return nil
 }
 
@@ -368,17 +369,36 @@ func (s *caddyService) LoadConfig() error {
 
 	// Ensure required configuration exists
 	if apps, ok := currentConfig["apps"].(map[string]interface{}); ok {
+		// 1. Configure On-Demand TLS 'ask' endpoint
+		tls, ok := apps["tls"].(map[string]interface{})
+		if !ok {
+			tls = make(map[string]interface{})
+			apps["tls"] = tls
+		}
+		automation, ok := tls["automation"].(map[string]interface{})
+		if !ok {
+			automation = make(map[string]interface{})
+			tls["automation"] = automation
+		}
+		onDemand, ok := automation["on_demand"].(map[string]interface{})
+		if !ok {
+			onDemand = make(map[string]interface{})
+			automation["on_demand"] = onDemand
+		}
+		// Point to our internal API endpoint
+		onDemand["ask"] = "http://api:8080/api/v1/caddy/check-domain"
+
+		// 2. Configure HTTP server settings
 		if http, ok := apps["http"].(map[string]interface{}); ok {
 			if servers, ok := http["servers"].(map[string]interface{}); ok {
 				if srv0, ok := servers["srv0"].(map[string]interface{}); ok {
 					// Ensure automatic HTTPS is enabled
 					srv0["automatic_https"] = map[string]interface{}{
-						"disable": false,
+						"disable":   false,
+						"on_demand": true, // Enable on-demand TLS for this server
 					}
 					// Ensure proper listening addresses
 					srv0["listen"] = []string{":80", ":443"}
-					// Note: Caddy v2 doesn't have max_body_size at server level
-					// Request body size limits should be handled via request_body handler if needed
 				}
 			}
 		}

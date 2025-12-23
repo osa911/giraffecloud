@@ -17,6 +17,9 @@ func Setup(router *gin.Engine, h *Handlers, m *Middleware) {
 	// Create base API v1 group
 	v1 := router.Group("/api/v1")
 
+	// Caddy routes
+	SetupCaddyRoutes(v1, h)
+
 	// Public routes (no auth required)
 	SetupPublicRoutes(router, h)
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/caarlos0/env/v10"
 	"github.com/joho/godotenv"
@@ -14,6 +15,7 @@ type Config struct {
 	// Server Configuration
 	Environment string `env:"ENV" envDefault:"development"`
 	ServerIP    string `env:"SERVER_IP"`
+	BaseDomain  string `env:"BASE_DOMAIN" envDefault:"giraffecloud.xyz"`
 	Port        string `env:"API_PORT" envDefault:"8080"`
 	LogLevel    string `env:"LOG_LEVEL" envDefault:"INFO"`
 	LogFile     string `env:"LOG_FILE"`
@@ -35,6 +37,9 @@ type Config struct {
 
 	// Telemetry Configuration
 	OTLPEndpoint string `env:"OTEL_EXPORTER_OTLP_ENDPOINT"`
+
+	// Cloudflare Configuration
+	CloudflareToken string `env:"CLOUDFLARE_API_TOKEN"`
 }
 
 // Load loads the configuration from environment variables and .env files
@@ -65,6 +70,21 @@ func Load() (*Config, error) {
 	cfg := &Config{}
 	if err := env.Parse(cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
+	}
+
+	// Derive BaseDomain from ClientURL if not explicitly set
+	if cfg.BaseDomain == "giraffecloud.xyz" && cfg.ClientURL != "" {
+		// Manual parse to avoid circular dependency with utils
+		domain := cfg.ClientURL
+		domain = strings.TrimPrefix(domain, "https://")
+		domain = strings.TrimPrefix(domain, "http://")
+		domain = strings.TrimPrefix(domain, "www.")
+		if idx := strings.Index(domain, ":"); idx != -1 {
+			domain = domain[:idx]
+		}
+		if domain != "" && domain != "localhost" {
+			cfg.BaseDomain = domain
+		}
 	}
 
 	// Set default log file if not set

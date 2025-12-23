@@ -55,8 +55,6 @@ func generateSecureToken(length int) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-
-
 func (h *AuthHandler) Login(c *gin.Context) {
 	logger := logging.GetGlobalLogger()
 

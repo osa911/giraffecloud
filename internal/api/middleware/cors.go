@@ -8,6 +8,7 @@ import (
 
 	"github.com/osa911/giraffecloud/internal/api/constants"
 	"github.com/osa911/giraffecloud/internal/logging"
+	"github.com/osa911/giraffecloud/internal/utils"
 
 	"github.com/gin-gonic/gin"
 )
@@ -35,7 +36,8 @@ func isAllowedOrigin(origin string) bool {
 	}
 
 	// Block tunnel subdomains (for now)
-	if strings.HasSuffix(originURL.Hostname(), "tunnel.giraffecloud.xyz") {
+	baseDomain := utils.GetBaseDomain()
+	if baseDomain != "" && strings.HasSuffix(originURL.Hostname(), "tunnel."+baseDomain) {
 		return false
 	}
 

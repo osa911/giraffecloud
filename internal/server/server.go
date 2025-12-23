@@ -206,7 +206,7 @@ func (s *Server) Init() error {
 		logger.Info("Initializing Caddy service...")
 		logger.Info("Using Caddy config path: %s", caddy.CaddyPaths.Config)
 
-		caddyService = service.NewCaddyService(connectionManager)
+		caddyService = service.NewCaddyService(connectionManager, s.config)
 
 		// Load initial Caddy configuration
 		logger.Info("Loading initial Caddy configuration...")
@@ -231,7 +231,7 @@ func (s *Server) Init() error {
 
 	// Initialize tunnel service
 	logger.Info("Initializing tunnel service...")
-	tunnelService := service.NewTunnelService(repos.Tunnel, caddyService, s.config.ServerIP)
+	tunnelService := service.NewTunnelService(repos.Tunnel, caddyService, s.config)
 	logger.Info("Tunnel service initialized")
 
 	// Initialize Hybrid Tunnel Router (Production-Grade Architecture)
@@ -297,6 +297,7 @@ func (s *Server) Init() error {
 		Admin:             handlers.NewAdminHandler(versionService),
 		Usage:             handlers.NewUsageHandler(repos.Usage, quotaService),
 		Contact:           handlers.NewContactHandler(),
+		Caddy:             handlers.NewCaddyHandler(repos.Tunnel),
 	}
 	logger.Info("Handlers initialized")
 

@@ -62,67 +62,66 @@
                   "handler": "headers",
                   "response": {
                     "set": {
-                      "Strict-Transport-Security": [
-                        "max-age=31536000; includeSubDomains; preload"
-                      ],
+                      "Strict-Transport-Security": ["max-age=31536000; includeSubDomains; preload"],
                       "X-Content-Type-Options": ["nosniff"],
                       "X-Frame-Options": ["DENY"],
                       "X-XSS-Protection": ["1; mode=block"],
-                      "Content-Security-Policy": [
-                        "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src 'self'"
-                      ],
+                      "Content-Security-Policy": ["default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src 'self'"],
                       "Referrer-Policy": ["strict-origin-when-cross-origin"],
-                      "Permissions-Policy": [
-                        "geolocation=(), microphone=(), camera=()"
-                      ]
+                      "Permissions-Policy": ["geolocation=(), microphone=(), camera=()"]
                     },
                     "delete": ["Server", "X-Powered-By"]
                   }
                 },
                 {
                   "handler": "reverse_proxy",
-                  "transport": {
-                    "protocol": "http"
-                  },
-                  "upstreams": [
-                    {
-                      "dial": "api:8080"
-                    }
-                  ],
+                  "upstreams": [{"dial": "api:8080"}],
                   "headers": {
                     "request": {
                       "add": {
                         "Host": ["{http.request.host}"],
                         "X-Real-IP": ["{http.request.remote.host}"],
                         "X-Forwarded-For": ["{http.request.remote.host}"],
-                        "X-Forwarded-Proto": ["{http.request.scheme}"],
-                        "Origin": ["{http.request.header.Origin}"],
-                        "Referer": ["{http.request.header.Referer}"],
-                        "Authorization": [
-                          "{http.request.header.Authorization}"
-                        ],
-                        "Cookie": ["{http.request.header.Cookie}"]
+                        "X-Forwarded-Proto": ["{http.request.scheme}"]
                       }
                     }
                   }
                 }
               ]
+            },
+            {
+              "match": [{ "host": ["*"] }],
+              "handle": [
+                {
+                  "handler": "reverse_proxy",
+                  "upstreams": [{"dial": "api:8081"}],
+                  "headers": {
+                    "request": {
+                      "set": {
+                        "Host": ["{http.request.host}"],
+                        "X-Real-IP": ["{http.request.remote.host}"],
+                        "X-Forwarded-For": ["{http.request.remote.host}"],
+                        "X-Forwarded-Proto": ["{http.request.scheme}"]
+                      }
+                    }
+                  }
+                }
+              ],
+              "terminal": true
             }
           ],
           "automatic_https": {
             "disable": false,
-            "skip": [],
-            "skip_certificates": [],
-            "disable_redirects": false
-          },
-          "logs": {
-            "default_logger_name": "default"
+            "on_demand": true
           }
         }
       }
     },
     "tls": {
       "automation": {
+        "on_demand": {
+          "ask": "http://api:8080/api/v1/caddy/check-domain"
+        },
         "policies": [
           {
             "subjects": ["giraffecloud.xyz", "*.giraffecloud.xyz"],

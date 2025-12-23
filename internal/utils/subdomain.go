@@ -67,20 +67,22 @@ func getSubdomainSecret() string {
 	return secret
 }
 
-// GetBaseDomain returns the base domain for subdomain generation from CLIENT_URL
+// GetBaseDomain returns the base domain for subdomain generation
 func GetBaseDomain() string {
+	// First check BASE_DOMAIN environment variable
+	baseDomain := os.Getenv("BASE_DOMAIN")
+	if baseDomain != "" {
+		return baseDomain
+	}
+
 	clientURL := os.Getenv("CLIENT_URL")
 	if clientURL == "" {
-		// Fallback for development
 		return "localhost"
 	}
 
-	// Remove protocol if present
 	domain := strings.TrimPrefix(clientURL, "https://")
 	domain = strings.TrimPrefix(domain, "http://")
-	// Remove www if present
 	domain = strings.TrimPrefix(domain, "www.")
-	// Remove port if present
 	if idx := strings.Index(domain, ":"); idx != -1 {
 		domain = domain[:idx]
 	}
