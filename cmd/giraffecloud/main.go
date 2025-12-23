@@ -467,8 +467,11 @@ func checkVersionCompatibility(apiServerURL string) {
 	}
 
 	if versionInfo.UpdateRequired {
-		logger.Error("❌ Client version %s is incompatible with server", version.Version)
-		logger.Error("❌ Minimum required version: %s", versionInfo.MinimumVersion)
+		if version.IsUpdateRequired(version.Version, versionInfo.MinimumVersion) {
+			logger.Error("❌ Client version %s is below the minimum required version (%s)", version.Version, versionInfo.MinimumVersion)
+		} else {
+			logger.Error("❌ A mandatory update is required for version %s", version.Version)
+		}
 		logger.Error("❌ Latest version: %s", versionInfo.LatestVersion)
 		logger.Info("💡 Run 'giraffecloud update' to update to the latest version")
 		os.Exit(1)
