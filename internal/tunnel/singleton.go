@@ -15,7 +15,8 @@ import (
 // SingletonManager prevents multiple tunnel instances from running simultaneously
 type SingletonManager struct {
 	PidFile string
-	logger  *logging.Logger
+	lockFile *os.File
+	logger   *logging.Logger
 }
 
 // NewSingletonManager creates a new singleton manager
@@ -45,7 +46,7 @@ func NewSingletonManager() (*SingletonManager, error) {
 	}, nil
 }
 
-// AcquireLock attempts to acquire the singleton lock
+// AcquireLock attempts to acquire the singleton lock using advisory file locking (flock)
 func (sm *SingletonManager) AcquireLock() error {
 	// Create directory if it doesn't exist
 	pidDir := filepath.Dir(sm.PidFile)
@@ -53,17 +54,38 @@ func (sm *SingletonManager) AcquireLock() error {
 		return fmt.Errorf("failed to create pid directory: %w", err)
 	}
 
-	// Check if PID file exists and if the process is still running
-	if sm.isProcessRunning() {
-		return fmt.Errorf("tunnel is already running (PID: %d). Use 'giraffecloud service status' to check service status", sm.getPIDFromFile())
+	// Open or create the PID file
+	file, err := os.OpenFile(sm.PidFile, os.O_RDWR|os.O_CREATE, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open pid file: %w", err)
 	}
 
-	// Write current PID to file
-	pid := os.Getpid()
-	pidContent := fmt.Sprintf("%d\n", pid)
+	// Attempt to acquire an exclusive lock without blocking (flock)
+	// On Unix-like systems, LOCK_EX | LOCK_NB returns syscall.EWOULDBLOCK if locked
+	err = syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+	if err != nil {
+		file.Close()
+		if err == syscall.EWOULDBLOCK || err == syscall.EAGAIN {
+			// Lock is held by another process
+			pid := sm.getPIDFromFile()
+			return fmt.Errorf("tunnel is already running (PID: %d). Use 'giraffecloud service status' to check service status", pid)
+		}
+		return fmt.Errorf("failed to acquire advisory lock: %w", err)
+	}
 
-	if err := os.WriteFile(sm.PidFile, []byte(pidContent), 0644); err != nil {
-		return fmt.Errorf("failed to write pid file: %w", err)
+	// Lock acquired! Keep the file handle open to maintain the lock
+	sm.lockFile = file
+
+	// Write current PID to file for informational purposes
+	pid := os.Getpid()
+	if err := file.Truncate(0); err != nil {
+		sm.logger.Warn("Failed to truncate pid file: %v", err)
+	}
+	if _, err := file.Seek(0, 0); err != nil {
+		sm.logger.Warn("Failed to seek pid file: %v", err)
+	}
+	if _, err := fmt.Fprintf(file, "%d\n", pid); err != nil {
+		sm.logger.Warn("Failed to write to pid file: %v", err)
 	}
 
 	if sm.logger != nil {
@@ -74,11 +96,20 @@ func (sm *SingletonManager) AcquireLock() error {
 
 // ReleaseLock releases the singleton lock
 func (sm *SingletonManager) ReleaseLock() error {
-	if err := os.Remove(sm.PidFile); err != nil {
-		if !os.IsNotExist(err) {
-			return fmt.Errorf("failed to remove pid file: %w", err)
-		}
+	if sm.lockFile == nil {
+		return nil
 	}
+
+	// Unlock and close the file
+	_ = syscall.Flock(int(sm.lockFile.Fd()), syscall.LOCK_UN)
+	_ = sm.lockFile.Close()
+	sm.lockFile = nil
+
+	// Remove the file - ignore errors if it doesn't exist
+	if err := os.Remove(sm.PidFile); err != nil && !os.IsNotExist(err) {
+		sm.logger.Warn("Failed to remove pid file on release: %v", err)
+	}
+
 	if sm.logger != nil {
 		sm.logger.Debug("Released singleton lock")
 	}
@@ -87,36 +118,37 @@ func (sm *SingletonManager) ReleaseLock() error {
 
 // IsRunning checks if a tunnel instance is currently running
 func (sm *SingletonManager) IsRunning() bool {
-	return sm.isProcessRunning()
+	sm.CleanupStaleLock() // Proactively clean up if we can acquire the lock
+
+	file, err := os.OpenFile(sm.PidFile, os.O_RDWR, 0644)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false
+		}
+		return true // Possibly locked
+	}
+	defer file.Close()
+
+	// Try to get a shared lock without blocking to check status
+	err = syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+	if err == nil {
+		// We could acquire the lock, so it wasn't running
+		_ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
+		return false
+	}
+
+	return true
 }
 
 // GetRunningPID returns the PID of the running tunnel instance, or 0 if not running
 func (sm *SingletonManager) GetRunningPID() int {
-	if !sm.isProcessRunning() {
+	if !sm.IsRunning() {
 		return 0
 	}
 	return sm.getPIDFromFile()
 }
 
-// isProcessRunning checks if the process in the PID file is still running
-func (sm *SingletonManager) isProcessRunning() bool {
-	pid := sm.getPIDFromFile()
-	if pid == 0 {
-		return false
-	}
-
-	// Check if process exists
-	process, err := os.FindProcess(pid)
-	if err != nil {
-		return false
-	}
-
-	// On Unix systems, sending signal 0 checks if process exists without actually sending a signal
-	err = process.Signal(syscall.Signal(0))
-	return err == nil
-}
-
-// getPIDFromFile reads the PID from the PID file
+// getPIDFromFile reads the PID from the PID file (helper)
 func (sm *SingletonManager) getPIDFromFile() int {
 	data, err := os.ReadFile(sm.PidFile)
 	if err != nil {
@@ -147,7 +179,7 @@ func (sm *SingletonManager) CheckServiceConflict() error {
 		if sm.logger != nil {
 			sm.logger.Debug("Failed to create service manager: %v", err)
 		}
-		return nil // Don't fail if we can't check service status
+		return nil
 	}
 
 	isRunning, err := serviceManager.IsRunning()
@@ -155,7 +187,7 @@ func (sm *SingletonManager) CheckServiceConflict() error {
 		if sm.logger != nil {
 			sm.logger.Debug("Failed to check service status: %v", err)
 		}
-		return nil // Don't fail if we can't check service status
+		return nil
 	}
 
 	if isRunning {
@@ -165,26 +197,36 @@ func (sm *SingletonManager) CheckServiceConflict() error {
 	return nil
 }
 
-// CleanupStaleLock removes stale PID files (e.g., from crashed processes)
+// CleanupStaleLock removes stale PID files if no process holds the kernel lock
 func (sm *SingletonManager) CleanupStaleLock() error {
-	if !sm.isProcessRunning() {
-		// Process is not running, clean up stale PID file
-		if err := os.Remove(sm.PidFile); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("failed to cleanup stale pid file: %w", err)
+	file, err := os.OpenFile(sm.PidFile, os.O_RDWR, 0644)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
 		}
+		return err
+	}
+	defer file.Close()
+
+	// Try to acquire lock - if successful, it was stale
+	err = syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+	if err == nil {
+		_ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
+		file.Close()
+		_ = os.Remove(sm.PidFile)
 		if sm.logger != nil {
-			sm.logger.Debug("Cleaned up stale PID file")
+			sm.logger.Debug("Cleaned up stale lock file")
 		}
 	}
 	return nil
 }
 
-// WaitForLock waits for the lock to become available (useful for service restarts)
+// WaitForLock waits for the lock to become available
 func (sm *SingletonManager) WaitForLock(timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 
 	for time.Now().Before(deadline) {
-		if !sm.isProcessRunning() {
+		if !sm.IsRunning() {
 			return nil
 		}
 		time.Sleep(100 * time.Millisecond)
