@@ -188,13 +188,16 @@ jobs:
           path: bin/giraffecloud-*
           retention-days: 1
 
-  # Collect all binaries, create archives, and release
-  release:
+  # Collect all binaries, create archives, and release-and-update-db
+  release-and-update-db:
     needs: [determine-channel, build]
     if: needs.determine-channel.outputs.should_release == 'true'
     runs-on: ubuntu-latest
+    environment: production
     timeout-minutes: 10
     steps:
+      # ... (Archiving and Release steps) ...
+      # This job also handles the Update database with version information
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -327,7 +330,7 @@ jobs:
 
   # Notification
   notify:
-    needs: [determine-channel, build, release]
+    needs: [determine-channel, build, release-and-update-db]
     if: always() && needs.determine-channel.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     steps:
