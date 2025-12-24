@@ -109,11 +109,7 @@
               ],
               "terminal": true
             }
-          ],
-          "automatic_https": {
-            "disable": false,
-            "on_demand": true
-          }
+          ]
         }
       }
     },
