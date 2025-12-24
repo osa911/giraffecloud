@@ -14,7 +14,7 @@ import (
 
 // SingletonManager prevents multiple tunnel instances from running simultaneously
 type SingletonManager struct {
-	PidFile string
+	PidFile  string
 	lockFile *os.File
 	logger   *logging.Logger
 }
