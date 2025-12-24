@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/osa911/giraffecloud/internal/logging"
@@ -60,12 +59,11 @@ func (sm *SingletonManager) AcquireLock() error {
 		return fmt.Errorf("failed to open pid file: %w", err)
 	}
 
-	// Attempt to acquire an exclusive lock without blocking (flock)
-	// On Unix-like systems, LOCK_EX | LOCK_NB returns syscall.EWOULDBLOCK if locked
-	err = syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+	// Attempt to acquire an exclusive lock without blocking
+	err = lockFile(file)
 	if err != nil {
 		file.Close()
-		if err == syscall.EWOULDBLOCK || err == syscall.EAGAIN {
+		if isLockContended(err) {
 			// Lock is held by another process
 			pid := sm.getPIDFromFile()
 			return fmt.Errorf("tunnel is already running (PID: %d). Use 'giraffecloud service status' to check service status", pid)
@@ -101,7 +99,7 @@ func (sm *SingletonManager) ReleaseLock() error {
 	}
 
 	// Unlock and close the file
-	_ = syscall.Flock(int(sm.lockFile.Fd()), syscall.LOCK_UN)
+	_ = unlockFile(sm.lockFile)
 	_ = sm.lockFile.Close()
 	sm.lockFile = nil
 
@@ -130,10 +128,10 @@ func (sm *SingletonManager) IsRunning() bool {
 	defer file.Close()
 
 	// Try to get a shared lock without blocking to check status
-	err = syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+	err = lockFile(file)
 	if err == nil {
 		// We could acquire the lock, so it wasn't running
-		_ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
+		_ = unlockFile(file)
 		return false
 	}
 
@@ -209,9 +207,9 @@ func (sm *SingletonManager) CleanupStaleLock() error {
 	defer file.Close()
 
 	// Try to acquire lock - if successful, it was stale
-	err = syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+	err = lockFile(file)
 	if err == nil {
-		_ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
+		_ = unlockFile(file)
 		file.Close()
 		_ = os.Remove(sm.PidFile)
 		if sm.logger != nil {
