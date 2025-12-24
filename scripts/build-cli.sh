@@ -24,34 +24,43 @@ fi
 
 LDFLAGS="-s -w -X giraffecloud/internal/version.Version=${VERSION} -X giraffecloud/internal/version.BuildTime=${BUILD_TIME} -X giraffecloud/internal/version.GitCommit=${GIT_COMMIT}"
 
-# Build for multiple platforms
-echo "Building darwin/amd64..."
-GOOS=darwin GOARCH=amd64 go build -ldflags="${LDFLAGS}" -o bin/giraffecloud-darwin-amd64 ./cmd/giraffecloud
-echo "✓ darwin/amd64 complete"
+# Build for specified platform or all platforms
+build_target() {
+    local os=$1
+    local arch=$2
+    local ext=""
+    if [ "$os" = "windows" ]; then
+        ext=".exe"
+    fi
 
-echo "Building darwin/arm64..."
-GOOS=darwin GOARCH=arm64 go build -ldflags="${LDFLAGS}" -o bin/giraffecloud-darwin-arm64 ./cmd/giraffecloud
-echo "✓ darwin/arm64 complete"
+    echo "Building ${os}/${arch}..."
+    GOOS=$os GOARCH=$arch go build -ldflags="${LDFLAGS}" -o "bin/giraffecloud-${os}-${arch}${ext}" ./cmd/giraffecloud
+    echo "✓ ${os}/${arch} complete"
+}
 
-echo "Building linux/amd64..."
-GOOS=linux GOARCH=amd64 go build -ldflags="${LDFLAGS}" -o bin/giraffecloud-linux-amd64 ./cmd/giraffecloud
-echo "✓ linux/amd64 complete"
-
-echo "Building linux/arm64..."
-GOOS=linux GOARCH=arm64 go build -ldflags="${LDFLAGS}" -o bin/giraffecloud-linux-arm64 ./cmd/giraffecloud
-echo "✓ linux/arm64 complete"
-
-echo "Building windows/amd64..."
-GOOS=windows GOARCH=amd64 go build -ldflags="${LDFLAGS}" -o bin/giraffecloud-windows-amd64.exe ./cmd/giraffecloud
-echo "✓ windows/amd64 complete"
-
-echo "Building windows/arm64..."
-GOOS=windows GOARCH=arm64 go build -ldflags="${LDFLAGS}" -o bin/giraffecloud-windows-arm64.exe ./cmd/giraffecloud
-echo "✓ windows/arm64 complete"
+if [ -n "$1" ] && [ -n "$2" ]; then
+    # Build specific target
+    build_target "$1" "$2"
+else
+    # Build all platforms
+    build_target "darwin" "amd64"
+    build_target "darwin" "arm64"
+    build_target "linux" "amd64"
+    build_target "linux" "arm64"
+    build_target "windows" "amd64"
+    build_target "windows" "arm64"
+fi
 
 # Create checksums
 cd bin
-shasum -a 256 * > checksums.txt
+# Only generate checksums if we built everything, or append if single target
+if [ -n "$1" ]; then
+    # For single target, we just build. Checksums will be handled by the CI collector.
+    echo "Single target build complete."
+else
+    shasum -a 256 * > checksums.txt
+    echo "All platforms built and checksums generated."
+fi
 cd ..
 
-echo "CLI build complete. Binaries in ./bin directory."
+echo "CLI build process finished. Binaries in ./bin directory."

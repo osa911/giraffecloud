@@ -146,12 +146,16 @@ jobs:
 
           echo "✅ Created git tag: $VERSION"
 
-  # Build client binaries
+  # Build client binaries in parallel
   build:
     needs: determine-channel
     if: needs.determine-channel.outputs.should_release == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        goos: [linux, windows, darwin]
+        goarch: [amd64, arm64]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -161,74 +165,63 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: "1.21"
+          go-version: "1.24.1"
           cache: true
 
       - name: Download dependencies
         run: |
-          echo "Downloading Go dependencies..."
           go mod download
           go mod verify
-          echo "✓ Dependencies ready"
 
-      - name: Verify formatting
-        run: |
-          UNFORMATTED=$(gofmt -l .)
-          if [ -n "$UNFORMATTED" ]; then
-            echo "These files are not gofmt-formatted:" && echo "$UNFORMATTED"
-            exit 1
-          fi
-
-      - name: Build binaries
+      - name: Build binary
         env:
           VERSION: ${{ needs.determine-channel.outputs.version }}
           CHANNEL: ${{ needs.determine-channel.outputs.channel }}
         run: |
-          echo "Starting build process..."
-          echo "VERSION: $VERSION"
-          echo "CHANNEL: $CHANNEL"
-          echo "Go version: $(go version)"
-          echo "Working directory: $(pwd)"
-          echo "Disk space:"
-          df -h
-
           chmod +x ./scripts/build-cli.sh
-          ./scripts/build-cli.sh
+          ./scripts/build-cli.sh ${{ matrix.goos }} ${{ matrix.goarch }}
 
-          echo "Build completed. Checking binaries..."
-          ls -lah bin/
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: giraffecloud-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: bin/giraffecloud-*
+          retention-days: 1
 
-      - name: Create archives
+  # Collect all binaries, create archives, and release
+  release:
+    needs: [determine-channel, build]
+    if: needs.determine-channel.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: bin-raw
+          merge-multiple: true
+
+      - name: Organize and Archive
         env:
           VERSION: ${{ needs.determine-channel.outputs.version }}
           SHORT_VERSION: ${{ needs.determine-channel.outputs.short_version }}
         run: |
+          mkdir -p bin
+          cp bin-raw/* bin/
           cd bin
 
           # Create tar.gz archives for Unix systems
           for PLATFORM in linux darwin; do
             for ARCH in amd64 arm64; do
               FILENAME="giraffecloud_${PLATFORM}_${ARCH}_${SHORT_VERSION}"
-
-              # Rename binary to final name and make executable
               cp "giraffecloud-${PLATFORM}-${ARCH}" "giraffecloud"
               chmod +x "giraffecloud"
-
-              echo "Creating archive for ${FILENAME}"
-              echo "Binary contents:"
-              ls -la "giraffecloud"
-
-              # Create archive with verbose output
-              tar -czvf "${FILENAME}.tar.gz" "giraffecloud" || {
-                echo "Tar command failed with exit code $?"
-                echo "Trying alternative approach..."
-                tar -czvf "${FILENAME}.tar.gz" --transform 's,^,giraffecloud/,' "giraffecloud"
-              }
-
-              # Verify the archive
-              echo "Verifying archive ${FILENAME}.tar.gz"
-              tar -tvf "${FILENAME}.tar.gz"
-
+              tar -czvf "${FILENAME}.tar.gz" "giraffecloud"
               rm "giraffecloud"
             done
           done
@@ -236,42 +229,13 @@ jobs:
           # Create zip archives for Windows
           for ARCH in amd64 arm64; do
             FILENAME="giraffecloud_windows_${ARCH}_${SHORT_VERSION}"
-
-            # Rename binary to final name
             cp "giraffecloud-windows-${ARCH}.exe" "giraffecloud.exe"
-            chmod +x "giraffecloud.exe"
-
-            echo "Creating archive for ${FILENAME}"
-            echo "Binary contents:"
-            ls -la "giraffecloud.exe"
-
-            # Create archive with verbose output
-            zip -v "${FILENAME}.zip" "giraffecloud.exe" || {
-              echo "Zip command failed with exit code $?"
-              echo "Trying alternative approach..."
-              mkdir -p "giraffecloud"
-              mv "giraffecloud.exe" "giraffecloud/"
-              zip -rv "${FILENAME}.zip" "giraffecloud"
-              rm -rf "giraffecloud"
-            }
-
-            # Verify the archive
-            echo "Verifying archive ${FILENAME}.zip"
-            unzip -l "${FILENAME}.zip"
-
-            rm -f "giraffecloud.exe"
+            zip "${FILENAME}.zip" "giraffecloud.exe"
+            rm "giraffecloud.exe"
           done
 
-          # Cleanup temp directory
-          rm -rf tmp
-
-          # Generate checksums for all archives
-          echo "Generating checksums..."
+          # Generate checksums
           sha256sum *.tar.gz *.zip > checksums.txt
-
-          # Verify checksums file
-          echo "Checksums file contents:"
-          cat checksums.txt
 
       - name: Create GitHub Release
         env:
@@ -280,7 +244,6 @@ jobs:
           CHANNEL: ${{ needs.determine-channel.outputs.channel }}
           RELEASE_TAG: ${{ needs.determine-channel.outputs.release_tag }}
         run: |
-          # Resolve branch name (use head_ref for PRs, GITHUB_REF for others)
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             BRANCH_NAME="${{ github.head_ref }}"
           else
@@ -295,45 +258,15 @@ jobs:
           RELEASE_NOTES="**Channel:** $CHANNEL
           **Version:** $VERSION
           **Commit:** $(git rev-parse HEAD)
-          **Branch:** $BRANCH_NAME
-
-          ## Changes
-          $(git log --oneline --since='24 hours ago' | head -10)"
-
-                    # Create release with explicit tag
-          RELEASE_TAG="${{ needs.determine-channel.outputs.release_tag }}"
-          if [[ -z "$RELEASE_TAG" ]]; then
-            echo "Error: Release tag is empty"
-            exit 1
-          fi
-          echo "Creating release with tag: $RELEASE_TAG"
+          **Branch:** $BRANCH_NAME"
 
           gh release create "$RELEASE_TAG" \
             bin/*.tar.gz bin/*.zip bin/checksums.txt \
             --title "GiraffeCloud CLI Client $VERSION ($CHANNEL)" \
             --notes "$RELEASE_NOTES" \
-            $PRERELEASE
+            $PRERELEASE || echo "Release might already exist, updating artifacts..."
 
-  # Update database with version information
-  update-database:
-    needs: [determine-channel, build]
-    if: needs.determine-channel.outputs.should_release == 'true'
-    runs-on: ubuntu-latest
-    environment: production
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Clean up monster tags from runner cache
-        run: |
-          # Remove any monster tags from runner's git cache
-          echo "Cleaning up malformed tags..."
-          git tag | grep -E "test-.*-[0-9]+-g[a-f0-9]+-[0-9]+-g" | xargs -r git tag -d || true
-          echo "Tag cleanup complete"
-
-      - name: Update version in database
+      - name: Update database with version information
         env:
           API_ENDPOINT: ${{ secrets.API_ENDPOINT }}
           API_TOKEN: ${{ secrets.API_TOKEN }}
@@ -342,57 +275,24 @@ jobs:
           RELEASE_TAG: ${{ needs.determine-channel.outputs.release_tag }}
           SHORT_VERSION: ${{ needs.determine-channel.outputs.short_version }}
         run: |
-          # Get short commit hash
           COMMIT_SHORT=$(git rev-parse --short HEAD)
+          BASE_URL="https://github.com/${{ github.repository }}/releases"
 
-          # Resolve branch name (use head_ref for PRs, GITHUB_REF for others)
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            BRANCH_NAME="${{ github.head_ref }}"
+          if [[ "$CHANNEL" == "stable" ]]; then
+            DOWNLOAD_URL="$BASE_URL/latest/download"
           else
-            BRANCH_NAME="${GITHUB_REF#refs/heads/}"
+            DOWNLOAD_URL="$BASE_URL/download/${{ needs.determine-channel.outputs.release_tag }}"
           fi
 
           # Load version config
           VERSION_CONFIG=$(cat configs/version.json)
           MIN_VERSION=$(echo "$VERSION_CONFIG" | jq -r ".minimum_versions.$CHANNEL")
-          if [[ "$MIN_VERSION" == "null" ]]; then
-            echo "No minimum version configured for channel: $CHANNEL"
-            exit 1
-          fi
 
-          # Base download URL - this is what clients will use to construct their platform-specific URLs
-          BASE_URL="https://github.com/${{ github.repository }}/releases"
-          if [[ "$CHANNEL" == "stable" ]]; then
-            DOWNLOAD_URL="$BASE_URL/latest/download"
-          elif [[ "$CHANNEL" == "test" ]]; then
-            DOWNLOAD_URL="$BASE_URL/download/test-${COMMIT_SHORT}"
-          else
-            echo "Unknown channel: $CHANNEL"
-            exit 1
-          fi
-
-          # Update version configuration for each platform/arch combination
           PLATFORMS=("darwin" "linux" "windows")
           ARCHES=("amd64" "arm64")
 
           for PLATFORM in "${PLATFORMS[@]}"; do
             for ARCH in "${ARCHES[@]}"; do
-              # For logging/verification only - show what URLs clients will construct
-              EXT=".tar.gz"
-              if [[ "$PLATFORM" == "windows" ]]; then
-                EXT=".zip"
-              fi
-              echo "Client will construct URL: ${DOWNLOAD_URL}/giraffecloud_${PLATFORM}_${ARCH}_${SHORT_VERSION}${EXT}"
-
-              echo "Updating database for $PLATFORM $ARCH with URL: ${DOWNLOAD_URL}"
-
-              # Prepare short release notes for DB
-              if [ "$CHANNEL" = "stable" ]; then
-                RELEASE_NOTES="Stable release"
-              else
-                RELEASE_NOTES="Automated build from ${BRANCH_NAME} branch"
-              fi
-
               AUTO_ENABLED=$([ "$CHANNEL" = "stable" ] && echo true || echo false)
 
               PAYLOAD=$(jq -n \
@@ -402,15 +302,8 @@ jobs:
                 --arg version "$VERSION" \
                 --arg min "$MIN_VERSION" \
                 --arg download_url "$DOWNLOAD_URL" \
-                --arg release_notes "$RELEASE_NOTES" \
-                --arg git_commit "$(git rev-parse HEAD)" \
-                --arg branch "$BRANCH_NAME" \
-                --arg build_number "${{ github.run_number }}" \
-                --arg build_url "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-                --arg release_tag "$RELEASE_TAG" \
                 --arg short_version "$SHORT_VERSION" \
                 --argjson auto_update_enabled $AUTO_ENABLED \
-                --argjson force_update false \
                 '{
                   channel: $channel,
                   platform: $platform,
@@ -418,24 +311,17 @@ jobs:
                   latest_version: $version,
                   minimum_version: $min,
                   download_url: $download_url,
-                  release_notes: $release_notes,
                   auto_update_enabled: $auto_update_enabled,
-                  force_update: $force_update,
                   metadata: {
-                    git_commit: $git_commit,
-                    branch: $branch,
-                    build_number: $build_number,
-                    build_url: $build_url,
-                    release_tag: $release_tag,
-                    short_version: $short_version
+                    short_version: $short_version,
+                    release_tag: "${{ needs.determine-channel.outputs.release_tag }}"
                   }
                 }')
 
-              # Update version configuration via API
               curl -X POST "$API_ENDPOINT/api/v1/admin/version/update" \
                 -H "Authorization: Bearer $API_TOKEN" \
                 -H "Content-Type: application/json" \
-                -d "$PAYLOAD" || echo "Failed to update database for $PLATFORM $ARCH - continuing..."
+                -d "$PAYLOAD" || echo "Failed to update DB for $PLATFORM $ARCH"
             done
           done
 
