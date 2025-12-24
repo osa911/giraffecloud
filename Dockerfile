@@ -18,7 +18,9 @@ COPY internal/ ./internal/
 # Note: internal/web is now in apps/web and not needed for server build
 
 # Build the binary
-RUN make build
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    make build
 
 # Final Stage
 FROM alpine:3.19
