@@ -22,7 +22,7 @@ else
     echo "Using VERSION from environment: $VERSION"
 fi
 
-LDFLAGS="-s -w -X giraffecloud/internal/version.Version=${VERSION} -X giraffecloud/internal/version.BuildTime=${BUILD_TIME} -X giraffecloud/internal/version.GitCommit=${GIT_COMMIT}"
+LDFLAGS="-s -w -X github.com/osa911/giraffecloud/internal/version.Version=${VERSION} -X github.com/osa911/giraffecloud/internal/version.BuildTime=${BUILD_TIME} -X github.com/osa911/giraffecloud/internal/version.GitCommit=${GIT_COMMIT}"
 
 # Build for specified platform or all platforms
 build_target() {

@@ -13,9 +13,9 @@ builds:
       - arm64
     ldflags:
       - -s -w
-      - -X giraffecloud/internal/version.Version={{.Version}}
-      - -X giraffecloud/internal/version.BuildTime={{.Date}}
-      - -X giraffecloud/internal/version.GitCommit={{.FullCommit}}
+      - -X github.com/osa911/giraffecloud/internal/version.Version={{.Version}}
+      - -X github.com/osa911/giraffecloud/internal/version.BuildTime={{.Date}}
+      - -X github.com/osa911/giraffecloud/internal/version.GitCommit={{.FullCommit}}
 
 archives:
   - format: tar.gz

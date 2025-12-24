@@ -327,7 +327,7 @@ jobs:
 
   # Notification
   notify:
-    needs: [determine-channel, build, update-database]
+    needs: [determine-channel, build, release]
     if: always() && needs.determine-channel.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     steps:
