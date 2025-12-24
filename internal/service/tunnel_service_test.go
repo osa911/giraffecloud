@@ -6,6 +6,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/osa911/giraffecloud/internal/config"
 	"github.com/osa911/giraffecloud/internal/db/ent"
 	"github.com/osa911/giraffecloud/internal/db/ent/tunnel"
 	"github.com/osa911/giraffecloud/internal/logging"
@@ -151,12 +152,15 @@ func TestCreateTunnel_DNSVerification(t *testing.T) {
 			}
 
 			// Setup service with or without ServerIP
-			serverIP := "1.2.3.4"
+			cfg := &config.Config{
+				ServerIP:   "1.2.3.4",
+				BaseDomain: "giraffecloud.xyz",
+			}
 			if tt.name == "Server IP Not Set (Skip Check)" {
-				serverIP = ""
+				cfg.ServerIP = ""
 			}
 			mockCaddy := &mockCaddyService{}
-			svc := NewTunnelService(mockRepo, mockCaddy, serverIP)
+			svc := NewTunnelService(mockRepo, mockCaddy, cfg)
 
 			// Execute
 			tunnel, err := svc.CreateTunnel(context.Background(), tt.userID, tt.domain, 8080)
@@ -291,7 +295,11 @@ func TestUpdateTunnel_DNSVerification(t *testing.T) {
 			}
 
 			// Setup service
-			svc := NewTunnelService(mockRepo, &mockCaddyService{}, tt.serverIP)
+			cfg := &config.Config{
+				ServerIP:   tt.serverIP,
+				BaseDomain: "giraffecloud.xyz",
+			}
+			svc := NewTunnelService(mockRepo, &mockCaddyService{}, cfg)
 
 			// Execute
 			updates := &repository.TunnelUpdate{
