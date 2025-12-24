@@ -394,8 +394,7 @@ func (s *caddyService) LoadConfig() error {
 				if srv0, ok := servers["srv0"].(map[string]interface{}); ok {
 					// Ensure automatic HTTPS is enabled
 					srv0["automatic_https"] = map[string]interface{}{
-						"disable":   false,
-						"on_demand": true, // Enable on-demand TLS for this server
+						"disable": false,
 					}
 					// Ensure proper listening addresses
 					srv0["listen"] = []string{":80", ":443"}
