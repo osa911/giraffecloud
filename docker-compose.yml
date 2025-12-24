@@ -7,7 +7,9 @@ x-env-file: &env-file
 
 services:
   caddy:
-    image: caddy:2-alpine
+    build:
+      context: .
+      dockerfile: Dockerfile.caddy
     restart: unless-stopped
     command: caddy run --config /etc/caddy/caddy.json
     ports:
