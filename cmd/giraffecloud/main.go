@@ -195,7 +195,7 @@ Examples:
 
 			// Check if error is about multiple tunnels
 			errMsg := err.Error()
-			if strings.Contains(errMsg, "multiple active tunnels found") {
+			if strings.Contains(errMsg, "multiple active tunnels found") || strings.Contains(errMsg, "multiple enabled tunnels found") {
 				fmt.Println("❌ You have multiple active tunnels configured.")
 				fmt.Println("")
 				fmt.Println("Please specify which tunnel to connect to:")

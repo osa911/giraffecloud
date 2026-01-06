@@ -372,6 +372,10 @@ func (t *Tunnel) attemptDualConnections(serverAddr string, tlsConfig *tls.Config
 		t.grpcClient.SetTunnelEstablishHandler(t.handleTunnelEstablishRequest)
 
 		if err := t.grpcClient.Start(); err != nil {
+			// CRITICAL: Propagate authentication errors immediately to stop retry loop
+			if isAuthenticationError(err) {
+				return err
+			}
 			t.logger.Error("Failed to establish gRPC tunnel: %v", err)
 			t.grpcEnabled = false
 		} else {
@@ -387,6 +391,10 @@ func (t *Tunnel) attemptDualConnections(serverAddr string, tlsConfig *tls.Config
 		} else {
 			t.logger.Info("Existing gRPC client not connected; attempting to start (Client ID: %s)", t.grpcClient.GetClientID())
 			if err := t.grpcClient.Start(); err != nil {
+				// CRITICAL: Propagate authentication errors immediately to stop retry loop
+				if isAuthenticationError(err) {
+					return err
+				}
 				t.logger.Error("Failed to (re)start existing gRPC client: %v", err)
 				t.grpcEnabled = false
 			} else {
@@ -1189,6 +1197,7 @@ func isAuthenticationError(err error) bool {
 	errStr := strings.ToLower(err.Error())
 	authErrorKeywords := []string{
 		"multiple active tunnels found",
+		"multiple enabled tunnels found",
 		"no active tunnels found",
 		"is inactive",
 		"authentication failed",
