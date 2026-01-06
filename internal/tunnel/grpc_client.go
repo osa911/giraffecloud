@@ -4,14 +4,15 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"github.com/osa911/giraffecloud/internal/logging"
-	"github.com/osa911/giraffecloud/internal/tunnel/proto"
 	"io"
 	"net/http"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/osa911/giraffecloud/internal/logging"
+	"github.com/osa911/giraffecloud/internal/tunnel/proto"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -903,7 +904,7 @@ func (c *GRPCTunnelClient) forwardLargeFileWithChunking(msg *proto.TunnelMessage
 	return c.streamResponseInChunksWithContext(streamCtx, msg.RequestId, response)
 }
 
-// forwardRegularRequest handles regular (small file) requests
+// forwardRegularRequest handles regular requests but auto-upgrades to streaming for large responses
 func (c *GRPCTunnelClient) forwardRegularRequest(msg *proto.TunnelMessage, httpReq *proto.HTTPRequest) error {
 	response, err := c.makeLocalServiceRequest(httpReq)
 	if err != nil {
@@ -911,7 +912,32 @@ func (c *GRPCTunnelClient) forwardRegularRequest(msg *proto.TunnelMessage, httpR
 	}
 	defer response.Body.Close()
 
-	// Read entire response for regular files
+	// CHECK: If response is large (>8MB) or unknown size, switch to chunked streaming
+	// This ensures that even small GET requests that return large files are handled safely
+	isLargeResponse := response.ContentLength > 8*1024*1024 || response.ContentLength == -1
+
+	if isLargeResponse {
+		c.logger.Info("[REGULAR CLIENT] 🔄 Auto-upgrading to chunked streaming for large response: %s (Length: %d)",
+			httpReq.Path, response.ContentLength)
+		// Create a cancellable context for the stream
+		streamCtx, cancel := context.WithCancel(context.Background())
+
+		// Register cancel function
+		c.activeStreamsMu.Lock()
+		c.activeStreams[msg.RequestId] = cancel
+		c.activeStreamsMu.Unlock()
+
+		defer func() {
+			c.activeStreamsMu.Lock()
+			delete(c.activeStreams, msg.RequestId)
+			c.activeStreamsMu.Unlock()
+			cancel()
+		}()
+
+		return c.streamResponseInChunksWithContext(streamCtx, msg.RequestId, response)
+	}
+
+	// Read entire response for small files
 	body, err := io.ReadAll(response.Body)
 	if err != nil {
 		return c.sendErrorResponse(msg.RequestId, fmt.Sprintf("Failed to read response: %v", err))
