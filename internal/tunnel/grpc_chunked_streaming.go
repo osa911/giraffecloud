@@ -182,6 +182,8 @@ func (s *GRPCTunnelServer) streamResponseInChunks(
 	return nil
 }
 
+
+
 // extractDomainFromRequest extracts domain from the HTTP request
 func (s *GRPCTunnelServer) extractDomainFromRequest(req *proto.HTTPRequest) string {
 	// Try to get domain from Host header
@@ -294,13 +296,28 @@ func (s *GRPCTunnelServer) estimateResponseSize(httpReq *http.Request) int64 {
 // ProxyHTTPRequestWithChunking handles HTTP requests with intelligent routing
 // PERFECT BINARY SPLIT: ≤16MB = Regular gRPC (16MB), >16MB = Unlimited Chunked Streaming
 func (s *GRPCTunnelServer) ProxyHTTPRequestWithChunking(domain string, httpReq *http.Request, clientIP string) (*http.Response, error) {
-	// Always stream uploads via Start/Chunk/End to avoid 16MB gRPC limits
+	// Always stream complex requests via Start/Chunk/End to avoid 16MB gRPC limits
+
+	// CHECK 1: Method-based streaming (POST/PUT/PATCH/GET are often large or complex)
+	shouldStream := false
 	switch strings.ToUpper(httpReq.Method) {
-	case http.MethodPost, http.MethodPut, http.MethodPatch:
-		return s.handleLargeFileUploadWithStreaming(domain, httpReq, clientIP)
+	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodGet:
+		// Stream all standard methods that might have bodies or complex headers
+		// Even GET requests can be large (e.g. Elasticsearch queries)
+		shouldStream = true
 	}
 
-	// Check if this should use chunked streaming for unlimited size
+	// CHECK 2: Size-based streaming (Anything > 8MB MUST be streamed)
+	if httpReq.ContentLength > 8*1024*1024 || httpReq.ContentLength == -1 {
+		shouldStream = true
+	}
+
+	if shouldStream {
+		// Use the generic streamer which handles tunnel lookup and chunking
+		return s.streamGenericRequest(domain, httpReq, clientIP)
+	}
+
+	// Check if this should use chunked streaming for unlimited size (legacy check for non-standard flows)
 	if s.isLargeFileRequest(httpReq) {
 		s.logger.Info("[CHUNKED] 🚀 Large file (>16MB) detected → UNLIMITED chunked streaming: %s %s",
 			httpReq.Method, httpReq.URL.Path)
@@ -314,9 +331,10 @@ func (s *GRPCTunnelServer) ProxyHTTPRequestWithChunking(domain string, httpReq *
 	return s.ProxyHTTPRequest(domain, httpReq, clientIP)
 }
 
-// handleLargeFileWithChunking processes large files using TRUE chunked streaming
-func (s *GRPCTunnelServer) handleLargeFileUploadWithStreaming(domain string, httpReq *http.Request, clientIP string) (*http.Response, error) {
-	s.logger.Info("[CHUNKED UPLOAD] 🚀 Starting parallel-safe upload streaming")
+// streamGenericRequest streams any HTTP request in chunks and waits for the response
+// Replaces handleLargeFileUploadWithStreaming to be generic for all methods
+func (s *GRPCTunnelServer) streamGenericRequest(domain string, httpReq *http.Request, clientIP string) (*http.Response, error) {
+	s.logger.Info("[Refactored Streaming] 🚀 Starting parallel-safe request streaming: %s %s", httpReq.Method, httpReq.URL.Path)
 
 	// Get tunnel stream for domain
 	s.tunnelStreamsMux.RLock()
