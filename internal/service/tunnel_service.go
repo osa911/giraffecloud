@@ -356,17 +356,29 @@ func (s *tunnelService) UpdateClientIP(ctx context.Context, id uint32, clientIP 
 	// Configure or remove Caddy route based on client IP
 	if s.caddyService != nil {
 		logger.Info("[DEBUG] Caddy service is available")
-		if clientIP != "" && tunnel.IsEnabled {
-			logger.Info("[DEBUG] Configuring Caddy route for domain: %s -> %s:%d", tunnel.Domain, clientIP, tunnel.TargetPort)
-			// Configure route when client connects
-			if err := s.caddyService.ConfigureRoute(tunnel.Domain, clientIP, tunnel.TargetPort); err != nil {
+		// ALWAYS configure route if tunnel is enabled, even if client IP is empty
+		// This allows us to serve the "Tunnel Not Connected" page from the Go server
+		if tunnel.IsEnabled {
+			targetIP := clientIP
+			if targetIP == "" {
+				// If no client IP, we still want to route to our server (api:8081)
+				// The Caddy service's ConfigureRoute defaults to api:8081 anyway
+				// But we pass empty string to let it handle it (or user previous IP if needed, but really we just want the route to exist)
+				// Actually, ConfigureRoute ignores the targetIP arg for the upstreams list (it hardcodes dial: "api:8081")
+				// So we can just call ConfigureRoute to ensure the route exists
+				targetIP = "127.0.0.1" // Dummy IP, not used by CaddyService.ConfigureRoute which hardcodes upstreams
+			}
+
+			logger.Info("[DEBUG] Configuring Caddy route for domain: %s (enabled, clientIP: %s)", tunnel.Domain, clientIP)
+			// Configure route to ensure traffic reaches our server
+			if err := s.caddyService.ConfigureRoute(tunnel.Domain, targetIP, tunnel.TargetPort); err != nil {
 				logger.Error("[DEBUG] Failed to configure Caddy route: %v", err)
 				return fmt.Errorf("failed to configure Caddy route: %w", err)
 			}
 			logger.Info("[DEBUG] Successfully configured Caddy route")
 		} else {
-			logger.Info("[DEBUG] Removing Caddy route for domain: %s", tunnel.Domain)
-			// Remove route when client disconnects
+			// Only remove route if tunnel is DISABLED
+			logger.Info("[DEBUG] Removing Caddy route for domain: %s (tunnel disabled)", tunnel.Domain)
 			if err := s.caddyService.RemoveRoute(tunnel.Domain); err != nil {
 				logger.Error("[DEBUG] Failed to remove Caddy route: %v", err)
 				return fmt.Errorf("failed to remove Caddy route: %w", err)

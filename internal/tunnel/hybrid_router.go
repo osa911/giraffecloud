@@ -293,9 +293,10 @@ func (r *HybridTunnelRouter) routeToGRPCTunnel(domain string, conn net.Conn, req
 
 	// Check if gRPC tunnel is available
 	if !r.grpcTunnel.IsTunnelActive(domain) {
-		r.logger.Error("[HYBRID→gRPC] No active gRPC tunnel for domain: %s", domain)
-		atomic.AddInt64(&r.routingErrors, 1)
-		r.writeHTTPError(conn, 502, "Bad Gateway - gRPC tunnel not available")
+		// Serve user-friendly "Not Connected" page instead of generic 502
+		// This happens when the tunnel exists in DB (checked by Caddy) but client is offline
+		r.logger.Debug("[HYBRID→gRPC] Tunnel not active for domain: %s, serving Not Connected page", domain)
+		WriteNotConnectedPage(conn, domain)
 		return
 	}
 
@@ -376,7 +377,7 @@ func (r *HybridTunnelRouter) routeToTCPTunnel(domain string, conn net.Conn, requ
 		if !r.grpcTunnel.IsTunnelActive(domain) {
 			r.logger.Info("[HYBRID→TCP] ⚠️  Main gRPC tunnel is offline for domain: %s, cannot establish TCP tunnel", domain)
 			atomic.AddInt64(&r.routingErrors, 1)
-			r.writeHTTPError(conn, 503, "Service Unavailable - Tunnel offline")
+			WriteNotConnectedPage(conn, domain)
 			return
 		}
 
@@ -518,9 +519,8 @@ func (r *HybridTunnelRouter) routeToGRPCChunkedStreaming(domain string, conn net
 
 	// Check if gRPC tunnel is available
 	if !r.grpcTunnel.IsTunnelActive(domain) {
-		r.logger.Error("[HYBRID→gRPC-CHUNKED] No active gRPC tunnel for domain: %s", domain)
-		atomic.AddInt64(&r.routingErrors, 1)
-		r.writeHTTPError(conn, 502, "Bad Gateway - gRPC tunnel not available for large file")
+		r.logger.Debug("[HYBRID→gRPC-CHUNKED] Tunnel not active for domain: %s, serving Not Connected page", domain)
+		WriteNotConnectedPage(conn, domain)
 		return
 	}
 
