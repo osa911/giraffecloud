@@ -491,6 +491,21 @@ func (s *GRPCTunnelServer) sendRequestAndWaitResponse(tunnelStream *TunnelStream
 	timeout := s.config.RequestTimeout
 	select {
 	case responseMsg := <-responseChan:
+		// CHECk FOR CHUNKED RESPONSE - AUTO-UPGRADE TO STREAMING
+		// The client auto-upgrades responses with unknown length to chunked streaming.
+		// We need to detect this and switch to the streaming handler.
+		if httpResp := responseMsg.GetHttpResponse(); httpResp != nil && httpResp.IsChunked {
+			s.logger.Info("[PROXY] 🔄 Auto-upgrading to chunked streaming for request: %s", grpcMsg.RequestId)
+
+			// Push message back to channel for the streaming handler to consume
+			// This is safe because channel is buffered (size 1) and we just read from it
+			responseChan <- responseMsg
+
+			// Delegate availability of the channel to the streaming handler
+			// It will handle reading subsequent chunks and cleaning up
+			return s.collectChunkedResponseNoSend(tunnelStream, grpcMsg.RequestId)
+		}
+
 		// Convert response back to HTTP
 		return s.grpcToHTTP(responseMsg)
 
