@@ -443,7 +443,7 @@ func (s *GRPCTunnelServer) handleLargeFileUploadWithStreaming(domain string, htt
 	s.logger.Info("[CHUNKED UPLOAD] ⏳ Upload %s: Waiting for response...", requestID)
 
 	// Now collect chunked response using existing io.Pipe pathway without re-sending request
-	return s.collectChunkedResponseNoSend(tunnelStream, requestID)
+	return s.collectChunkedResponseNoSend(tunnelStream, requestID, nil)
 }
 
 // handleLargeFileDownloadWithChunking uses the old LargeFileRequest path for downloads
@@ -729,7 +729,7 @@ func (s *GRPCTunnelServer) collectChunkedResponse(tunnelStream *TunnelStream, re
 }
 
 // collectChunkedResponseNoSend streams the response for a request that was already started (no HTTPRequest send here)
-func (s *GRPCTunnelServer) collectChunkedResponseNoSend(tunnelStream *TunnelStream, requestID string) (*http.Response, error) {
+func (s *GRPCTunnelServer) collectChunkedResponseNoSend(tunnelStream *TunnelStream, requestID string, initialChunk *proto.TunnelMessage) (*http.Response, error) {
 	s.logger.Debug("[CHUNKED] 📦 Starting response collection (no-send) for request: %s", requestID)
 
 	// Lookup existing response channel
@@ -768,6 +768,24 @@ func (s *GRPCTunnelServer) collectChunkedResponseNoSend(tunnelStream *TunnelStre
 		var firstChunk *proto.HTTPResponse
 		chunkCount := 0
 		timeout := time.After(10 * time.Minute) // Increased from 2 minutes for large file stability
+
+		// Process initial chunk if provided (DEADLOCK FIX: Avoids pushing back to full channel)
+		if initialChunk != nil {
+			if httpResp := initialChunk.GetHttpResponse(); httpResp != nil {
+				firstChunk = httpResp
+				metadataCh <- httpResp // Send metadata immediately
+
+				// If it has body, write it
+				if len(httpResp.Body) > 0 {
+					if _, err := pipeWriter.Write(httpResp.Body); err != nil {
+						errorCh <- fmt.Errorf("failed to write initial chunk to pipe: %w", err)
+						return
+					}
+				}
+
+				// Keep going to read rest of chunks from channel
+			}
+		}
 
 		for {
 			select {

@@ -497,13 +497,12 @@ func (s *GRPCTunnelServer) sendRequestAndWaitResponse(tunnelStream *TunnelStream
 		if httpResp := responseMsg.GetHttpResponse(); httpResp != nil && httpResp.IsChunked {
 			s.logger.Info("[PROXY] 🔄 Auto-upgrading to chunked streaming for request: %s", grpcMsg.RequestId)
 
-			// Push message back to channel for the streaming handler to consume
-			// This is safe because channel is buffered (size 1) and we just read from it
-			responseChan <- responseMsg
+			// DEADLOCK FIX: Do NOT push back to channel (it might be full).
+			// Instead, pass the message directly as the initial chunk.
 
 			// Delegate availability of the channel to the streaming handler
 			// It will handle reading subsequent chunks and cleaning up
-			return s.collectChunkedResponseNoSend(tunnelStream, grpcMsg.RequestId)
+			return s.collectChunkedResponseNoSend(tunnelStream, grpcMsg.RequestId, responseMsg)
 		}
 
 		// Convert response back to HTTP
