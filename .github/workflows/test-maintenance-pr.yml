@@ -87,20 +87,20 @@ jobs:
           labels: automation
 
       - name: Notify Slack
-        if: steps.update.outputs.changed == 'true' && inputs.slack_user_id != ''
+        if: steps.update.outputs.changed == 'true'
         run: |
           PR_URL="${{ steps.cpr.outputs.pull-request-url }}"
           if [ -z "$PR_URL" ]; then
             PR_URL="(PR URL not available)"
           fi
-
+      
           curl -sS -X POST https://slack.com/api/chat.postMessage \
             -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
             -H "Content-Type: application/json; charset=utf-8" \
             --data "{
-              \"channel\": \"${SLACK_TARGET}\",
+              \"channel\": \"${SLACK_CHANNEL_ID}\",
               \"text\": \"✅ PR created: ${PR_URL}\"
             }"
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
-          SLACK_TARGET: ${{ inputs.slack_user_id }}
+          SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
