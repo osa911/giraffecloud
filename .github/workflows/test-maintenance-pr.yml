@@ -1,0 +1,78 @@
+name: Test ts-morph code update PR
+
+on:
+  workflow_dispatch:
+    inputs:
+      file_path:
+        required: true
+        type: string
+        default: "apps/web/src/lib/test-actions.ts"
+      const_name:
+        required: true
+        type: string
+        default: "MAINTENANCE_WINDOWS"
+      vendor:
+        required: true
+        type: string
+        default: "Verisign"
+      date:
+        required: true
+        type: string
+        default: "2026-01-20"
+      start_utc:
+        required: true
+        type: string
+        default: "01:00"
+      end_utc:
+        required: true
+        type: string
+        default: "01:45"
+      tlds:
+        required: false
+        type: string
+        default: "Com,Net"
+      use_domain_suffixes:
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  pr:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install ts-morph
+        run: npm i ts-morph
+
+      - name: Insert window into array
+        id: update
+        env:
+          FILE_PATH: ${{ inputs.file_path }}
+          CONST_NAME: ${{ inputs.const_name }}
+          VENDOR: ${{ inputs.vendor }}
+          DATE: ${{ inputs.date }}
+          START_UTC: ${{ inputs.start_utc }}
+          END_UTC: ${{ inputs.end_utc }}
+          TLDS: ${{ inputs.tlds }}
+          USE_DOMAIN_SUFFIXES: ${{ inputs.use_domain_suffixes }}
+        run: node tools/maintenance/insert-window.mjs
+
+      - name: Create PR
+        if: steps.update.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: bot/test-maintenance-${{ github.run_id }}
+          title: ${{ steps.update.outputs.pr_title }}
+          commit-message: ${{ steps.update.outputs.pr_title }}
+          body: |
+            Test PR created by ts-morph automation.
+          labels: automation
