@@ -25,7 +25,12 @@ const MAINTENANCE_WINDOWS: MaintenanceWindow[] = [
     end: parseISO('2025-12-14T01:45:00Z'),
     maintenanceTlds: ['com', 'net'],
   },
-  // Add more maintenance windows as needed
+    {
+      vendor: 'Verisign',
+      startUtc: '2026-01-20T01:00:00Z',
+      endUtc: '2026-01-20T01:45:00Z',
+      tlds: ["com","ai","info"]
+    }
 ];
 
 const addFlagOverrides = (): string[] | null => {
