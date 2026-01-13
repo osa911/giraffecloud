@@ -25,7 +25,12 @@ const MAINTENANCE_WINDOWS: MaintenanceWindow[] = [
     end: parseISO('2025-12-14T01:45:00Z'),
     maintenanceTlds: ['com', 'net'],
   },
-  // Add more maintenance windows as needed
+    {
+      vendor: 'test-something',
+      startUtc: parseISO('2026-01-20T05:10:00Z'),
+      endUtc: parseISO('2026-01-20T10:20:00Z'),
+      tlds: ["com","info"]
+    }
 ];
 
 const addFlagOverrides = (): string[] | null => {
