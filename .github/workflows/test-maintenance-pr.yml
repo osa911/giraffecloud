@@ -30,7 +30,7 @@ on:
       tlds:
         required: false
         type: string
-        default: "Com,Net"
+        default: "com,net"
       use_domain_suffixes:
         required: false
         type: boolean
