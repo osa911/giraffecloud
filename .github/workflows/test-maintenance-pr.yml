@@ -99,7 +99,7 @@ jobs:
             -H "Content-Type: application/json; charset=utf-8" \
             --data "{
               \"channel\": \"${SLACK_CHANNEL_ID}\",
-              \"text\": \"✅ PR created: ${PR_URL}\"
+              \"text\": \"✅ Maintenance PR created: <${PR_URL}|View>\"
             }"
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
