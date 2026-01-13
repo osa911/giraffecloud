@@ -116,8 +116,8 @@ if (useDomainSuffixes) {
   // Simple “test repo” mode: doesn’t require parseISO/DomainSuffixes imports.
   newObjectText = `{
   vendor: '${vendor}',
-  startUtc: '${startIso}',
-  endUtc: '${endIso}',
+  startUtc: parseISO('${startIso}'),
+  endUtc: parseISO('${endIso}'),
   tlds: ${JSON.stringify(tlds)}
 }`;
 }
