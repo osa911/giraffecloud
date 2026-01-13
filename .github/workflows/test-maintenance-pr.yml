@@ -84,7 +84,7 @@ jobs:
           commit-message: ${{ steps.update.outputs.pr_title }}
           body: |
             Test PR created by ts-morph automation.
-          labels: automation
+          labels: automation,slack,maintenance
 
       - name: Notify Slack
         if: steps.update.outputs.changed == 'true'
