@@ -783,6 +783,11 @@ func (s *GRPCTunnelServer) collectChunkedResponseNoSend(tunnelStream *TunnelStre
 					}
 				}
 
+				// BUG FIX: Check if this is also the final chunk (common for small files)
+				if strings.HasSuffix(httpResp.ChunkId, "_final") {
+					return
+				}
+
 				// Keep going to read rest of chunks from channel
 			}
 		}
