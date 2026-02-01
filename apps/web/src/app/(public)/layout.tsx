@@ -1,7 +1,7 @@
 import Link from "next/link";
+import Image from "next/image";
 import Footer from "@/components/common/Footer";
 import { ModeToggle } from "@/components/mode-toggle";
-import { Cloud } from "lucide-react";
 import AuthButtons from "@/components/auth/AuthButtons";
 
 type PublicLayoutProps = {
@@ -15,7 +15,14 @@ export default function PublicLayout({ children }: PublicLayoutProps) {
         <div className="container mx-auto px-4 max-w-7xl flex h-14 items-center">
           <div className="mr-4 flex">
             <Link href="/" className="mr-6 flex items-center space-x-2">
-              <Cloud className="h-6 w-6" />
+              <div className="relative h-8 w-8">
+                <Image
+                  src="/icon.png"
+                  alt="GiraffeCloud"
+                  fill
+                  className="object-contain"
+                />
+              </div>
               <span className="hidden font-bold sm:inline-block">
                 <span className="font-extrabold text-primary">Giraffe</span>
                 <span className="font-semibold">Cloud</span>
