@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -67,17 +66,6 @@ export function DashboardSidebar({ className, user }: SidebarProps) {
     <div className={cn("pb-12", className)}>
       <div className="space-y-4 py-4">
         <div className="px-3 py-2">
-          <h2 className="mb-2 px-4 text-lg font-semibold tracking-tight flex items-center gap-2">
-            <div className="relative h-6 w-6">
-              <Image
-                src="/icon.png"
-                alt="GiraffeCloud"
-                fill
-                className="object-contain"
-              />
-            </div>
-            GiraffeCloud
-          </h2>
           <div className="space-y-1">
             {items.map((item) => (
               <Button
