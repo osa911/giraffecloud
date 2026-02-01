@@ -82,13 +82,30 @@ export default function TunnelList() {
       });
       mutate(); // Refresh the tunnels list
       toast.success(`Tunnel ${!tunnel.is_enabled ? "enabled" : "disabled"}`);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error updating tunnel status:", error);
-      // If enabling failed, it might be due to DNS verification
+
+      // Extract error message from response
+      let errorMessage = "Failed to update tunnel status";
+
+      if (error && typeof error === 'object' && 'response' in error) {
+        const axiosError = error as { response?: { data?: { error?: string | { message?: string } } } };
+        const responseError = axiosError.response?.data?.error;
+        if (typeof responseError === 'string') {
+          errorMessage = responseError;
+        } else if (responseError && typeof responseError === 'object' && 'message' in responseError) {
+          errorMessage = responseError.message || errorMessage;
+        }
+      }
+
+      // Show appropriate error message based on context
       if (!tunnel.is_enabled) {
-         toast.error(error.response?.data?.error || "DNS verification failed. Please check your DNS records.");
+        // Trying to enable - likely DNS verification failed
+        toast.error(errorMessage.includes("DNS") || errorMessage.includes("domain")
+          ? errorMessage
+          : "DNS verification failed. Please ensure your domain points to the server IP.");
       } else {
-         toast.error("Failed to update tunnel status");
+        toast.error(errorMessage);
       }
     } finally {
       setVerifyingId(null);

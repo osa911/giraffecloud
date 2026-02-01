@@ -91,13 +91,24 @@ func (dm *DNSMonitor) verifyTunnels() error {
 		return fmt.Errorf("failed to query disabled tunnels: %w", err)
 	}
 
+	if len(tunnels) == 0 {
+		logger.Debug("DNSMonitor: No tunnels pending DNS verification")
+		return nil
+	}
+
+	logger.Info("DNSMonitor: Checking %d tunnel(s) pending DNS verification", len(tunnels))
+
 	for _, t := range tunnels {
+		logger.Debug("DNSMonitor: Checking domain %s (tunnel ID: %d)", t.Domain, t.ID)
+
 		// Perform DNS lookup
 		ips, err := utils.LookupHostGlobal(t.Domain)
 		if err != nil {
-			// DNS lookup failed, skip
+			logger.Debug("DNSMonitor: DNS lookup failed for %s: %v", t.Domain, err)
 			continue
 		}
+
+		logger.Debug("DNSMonitor: Domain %s resolves to IPs: %v", t.Domain, ips)
 
 		// Check if any IP matches server IP
 		matched := false
@@ -135,8 +146,11 @@ func (dm *DNSMonitor) verifyTunnels() error {
 					logger.Info("Successfully configured Caddy route for enabled tunnel: %s", t.Domain)
 				}
 			}
+		} else {
+			logger.Debug("DNSMonitor: Domain %s does not point to server IP %s yet", t.Domain, dm.serverIP)
 		}
 	}
 
 	return nil
 }
+

@@ -7,10 +7,16 @@ const fetcher = async (url: string) => {
 };
 
 export function useTunnels() {
-  const { data, error, isLoading, mutate } = useSWR<Tunnel[]>("/tunnels", fetcher);
+  const { data, error, isLoading, mutate } = useSWR<Tunnel[]>("/tunnels", fetcher, {
+    // Log errors but don't show toast - clientApiClient already handles error toasts
+    onError: (err) => {
+      console.error("Failed to fetch tunnels:", err);
+    },
+  });
 
   // Sort tunnels by ID (ascending) to maintain consistent order
-  const sortedTunnels = data ? [...data].sort((a, b) => a.id - b.id) : undefined;
+  // Return empty array if data is undefined/null to prevent white screens
+  const sortedTunnels = data ? [...data].sort((a, b) => a.id - b.id) : [];
 
   return {
     tunnels: sortedTunnels,

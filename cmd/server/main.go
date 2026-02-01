@@ -50,6 +50,14 @@ func main() {
 	logger.Info("Starting server in %s mode", cfg.Environment)
 	logger.Info("Log file location: %s", cfg.LogFile)
 
+	// Log critical configuration values for DNS polling
+	if cfg.ServerIP != "" {
+		logger.Info("Server IP configured: %s", cfg.ServerIP)
+	} else {
+		logger.Warn("SERVER_IP not configured - DNS monitor will be disabled")
+	}
+	logger.Info("Base domain: %s", cfg.BaseDomain)
+
 	// Initialize Tracing
 	if cfg.OTLPEndpoint != "" {
 		logger.Info("Initializing OpenTelemetry tracing...")
