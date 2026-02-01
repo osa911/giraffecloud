@@ -35,8 +35,8 @@ func Setup(router *gin.Engine, h *Handlers, m *Middleware) {
 	// Contact routes (public)
 	SetupContactRoutes(v1, h.Contact, m)
 
-	// Admin routes (requires authentication)
-	SetupAdminRoutes(v1, h.Admin, m)
+	// Admin routes (requires authentication AND admin role)
+	SetupAdminRoutes(v1, h.Admin, h.User, m)
 
 	// Protected API routes (auth required)
 	SetupProtectedRoutes(v1, h, m)

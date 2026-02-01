@@ -73,11 +73,9 @@ func (h *AdminHandler) UpdateVersionConfig(c *gin.Context) {
 
 // GetVersionConfigs returns all version configurations
 func (h *AdminHandler) GetVersionConfigs(c *gin.Context) {
-	// This would require adding a method to version service to list all configs
-	// For now, return active channels
-	channels, err := h.versionService.GetActiveChannels(c.Request.Context())
+	configs, err := h.versionService.ListAllVersionConfigs(c.Request.Context())
 	if err != nil {
-		h.logger.Error("Failed to get active channels: %v", err)
+		h.logger.Error("Failed to get version configs: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to retrieve version configurations",
 		})
@@ -85,7 +83,7 @@ func (h *AdminHandler) GetVersionConfigs(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"channels": channels,
+		"configs": configs,
 	})
 }
 

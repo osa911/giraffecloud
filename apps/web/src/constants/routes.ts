@@ -33,6 +33,7 @@ export const ROUTES = {
     TUNNELS: "/dashboard/tunnels",
     PROFILE: "/dashboard/profile",
     SETTINGS: "/dashboard/settings",
+    ADMIN: "/dashboard/admin",
   },
 } as const;
 

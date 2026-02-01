@@ -38,7 +38,7 @@ export default function DashboardLayout({ children, user }: DashboardLayoutProps
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="flex h-14 items-center px-4 md:px-6">
-          <MobileSidebar />
+          <MobileSidebar user={user} />
           <div className="mr-4 hidden md:flex">
             <a className="mr-6 flex items-center space-x-2" href="/">
               <Cloud className="h-6 w-6" />
@@ -89,7 +89,7 @@ export default function DashboardLayout({ children, user }: DashboardLayoutProps
       </header>
       <div className="flex-1 md:grid md:grid-cols-[220px_minmax(0,1fr)] lg:grid-cols-[240px_minmax(0,1fr)]">
         <aside className="fixed top-14 z-30 -ml-2 hidden h-[calc(100vh-3.5rem)] w-full shrink-0 overflow-y-auto border-r md:sticky md:block">
-          <DashboardSidebar />
+          <DashboardSidebar user={user} />
         </aside>
         <main className="flex flex-1 w-full flex-col overflow-hidden px-4 pt-4 md:px-6 md:pt-6 lg:px-8 lg:pt-8">
           {children}

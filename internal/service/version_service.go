@@ -265,6 +265,55 @@ func (v *VersionService) GetActiveChannels(ctx context.Context) ([]string, error
 	return channels, nil
 }
 
+// VersionConfigResponse represents a version configuration for admin API responses
+type VersionConfigResponse struct {
+	ID                string                 `json:"id"`
+	Channel           string                 `json:"channel"`
+	Platform          string                 `json:"platform"`
+	Arch              string                 `json:"arch"`
+	LatestVersion     string                 `json:"latest_version"`
+	MinimumVersion    string                 `json:"minimum_version"`
+	DownloadURL       string                 `json:"download_url"`
+	ReleaseNotes      string                 `json:"release_notes"`
+	AutoUpdateEnabled bool                   `json:"auto_update_enabled"`
+	ForceUpdate       bool                   `json:"force_update"`
+	Metadata          map[string]interface{} `json:"metadata"`
+	CreatedAt         string                 `json:"created_at"`
+	UpdatedAt         string                 `json:"updated_at"`
+}
+
+// ListAllVersionConfigs returns all version configurations for admin dashboard
+func (v *VersionService) ListAllVersionConfigs(ctx context.Context) ([]*VersionConfigResponse, error) {
+	configs, err := v.db.ClientVersion.Query().
+		Order(clientVersionEntity.ByChannel()).
+		All(ctx)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to list version configs: %w", err)
+	}
+
+	responses := make([]*VersionConfigResponse, 0, len(configs))
+	for _, config := range configs {
+		responses = append(responses, &VersionConfigResponse{
+			ID:                config.ID,
+			Channel:           config.Channel,
+			Platform:          config.Platform,
+			Arch:              config.Arch,
+			LatestVersion:     config.LatestVersion,
+			MinimumVersion:    config.MinimumVersion,
+			DownloadURL:       config.DownloadURL,
+			ReleaseNotes:      config.ReleaseNotes,
+			AutoUpdateEnabled: config.AutoUpdateEnabled,
+			ForceUpdate:       config.ForceUpdate,
+			Metadata:          config.Metadata,
+			CreatedAt:         config.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+			UpdatedAt:         config.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		})
+	}
+
+	return responses, nil
+}
+
 // InitializeDefaultConfigs creates default version configurations if they don't exist
 func (v *VersionService) InitializeDefaultConfigs(ctx context.Context) error {
 	defaultConfigs := []ClientVersionConfigUpdate{

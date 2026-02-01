@@ -9,19 +9,23 @@ import {
   LayoutDashboard,
   Rocket,
   ArrowLeftRight,
-  User,
+  User as UserIcon,
   Settings,
   Menu,
+  ShieldCheck,
 } from "lucide-react";
 import { useState } from "react";
 import { ROUTES } from "@/constants/routes";
+import { User } from "@/lib/actions/user.types";
 
-interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {}
+interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {
+  user?: User | null;
+}
 
-export function DashboardSidebar({ className }: SidebarProps) {
+export function DashboardSidebar({ className, user }: SidebarProps) {
   const pathname = usePathname();
 
-  const items = [
+  const items: { title: string; href: string; icon: any }[] = [
     {
       title: "Dashboard",
       href: ROUTES.DASHBOARD.HOME,
@@ -40,7 +44,7 @@ export function DashboardSidebar({ className }: SidebarProps) {
     {
       title: "Profile",
       href: ROUTES.DASHBOARD.PROFILE,
-      icon: User,
+      icon: UserIcon,
     },
     {
       title: "Settings",
@@ -48,6 +52,15 @@ export function DashboardSidebar({ className }: SidebarProps) {
       icon: Settings,
     },
   ];
+
+  // Add Admin link if user is admin
+  if (user?.role === "admin") {
+    items.push({
+      title: "Admin",
+      href: ROUTES.DASHBOARD.ADMIN,
+      icon: ShieldCheck,
+    });
+  }
 
   return (
     <div className={cn("pb-12", className)}>
@@ -77,7 +90,7 @@ export function DashboardSidebar({ className }: SidebarProps) {
   );
 }
 
-export function MobileSidebar() {
+export function MobileSidebar({ user }: { user?: User | null }) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -92,7 +105,7 @@ export function MobileSidebar() {
         </Button>
       </SheetTrigger>
       <SheetContent side="left" className="pr-0">
-        <DashboardSidebar className="pt-4" />
+        <DashboardSidebar className="pt-4" user={user} />
       </SheetContent>
     </Sheet>
   );

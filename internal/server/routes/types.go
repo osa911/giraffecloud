@@ -26,5 +26,6 @@ type Handlers struct {
 type Middleware struct {
 	Validation *middleware.ValidationMiddleware
 	Auth       *middleware.AuthMiddleware
+	Admin      *middleware.AdminMiddleware
 	CSRF       service.CSRFService
 }

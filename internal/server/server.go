@@ -306,6 +306,7 @@ func (s *Server) Init() error {
 	middleware := &routes.Middleware{
 		Validation: middleware.NewValidationMiddleware(),
 		Auth:       middleware.NewAuthMiddleware(tokenService, repos.Auth, repos.Session, repos.User),
+		Admin:      middleware.NewAdminMiddleware(),
 		CSRF:       csrfService,
 	}
 	logger.Info("Middleware components initialized")
