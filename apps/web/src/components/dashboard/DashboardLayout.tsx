@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { useAuth } from "@/contexts/AuthProvider";
 import { User } from "@/lib/actions/user.types";
 import { DashboardSidebar, MobileSidebar } from "./DashboardSidebar";
@@ -17,7 +18,6 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ROUTES } from "@/constants/routes";
 import Footer from "@/components/common/Footer";
-import { Cloud } from "lucide-react";
 import { ModeToggle } from "@/components/mode-toggle";
 
 interface DashboardLayoutProps {
@@ -41,7 +41,14 @@ export default function DashboardLayout({ children, user }: DashboardLayoutProps
           <MobileSidebar user={user} />
           <div className="mr-4 hidden md:flex">
             <a className="mr-6 flex items-center space-x-2" href="/">
-              <Cloud className="h-6 w-6" />
+              <div className="relative h-8 w-8">
+                <Image
+                  src="/icon.png"
+                  alt="GiraffeCloud"
+                  fill
+                  className="object-contain"
+                />
+              </div>
               <span className="hidden font-bold sm:inline-block">
                 <span className="font-extrabold text-primary">Giraffe</span>
                 <span className="font-semibold">Cloud</span>
