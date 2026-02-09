@@ -24,6 +24,21 @@ export default function AdminPage() {
   const [userPage, setUserPage] = useState(1);
   const [totalUsers, setTotalUsers] = useState(0);
 
+  // Filtering and Sorting State
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [sortBy, setSortBy] = useState("id");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+
+  // Debounce search input
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+      setUserPage(1); // Reset page on search change
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [search]);
+
   const fetchConfigs = async () => {
     try {
       setLoading(true);
@@ -39,7 +54,7 @@ export default function AdminPage() {
   const fetchUsers = async () => {
     try {
       setUsersLoading(true);
-      const data = await getAdminUsers(userPage, 10);
+      const data = await getAdminUsers(userPage, 10, debouncedSearch, sortBy, sortOrder);
       setUsers(data.users || []);
       setTotalUsers(data.total_count || 0);
     } catch (error) {
@@ -51,12 +66,11 @@ export default function AdminPage() {
 
   useEffect(() => {
     fetchConfigs();
-    fetchUsers();
   }, []);
 
   useEffect(() => {
     fetchUsers();
-  }, [userPage]);
+  }, [userPage, debouncedSearch, sortBy, sortOrder]);
 
   const handleSaveConfig = async () => {
     if (!editingConfig) return;
@@ -251,27 +265,52 @@ export default function AdminPage() {
 
       {/* Users Tab */}
       <TabsContent value="users" className="space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <h2 className="text-xl font-semibold">User Management</h2>
           <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">
-              {totalUsers} total users
-            </span>
+            <Input
+              placeholder="Search by email..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-[200px]"
+            />
             <Button variant="outline" size="sm" onClick={fetchUsers} disabled={usersLoading}>
-              <RefreshCw className={`h-4 w-4 mr-2 ${usersLoading ? "animate-spin" : ""}`} />
-              Refresh
+              <RefreshCw className={`h-4 w-4 ${usersLoading ? "animate-spin" : ""}`} />
+              <span className="sr-only">Refresh</span>
             </Button>
           </div>
+        </div>
+
+        <div className="text-sm text-muted-foreground mb-2">
+          {totalUsers} total users found
         </div>
 
         <Card>
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>User</TableHead>
+                <TableHead className="cursor-pointer hover:text-foreground" onClick={() => {
+                  if (sortBy === "email") {
+                    setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+                  } else {
+                    setSortBy("email");
+                    setSortOrder("asc");
+                  }
+                }}>
+                  User {sortBy === "email" && (sortOrder === "asc" ? "↑" : "↓")}
+                </TableHead>
                 <TableHead>Role</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Last Login</TableHead>
+                <TableHead className="cursor-pointer hover:text-foreground" onClick={() => {
+                  if (sortBy === "last_login") {
+                    setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+                  } else {
+                    setSortBy("last_login");
+                    setSortOrder("desc");
+                  }
+                }}>
+                  Last Login {sortBy === "last_login" && (sortOrder === "asc" ? "↑" : "↓")}
+                </TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>

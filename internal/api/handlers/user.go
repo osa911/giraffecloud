@@ -145,8 +145,13 @@ func (h *UserHandler) ListUsers(c *gin.Context) {
 		return
 	}
 
-	// Get users with pagination
-	users, err := h.repository.List(context.Background(), offset, pageSize)
+	// Parse filter/sort parameters
+	search := c.Query("search")
+	sortBy := c.DefaultQuery("sortBy", "id")
+	sortOrder := c.DefaultQuery("sortOrder", "desc")
+
+	// Get users with pagination, filtering and sorting
+	users, err := h.repository.List(context.Background(), offset, pageSize, search, sortBy, sortOrder)
 	if err != nil {
 		utils.HandleAPIError(c, err, common.ErrCodeInternalServer, "Failed to fetch users")
 		return

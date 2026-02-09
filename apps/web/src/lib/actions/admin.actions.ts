@@ -44,12 +44,22 @@ export async function updateVersionConfig(
 
 export async function getAdminUsers(
   page = 1,
-  pageSize = 10
+  pageSize = 10,
+  search = "",
+  sortBy = "id",
+  sortOrder: "asc" | "desc" = "desc"
 ): Promise<AdminUsersResponse> {
   try {
     await getAuthUser();
+    const queryParams = new URLSearchParams({
+      page: page.toString(),
+      pageSize: pageSize.toString(),
+      search,
+      sortBy,
+      sortOrder,
+    });
     return await serverApi().get<AdminUsersResponse>(
-      `/admin/users?page=${page}&pageSize=${pageSize}`
+      `/admin/users?${queryParams.toString()}`
     );
   } catch (error) {
     const apiError = error as AdminApiError;

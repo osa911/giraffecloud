@@ -22,8 +22,8 @@ type UserRepository interface {
 	Update(ctx context.Context, id uint32, update *ent.UserUpdateOne) (*ent.User, error)
 	// Delete deletes a user by ID
 	Delete(ctx context.Context, id uint32) error
-	// List returns all users with optional pagination
-	List(ctx context.Context, offset, limit int) ([]*ent.User, error)
+	// List returns all users with pagination, filtering, and sorting
+	List(ctx context.Context, offset, limit int, search, sortBy, sortOrder string) ([]*ent.User, error)
 	// Count returns the total number of users
 	Count(ctx context.Context) (int64, error)
 }

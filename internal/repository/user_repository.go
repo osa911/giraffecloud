@@ -70,8 +70,37 @@ func (r *userRepository) Delete(ctx context.Context, id uint32) error {
 	return nil
 }
 
-func (r *userRepository) List(ctx context.Context, offset, limit int) ([]*ent.User, error) {
-	return r.client.User.Query().
+func (r *userRepository) List(ctx context.Context, offset, limit int, search, sortBy, sortOrder string) ([]*ent.User, error) {
+	query := r.client.User.Query()
+
+	// Apple filtering
+	if search != "" {
+		query.Where(user.EmailContainsFold(search))
+	}
+
+	// Apply sorting
+	if sortBy != "" {
+		orderFunc := ent.Asc(sortBy)
+		if sortOrder == "desc" {
+			orderFunc = ent.Desc(sortBy)
+		}
+
+		// Handle specific sort fields
+		switch sortBy {
+		case "last_login":
+			query.Order(orderFunc)
+		case "email":
+			query.Order(orderFunc)
+		default:
+			// Default sort by ID desc if invalid sort field
+			query.Order(ent.Desc(user.FieldID))
+		}
+	} else {
+		// Default sort
+		query.Order(ent.Desc(user.FieldID))
+	}
+
+	return query.
 		Offset(offset).
 		Limit(limit).
 		All(ctx)
