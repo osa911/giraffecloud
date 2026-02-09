@@ -5,6 +5,7 @@ import (
 
 	"github.com/osa911/giraffecloud/internal/logging"
 	"github.com/osa911/giraffecloud/internal/service"
+	"github.com/osa911/giraffecloud/internal/utils"
 
 	"github.com/gin-gonic/gin"
 )
@@ -65,7 +66,7 @@ func (h *AdminHandler) UpdateVersionConfig(c *gin.Context) {
 	h.logger.Info("Version config updated successfully for channel=%s platform=%s arch=%s version=%s",
 		config.Channel, config.Platform, config.Arch, config.LatestVersion)
 
-	c.JSON(http.StatusOK, gin.H{
+	utils.HandleSuccess(c, gin.H{
 		"message": "Version configuration updated successfully",
 		"config":  config,
 	})
@@ -82,7 +83,7 @@ func (h *AdminHandler) GetVersionConfigs(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	utils.HandleSuccess(c, gin.H{
 		"configs": configs,
 	})
 }
@@ -112,5 +113,5 @@ func (h *AdminHandler) GetVersionConfig(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, versionInfo)
+	utils.HandleSuccess(c, versionInfo)
 }
