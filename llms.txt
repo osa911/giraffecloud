@@ -1,0 +1,137 @@
+# GiraffeCloud
+
+> Secure, self-hostable tunneling service to expose local services to the internet with custom domains and automatic HTTPS.
+
+GiraffeCloud is an open-source reverse proxy and tunneling platform. It exposes services running on a laptop, home server, or VPS to the internet using custom domains with automatic HTTPS — without revealing the real IP address. Similar to Cloudflare Tunnel or Ngrok, but fully self-hosted or as a service.
+
+## Core Features
+
+- Secure tunneling through encrypted gRPC and TCP connections
+- Custom domains or free auto-generated subdomains (e.g. `happy-giraffe-9ix2a.giraffecloud.xyz`)
+- Automatic HTTPS via Let's Encrypt certificates handled by Caddy
+- Auto-reconnect with intelligent retry logic and exponential backoff
+- Web dashboard for tunnel management
+- CLI client with auto-update support
+- DNS propagation monitoring for custom domains
+
+## Architecture
+
+GiraffeCloud uses a hybrid tunnel architecture:
+
+- **gRPC Tunnels** — HTTP traffic with unlimited concurrency via HTTP/2 multiplexing
+- **TCP Tunnels** — WebSocket and bidirectional real-time communication
+
+Traffic routing is automatic: HTTP requests go through gRPC tunnels, WebSocket upgrades go through TCP tunnels.
+
+## Tech Stack
+
+- **Go 1.24** — Backend server, tunnel implementation, and CLI client
+- **Next.js** — Web dashboard (apps/web)
+- **PostgreSQL** — User and tunnel data persistence
+- **Caddy** — Automatic HTTPS and reverse proxy
+- **gRPC / Protobuf** — High-performance tunnel communication
+- **Firebase Auth** — User authentication
+- **Ent** — Go ORM for database schema management
+- **Gin** — HTTP framework for REST API
+- **OpenTelemetry** — Observability and tracing
+- **Docker / Docker Compose** — Containerized deployment
+
+## Project Structure
+
+```
+giraffecloud/
+├── cmd/                        # Entry points
+│   ├── giraffecloud/           # CLI client (login, connect, status)
+│   └── server/                 # Tunnel server
+├── internal/                   # Go backend
+│   ├── api/                    # REST API (Gin handlers, middleware, routes)
+│   │   ├── handlers/           # HTTP handlers (auth, tunnel, user, admin, usage)
+│   │   ├── middleware/         # Auth and rate-limiting middleware
+│   │   └── router/             # Route definitions
+│   ├── caddy/                  # Caddy reverse proxy integration
+│   ├── config/                 # App configuration and environment loading
+│   ├── db/                     # Database schema (Ent), migrations, seed
+│   ├── interfaces/             # Shared interfaces
+│   ├── repository/             # Data access layer (user, tunnel, usage repos)
+│   ├── server/                 # Server bootstrap and lifecycle
+│   ├── service/                # Business logic (auth, tunnel, usage, user services)
+│   ├── tasks/                  # Background tasks (DNS monitoring)
+│   ├── telemetry/              # OpenTelemetry setup
+│   ├── tunnel/                 # Tunnel core (gRPC service, TCP handler, proxy router)
+│   ├── utils/                  # Shared utilities (cookie, subdomain, validation)
+│   └── version/                # Version management
+├── apps/
+│   └── web/                    # Next.js dashboard (React, TypeScript)
+├── proto/                      # Protobuf definitions for gRPC tunnel service
+├── configs/                    # Caddy and deployment configs
+├── docs/                       # Documentation
+├── scripts/                    # Install and deployment scripts
+├── makefiles/                  # Make targets
+├── Dockerfile                  # API server container
+├── Dockerfile.caddy            # Custom Caddy container
+├── docker-compose.yml          # Full stack orchestration
+└── .goreleaser.yml             # CLI release automation
+```
+
+## API
+
+REST API served with `/api/v1/` prefix:
+
+- **Auth**: `POST /auth/login`, `POST /auth/register`, `POST /auth/logout`, `GET /auth/me`
+- **Tunnels**: `GET /tunnels`, `POST /tunnels`, `PUT /tunnels/:id`, `DELETE /tunnels/:id`
+- **Free Subdomain**: `GET /tunnels/free` — returns auto-generated subdomain for user
+- **Usage**: `GET /usage/stats` — tunnel usage statistics
+- **Health**: `GET /health`
+
+## CLI Commands
+
+```
+giraffecloud login --token <TOKEN>   # Authenticate with API token
+giraffecloud connect                 # Start tunnel connection
+giraffecloud status                  # Check tunnel status
+giraffecloud version                 # Show version
+```
+
+## Installation
+
+```bash
+# macOS/Linux
+curl -fsSL https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/install.sh | bash
+
+# Windows (PowerShell)
+iwr -useb https://raw.githubusercontent.com/osa911/giraffecloud/main/scripts/install.ps1 | iex
+```
+
+## Development
+
+Prerequisites: Go 1.21+, PostgreSQL 15+, Node.js 22+, Make
+
+```bash
+git clone https://github.com/osa911/giraffecloud.git
+cd giraffecloud
+cp .env.example .env
+make db-init && make db-migrate
+make dev          # Start Go server
+cd apps/web && yarn install && yarn dev   # Start dashboard
+```
+
+## Documentation
+
+- [Installation Guide](docs/installation.md)
+- [Hybrid Tunnel Architecture](docs/hybrid-tunnel-architecture.md)
+- [Dual-Stream Architecture](docs/dual-stream-architecture.md)
+- [Subdomain Feature](docs/subdomain-feature.md)
+- [gRPC Large File Handling](docs/grpc-large-file-handling.md)
+- [Keepalive Safety Mechanisms](docs/keepalive-safety-mechanisms.md)
+- [Client Versioning](docs/client-versioning.md)
+- [VPS Deployment](docs/vps-deployment.md)
+- [Contact Form Setup](docs/contact-form-setup.md)
+
+## License
+
+AGPL-3.0
+
+## Links
+
+- Website: https://giraffecloud.xyz
+- GitHub: https://github.com/osa911/giraffecloud
