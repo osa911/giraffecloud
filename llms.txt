@@ -2,13 +2,15 @@
 
 > Secure, self-hostable tunneling service to expose local services to the internet with custom domains and automatic HTTPS.
 
-GiraffeCloud is an open-source reverse proxy and tunneling platform. It exposes services running on a laptop, home server, or VPS to the internet using custom domains with automatic HTTPS — without revealing the real IP address. Similar to Cloudflare Tunnel or Ngrok, but fully self-hosted or as a service.
+GiraffeCloud is an open-source reverse proxy and tunneling platform. It exposes services running on a laptop, home server, or VPS to the internet using custom domains with automatic HTTPS — without revealing the real IP address. It works seamlessly with dynamic IPs and behind NATs, allowing you to host from anywhere. Similar to Cloudflare Tunnel or Ngrok, but fully self-hosted or as a service.
+
 
 ## Core Features
 
 - Secure tunneling through encrypted gRPC and TCP connections
 - Custom domains or free auto-generated subdomains (e.g. `happy-giraffe-9ix2a.giraffecloud.xyz`)
 - Automatic HTTPS via Let's Encrypt certificates handled by Caddy
+- Works with Dynamic IPs — No static IP required; perfect for home internet connections and mobile setups
 - Auto-reconnect with intelligent retry logic and exponential backoff
 - Web dashboard for tunnel management
 - CLI client with auto-update support
