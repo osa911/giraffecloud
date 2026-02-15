@@ -3,7 +3,7 @@
 import HomeRedirectHandler from "@/components/home/HomeRedirectHandler";
 import AuthButtons from "@/components/auth/AuthButtons";
 import { motion } from "framer-motion";
-import { ShieldCheck, Zap, Globe } from "lucide-react";
+import { ShieldCheck, Zap, Globe, Wifi } from "lucide-react";
 
 export default function HomePage() {
   return (
@@ -21,7 +21,7 @@ export default function HomePage() {
             Secure Tunnel Service for Your Applications
           </h1>
           <p className="text-xl text-muted-foreground max-w-[600px] mx-auto">
-            Expose your local server to the internet without revealing your IP address. Secure, fast, and user-friendly.
+            Expose your local server to the internet without revealing your IP address. Works seamlessly with Dynamic IPs. Secure, fast, and user-friendly.
           </p>
         </motion.div>
 
@@ -38,7 +38,7 @@ export default function HomePage() {
           initial={{ opacity: 0, y: 40 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7, delay: 0.4 }}
-          className="grid grid-cols-1 md:grid-cols-3 gap-8 mt-16 text-left"
+          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mt-16 text-left"
         >
           <FeatureCard
             icon={<ShieldCheck className="w-10 h-10 text-primary" />}
@@ -54,6 +54,11 @@ export default function HomePage() {
             icon={<Globe className="w-10 h-10 text-primary" />}
             title="Custom Domains"
             description="Bring your own domain or use our free subdomain for your project."
+          />
+          <FeatureCard
+            icon={<Wifi className="w-10 h-10 text-primary" />}
+            title="Dynamic IP Support"
+            description="Host from anywhere. We handle IP changes automatically, so you don't need a static IP."
           />
         </motion.div>
       </div>
