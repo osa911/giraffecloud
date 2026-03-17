@@ -14,6 +14,7 @@ func TunnelToCreateResponse(t *ent.Tunnel) *tunnel.CreateResponse {
 	return &tunnel.CreateResponse{
 		ID:         t.ID,
 		Domain:     t.Domain,
+		TargetHost: t.TargetHost,
 		Token:      t.Token, // Include token only for create response
 		TargetPort: t.TargetPort,
 		IsEnabled:  t.IsEnabled,
@@ -31,6 +32,7 @@ func TunnelToResponse(t *ent.Tunnel) *tunnel.Response {
 	return &tunnel.Response{
 		ID:         t.ID,
 		Domain:     t.Domain,
+		TargetHost: t.TargetHost,
 		TargetPort: t.TargetPort,
 		IsEnabled:  t.IsEnabled,
 		ClientIP:   t.ClientIP, // Show if tunnel client is connected

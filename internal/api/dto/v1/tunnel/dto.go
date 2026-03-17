@@ -5,6 +5,7 @@ import "time"
 // CreateRequest represents the request for creating a tunnel
 type CreateRequest struct {
 	Domain     string `json:"domain"` // Optional: auto-generated if empty
+	TargetHost string `json:"target_host"`
 	TargetPort int    `json:"target_port" binding:"required,min=1,max=65535"`
 }
 
@@ -12,6 +13,7 @@ type CreateRequest struct {
 type CreateResponse struct {
 	ID         int       `json:"id"`
 	Domain     string    `json:"domain"`
+	TargetHost string    `json:"target_host"`
 	Token      string    `json:"token"` // ⚠️ Only included on creation
 	TargetPort int       `json:"target_port"`
 	IsEnabled  bool      `json:"is_enabled"`
@@ -23,6 +25,7 @@ type CreateResponse struct {
 type Response struct {
 	ID         int       `json:"id"`
 	Domain     string    `json:"domain"`
+	TargetHost string    `json:"target_host"`
 	TargetPort int       `json:"target_port"`
 	IsEnabled  bool      `json:"is_enabled"`
 	ClientIP   string    `json:"client_ip,omitempty"` // Empty if not connected
@@ -32,8 +35,9 @@ type Response struct {
 
 // UpdateRequest represents the request for updating a tunnel
 type UpdateRequest struct {
-	IsEnabled  *bool `json:"is_enabled,omitempty"`
-	TargetPort *int  `json:"target_port,omitempty" binding:"omitempty,min=1,max=65535"`
+	TargetHost *string `json:"target_host,omitempty"`
+	IsEnabled  *bool   `json:"is_enabled,omitempty"`
+	TargetPort *int    `json:"target_port,omitempty" binding:"omitempty,min=1,max=65535"`
 }
 
 // FreeSubdomainResponse represents the available free subdomain for a user
