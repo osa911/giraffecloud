@@ -10,20 +10,20 @@ func TestGRPCTunnelClient_ClientID(t *testing.T) {
 	processStableClientID = ""
 
 	// Create first client - this should set the process stable ID
-	client1 := NewGRPCTunnelClient("localhost:4444", "test1.example.com", "token1", 8080, nil)
+	client1 := NewGRPCTunnelClient("localhost:4444", "token1", nil)
 	expectedID := "grpc-client-1"
 	if client1.GetClientID() != expectedID {
 		t.Errorf("Expected client1 ID to be '%s', got '%s'", expectedID, client1.GetClientID())
 	}
 
 	// Create second client - should reuse the same process stable ID
-	client2 := NewGRPCTunnelClient("localhost:4444", "test2.example.com", "token2", 8081, nil)
+	client2 := NewGRPCTunnelClient("localhost:4444", "token2", nil)
 	if client2.GetClientID() != expectedID {
 		t.Errorf("Expected client2 ID to be '%s' (process stable), got '%s'", expectedID, client2.GetClientID())
 	}
 
 	// Create third client - should also reuse the same process stable ID
-	client3 := NewGRPCTunnelClient("localhost:4444", "test3.example.com", "token3", 8082, nil)
+	client3 := NewGRPCTunnelClient("localhost:4444", "token3", nil)
 	if client3.GetClientID() != expectedID {
 		t.Errorf("Expected client3 ID to be '%s' (process stable), got '%s'", expectedID, client3.GetClientID())
 	}
@@ -40,7 +40,7 @@ func TestGRPCTunnelClient_ClientIDFormat(t *testing.T) {
 	globalClientCounter = 0
 	processStableClientID = ""
 
-	client := NewGRPCTunnelClient("localhost:4444", "test.example.com", "token", 8080, nil)
+	client := NewGRPCTunnelClient("localhost:4444", "token", nil)
 	clientID := client.GetClientID()
 
 	// Verify the format is "grpc-client-{number}"

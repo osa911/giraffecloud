@@ -366,7 +366,7 @@ func (t *Tunnel) attemptDualConnections(serverAddr string, tlsConfig *tls.Config
 	// Reuse existing client if available, otherwise create
 	if t.grpcClient == nil {
 		grpcConfig := DefaultGRPCClientConfig()
-		t.grpcClient = NewGRPCTunnelClient(grpcServerAddr, t.domain, t.token, int32(t.localPort), grpcConfig)
+		t.grpcClient = NewGRPCTunnelClient(grpcServerAddr, t.token, grpcConfig)
 
 		// Set up tunnel establishment handler for demand-based tunnel creation
 		t.grpcClient.SetTunnelEstablishHandler(t.handleTunnelEstablishRequest)
