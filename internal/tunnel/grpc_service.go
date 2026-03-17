@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/osa911/giraffecloud/internal/db/ent"
 	"github.com/osa911/giraffecloud/internal/interfaces"
 	"github.com/osa911/giraffecloud/internal/logging"
 	"github.com/osa911/giraffecloud/internal/repository"
@@ -47,6 +48,7 @@ type GRPCTunnelServer struct {
 
 	// Active tunnel streams (domain -> stream connection)
 	tunnelStreams    map[string]*TunnelStream
+	userStreams      map[uint32]*TunnelStream // userID -> stream (shares tunnelStreamsMux)
 	tunnelStreamsMux sync.RWMutex
 
 	// Performance metrics (atomic for thread safety)
@@ -91,6 +93,8 @@ type TunnelStream struct {
 	Domain     string
 	TargetPort int32
 	TunnelID   uint32
+	Domains    []string // All domains served by this stream
+	TunnelIDs  []uint32 // All tunnel IDs served by this stream
 	Stream     proto.TunnelService_EstablishTunnelServer
 	Context    context.Context
 	UserID     uint32
@@ -171,6 +175,7 @@ func NewGRPCTunnelServer(
 		tunnelRepo:    tunnelRepo,
 		tunnelService: tunnelService,
 		tunnelStreams: make(map[string]*TunnelStream),
+		userStreams:   make(map[uint32]*TunnelStream),
 		config:        config,
 		rateLimiter:   NewRateLimiter(config.RateLimitRPM, config.RateLimitBurst),
 		security:      NewSecurityMiddleware(),
@@ -312,75 +317,116 @@ func (s *GRPCTunnelServer) EstablishTunnel(stream proto.TunnelService_EstablishT
 		return status.Errorf(codes.InvalidArgument, "invalid handshake message")
 	}
 
-	// Authenticate the tunnel
-	tunnel, err := s.authenticateTunnel(ctx, handshake)
+	// Authenticate the tunnel — returns ALL enabled tunnels for the user
+	tunnels, userID, err := s.authenticateTunnel(ctx, handshake)
 	if err != nil {
 		s.logger.Error("Tunnel authentication failed: %v", err)
 		return status.Errorf(codes.Unauthenticated, "authentication failed: %v", err)
 	}
 
-	s.logger.Info("Authenticated tunnel for domain: %s, user: %d", tunnel.Domain, tunnel.UserID)
+	s.logger.Info("Authenticated user %d with %d enabled tunnels", userID, len(tunnels))
 
-	// CRITICAL: Update client IP and trigger Caddy configuration (RESTORED FROM OLD HANDSHAKE)
+	// Build domains and tunnelIDs lists from tunnels
+	domains := make([]string, 0, len(tunnels))
+	tunnelIDs := make([]uint32, 0, len(tunnels))
+	for _, t := range tunnels {
+		domains = append(domains, t.Domain)
+		tunnelIDs = append(tunnelIDs, uint32(t.ID))
+	}
+
+	// CRITICAL: Update client IP and trigger Caddy configuration for ALL tunnels
 	clientIP := getPeerIP(ctx)
 	if s.tunnelService != nil {
-		s.logger.Info("🔧 Updating client IP and configuring Caddy for domain: %s -> %s", tunnel.Domain, clientIP)
-		if err := s.tunnelService.UpdateClientIP(ctx, uint32(tunnel.ID), clientIP); err != nil {
-			s.logger.Error("Failed to update client IP and configure Caddy: %v", err)
-			return status.Errorf(codes.Internal, "failed to configure tunnel: %v", err)
+		for _, t := range tunnels {
+			s.logger.Info("Updating client IP and configuring Caddy for domain: %s -> %s", t.Domain, clientIP)
+			if err := s.tunnelService.UpdateClientIP(ctx, uint32(t.ID), clientIP); err != nil {
+				s.logger.Error("Failed to update client IP for domain %s: %v", t.Domain, err)
+				// Continue with other tunnels — don't fail the entire connection
+			} else {
+				s.logger.Info("Successfully configured Caddy route for domain: %s", t.Domain)
+			}
 		}
-		s.logger.Info("✅ Successfully configured Caddy route for domain: %s", tunnel.Domain)
 	} else {
-		s.logger.Warn("⚠️  Tunnel service not available - Caddy configuration skipped")
+		s.logger.Warn("Tunnel service not available - Caddy configuration skipped")
 	}
 
-	// Create tunnel stream
-	// If client didn't send target port, use server-side configured target port
-	chosenPort := handshake.TargetPort
-	if chosenPort == 0 {
-		chosenPort = int32(tunnel.TargetPort)
+	// Determine primary domain/port for logging and backward compatibility
+	primaryDomain := ""
+	var primaryTunnelID uint32
+	if len(tunnels) > 0 {
+		primaryDomain = tunnels[0].Domain
+		primaryTunnelID = uint32(tunnels[0].ID)
 	}
+
+	// Create tunnel stream with multi-domain support
 	tunnelStream := &TunnelStream{
-		Domain:          tunnel.Domain,
-		TargetPort:      chosenPort,
-		TunnelID:        uint32(tunnel.ID),
+		Domain:          primaryDomain,
+		TargetPort:      0, // No single port in multi-tunnel mode
+		TunnelID:        primaryTunnelID,
+		Domains:         domains,
+		TunnelIDs:       tunnelIDs,
 		Stream:          stream,
 		Context:         ctx,
-		UserID:          tunnel.UserID,
+		UserID:          userID,
 		pendingRequests: make(map[string]chan *proto.TunnelMessage),
 		connected:       true,
 		lastActivity:    time.Now(),
 	}
 
-	// Register tunnel stream
+	// Register ALL domains in tunnelStreams, and register in userStreams
 	s.tunnelStreamsMux.Lock()
-	s.tunnelStreams[tunnel.Domain] = tunnelStream
+	for _, d := range domains {
+		s.tunnelStreams[d] = tunnelStream
+	}
+	s.userStreams[userID] = tunnelStream
 	s.tunnelStreamsMux.Unlock()
 
 	defer func() {
 		s.tunnelStreamsMux.Lock()
-		delete(s.tunnelStreams, tunnel.Domain)
+		for _, d := range tunnelStream.Domains {
+			delete(s.tunnelStreams, d)
+		}
+		delete(s.userStreams, userID)
 		s.tunnelStreamsMux.Unlock()
 
 		// Clean up all pending requests and chunked streaming state
 		s.cleanupTunnelStreamState(tunnelStream)
 
-		// CRITICAL: Remove Caddy route when tunnel disconnects (RESTORED FROM OLD HANDSHAKE)
+		// CRITICAL: Remove Caddy route when tunnel disconnects for ALL tunnels
 		// NOTE: Use background context for cleanup since the tunnel context is already cancelled
 		if s.tunnelService != nil {
-			s.logger.Info("🔧 Removing Caddy route for disconnected tunnel: %s", tunnel.Domain)
 			cleanupCtx := context.Background()
-			if err := s.tunnelService.UpdateClientIP(cleanupCtx, uint32(tunnel.ID), ""); err != nil {
-				s.logger.Error("Failed to remove Caddy route: %v", err)
-			} else {
-				s.logger.Info("✅ Successfully removed Caddy route for domain: %s", tunnel.Domain)
+			for i, d := range tunnelStream.Domains {
+				s.logger.Info("Removing Caddy route for disconnected tunnel: %s", d)
+				var tid uint32
+				if i < len(tunnelStream.TunnelIDs) {
+					tid = tunnelStream.TunnelIDs[i]
+				}
+				if tid != 0 {
+					if err := s.tunnelService.UpdateClientIP(cleanupCtx, tid, ""); err != nil {
+						s.logger.Error("Failed to remove Caddy route for domain %s: %v", d, err)
+					} else {
+						s.logger.Info("Successfully removed Caddy route for domain: %s", d)
+					}
+				}
 			}
 		}
 
-		s.logger.Info("Tunnel disconnected for domain: %s (all state cleaned up)", tunnel.Domain)
+		s.logger.Info("Tunnel disconnected for user %d, domains: %v (all state cleaned up)", userID, tunnelStream.Domains)
 	}()
 
-	// Send handshake response (ENHANCED: Include success confirmation like old handshake)
+	// Build TunnelRouteConfig list for the handshake response
+	routes := make([]*proto.TunnelRouteConfig, 0, len(tunnels))
+	for _, t := range tunnels {
+		routes = append(routes, &proto.TunnelRouteConfig{
+			Domain:     t.Domain,
+			TargetHost: t.TargetHost,
+			TargetPort: int32(t.TargetPort),
+			IsEnabled:  t.IsEnabled,
+		})
+	}
+
+	// Send handshake response with routes
 	handshakeResponse := &proto.TunnelMessage{
 		RequestId: handshakeMsg.RequestId,
 		Timestamp: time.Now().Unix(),
@@ -389,11 +435,12 @@ func (s *GRPCTunnelServer) EstablishTunnel(stream proto.TunnelService_EstablishT
 				ControlType: &proto.TunnelControl_Status{
 					Status: &proto.TunnelStatus{
 						State:             proto.TunnelState_TUNNEL_STATE_CONNECTED,
-						Domain:            tunnel.Domain,
-						TargetPort:        chosenPort,
+						Domain:            primaryDomain,
+						TargetPort:        0,
 						ConnectedAt:       time.Now().Unix(),
 						ActiveConnections: 1,
 						LastActivity:      time.Now().Unix(),
+						Routes:            routes,
 					},
 				},
 			},
@@ -426,21 +473,45 @@ func (s *GRPCTunnelServer) ControlChannel(stream proto.TunnelService_ControlChan
 
 	// Validate handshake
 	handshake := handshakeMsg.GetHandshake()
-	if handshake == nil || handshake.Domain == "" {
-		s.logger.Error("[CONTROL] Invalid handshake - missing domain")
-		return status.Errorf(codes.InvalidArgument, "invalid handshake: domain required")
+	if handshake == nil {
+		s.logger.Error("[CONTROL] Invalid handshake - missing handshake message")
+		return status.Errorf(codes.InvalidArgument, "invalid handshake")
 	}
 
-	domain := handshake.Domain
-	s.logger.Info("[CONTROL] Handshake received for domain: %s", domain)
+	// Support token-based lookup (new) with domain fallback (backward compat)
+	var tunnelStream *TunnelStream
+	var exists bool
+	var logIdentifier string
 
-	// Find existing tunnel stream
-	s.tunnelStreamsMux.RLock()
-	tunnelStream, exists := s.tunnelStreams[domain]
-	s.tunnelStreamsMux.RUnlock()
+	if handshake.Token != "" {
+		// New path: validate token → get userID → look up userStreams
+		apiToken, err := s.tokenRepo.GetByToken(ctx, handshake.Token)
+		if err != nil {
+			s.logger.Error("[CONTROL] Invalid token: %v", err)
+			return status.Errorf(codes.Unauthenticated, "invalid token")
+		}
+
+		s.tunnelStreamsMux.RLock()
+		tunnelStream, exists = s.userStreams[apiToken.UserID]
+		s.tunnelStreamsMux.RUnlock()
+
+		logIdentifier = fmt.Sprintf("user %d", apiToken.UserID)
+		s.logger.Info("[CONTROL] Token-based handshake for %s", logIdentifier)
+	} else if handshake.Domain != "" {
+		// Legacy path: domain-based lookup
+		s.tunnelStreamsMux.RLock()
+		tunnelStream, exists = s.tunnelStreams[handshake.Domain]
+		s.tunnelStreamsMux.RUnlock()
+
+		logIdentifier = fmt.Sprintf("domain %s", handshake.Domain)
+		s.logger.Info("[CONTROL] Domain-based handshake for %s", logIdentifier)
+	} else {
+		s.logger.Error("[CONTROL] Invalid handshake - missing token and domain")
+		return status.Errorf(codes.InvalidArgument, "invalid handshake: token or domain required")
+	}
 
 	if !exists {
-		s.logger.Error("[CONTROL] No data tunnel found for domain: %s", domain)
+		s.logger.Error("[CONTROL] No data tunnel found for %s", logIdentifier)
 		return status.Errorf(codes.FailedPrecondition, "data tunnel must be established first")
 	}
 
@@ -449,7 +520,7 @@ func (s *GRPCTunnelServer) ControlChannel(stream proto.TunnelService_ControlChan
 	tunnelStream.ControlStream = stream
 	tunnelStream.controlMux.Unlock()
 
-	s.logger.Info("[CONTROL] ✅ Control channel established for domain: %s", domain)
+	s.logger.Info("[CONTROL] Control channel established for %s", logIdentifier)
 
 	// Send handshake confirmation
 	confirmMsg := &proto.ControlMessage{
@@ -472,7 +543,7 @@ func (s *GRPCTunnelServer) ControlChannel(stream proto.TunnelService_ControlChan
 		tunnelStream.controlMux.Lock()
 		tunnelStream.ControlStream = nil
 		tunnelStream.controlMux.Unlock()
-		s.logger.Info("[CONTROL] Control channel closed for domain: %s", domain)
+		s.logger.Info("[CONTROL] Control channel closed for %s", logIdentifier)
 	}()
 
 	// Listen for incoming control messages (mostly for ping/pong keepalive)
@@ -480,7 +551,7 @@ func (s *GRPCTunnelServer) ControlChannel(stream proto.TunnelService_ControlChan
 		msg, err := stream.Recv()
 		if err != nil {
 			if err == io.EOF {
-				s.logger.Info("[CONTROL] Client closed control channel for domain: %s", domain)
+				s.logger.Info("[CONTROL] Client closed control channel for %s", logIdentifier)
 				return nil
 			}
 			s.logger.Error("[CONTROL] Error receiving control message: %v", err)
@@ -708,4 +779,67 @@ func (s *GRPCTunnelServer) SendTunnelEstablishRequest(domain string, establishRe
 	s.logger.Info("[ESTABLISH] Sent %s tunnel establishment request to client for domain: %s",
 		establishReq.TunnelType.String(), domain)
 	return nil
+}
+
+// PushConfigUpdate sends a config update to the connected CLI for a given user
+func (s *GRPCTunnelServer) PushConfigUpdate(userID uint32, tunnels []*ent.Tunnel, reason int32) error {
+	s.tunnelStreamsMux.RLock()
+	stream, exists := s.userStreams[userID]
+	s.tunnelStreamsMux.RUnlock()
+	if !exists {
+		return nil // No connected CLI for this user — not an error
+	}
+
+	routes := make([]*proto.TunnelRouteConfig, len(tunnels))
+	for i, t := range tunnels {
+		routes[i] = &proto.TunnelRouteConfig{
+			Domain:     t.Domain,
+			TargetHost: t.TargetHost,
+			TargetPort: int32(t.TargetPort),
+			IsEnabled:  t.IsEnabled,
+		}
+	}
+
+	stream.controlMux.RLock()
+	ctrl := stream.ControlStream
+	stream.controlMux.RUnlock()
+	if ctrl == nil {
+		return nil // No control channel — not an error
+	}
+
+	msg := &proto.ControlMessage{
+		Timestamp: time.Now().Unix(),
+		MessageType: &proto.ControlMessage_ConfigUpdate{
+			ConfigUpdate: &proto.ConfigUpdate{
+				Routes: routes,
+				Reason: proto.ConfigUpdateReason(reason),
+			},
+		},
+	}
+	return ctrl.Send(msg)
+}
+
+// AddDomainToStream adds a new domain to the active stream for a user
+func (s *GRPCTunnelServer) AddDomainToStream(userID uint32, domain string) {
+	s.tunnelStreamsMux.Lock()
+	defer s.tunnelStreamsMux.Unlock()
+	if stream, exists := s.userStreams[userID]; exists {
+		s.tunnelStreams[domain] = stream
+		stream.Domains = append(stream.Domains, domain)
+	}
+}
+
+// RemoveDomainFromStream removes a domain from the active stream for a user
+func (s *GRPCTunnelServer) RemoveDomainFromStream(userID uint32, domain string) {
+	s.tunnelStreamsMux.Lock()
+	defer s.tunnelStreamsMux.Unlock()
+	delete(s.tunnelStreams, domain)
+	if stream, exists := s.userStreams[userID]; exists {
+		for i, d := range stream.Domains {
+			if d == domain {
+				stream.Domains = append(stream.Domains[:i], stream.Domains[i+1:]...)
+				break
+			}
+		}
+	}
 }
