@@ -49,6 +49,7 @@ const formSchema = z.object({
   domain: z.string()
     .min(1, "Domain is required")
     .regex(domainRegex, "Invalid domain format (e.g., example.com)"),
+  target_host: z.string().default("localhost"),
   target_port: z.number()
     .int("Port must be an integer")
     .min(1, "Port must be at least 1")
@@ -77,6 +78,7 @@ export default function TunnelDialog({
     resolver: zodResolver(formSchema),
     defaultValues: {
       domain: "",
+      target_host: "localhost",
       target_port: 80,
       is_enabled: true,
     },
@@ -89,6 +91,7 @@ export default function TunnelDialog({
         // Editing existing tunnel
         form.reset({
           domain: tunnel.domain,
+          target_host: tunnel.target_host || "localhost",
           target_port: tunnel.target_port,
           is_enabled: tunnel.is_enabled,
         });
@@ -101,6 +104,7 @@ export default function TunnelDialog({
         setFreeSubdomainError("");
         form.reset({
           domain: "",
+          target_host: "localhost",
           target_port: 80,
           is_enabled: true,
         });
@@ -175,15 +179,8 @@ export default function TunnelDialog({
         await clientApi().put<Tunnel>(`/tunnels/${tunnel.id}`, values);
         toast.success("Tunnel updated successfully");
       } else {
-        const response = await clientApi().post<TunnelCreateResponse>("/tunnels", values);
+        await clientApi().post<TunnelCreateResponse>("/tunnels", values);
         toast.success("Tunnel created successfully");
-
-        if (response.token) {
-          toast.success("Token copied to clipboard", {
-            description: `Token: ${response.token.substring(0, 20)}...`,
-          });
-          navigator.clipboard.writeText(response.token);
-        }
       }
 
       onSuccess();
@@ -357,6 +354,23 @@ export default function TunnelDialog({
                 />
               </div>
             )}
+
+              <FormField
+                control={form.control}
+                name="target_host"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Target Host</FormLabel>
+                    <FormControl>
+                      <Input placeholder="localhost" {...field} />
+                    </FormControl>
+                    <FormDescription>
+                      IP or hostname in your local network (e.g., 192.168.1.5, my-nas.local)
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
               <FormField
                 control={form.control}

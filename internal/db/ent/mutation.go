@@ -3234,7 +3234,7 @@ type TunnelMutation struct {
 	created_at             *time.Time
 	updated_at             *time.Time
 	domain                 *string
-	token                  *string
+	target_host            *string
 	client_ip              *string
 	is_enabled             *bool
 	dns_propagation_status *tunnel.DNSPropagationStatus
@@ -3454,40 +3454,40 @@ func (m *TunnelMutation) ResetDomain() {
 	m.domain = nil
 }
 
-// SetToken sets the "token" field.
-func (m *TunnelMutation) SetToken(s string) {
-	m.token = &s
+// SetTargetHost sets the "target_host" field.
+func (m *TunnelMutation) SetTargetHost(s string) {
+	m.target_host = &s
 }
 
-// Token returns the value of the "token" field in the mutation.
-func (m *TunnelMutation) Token() (r string, exists bool) {
-	v := m.token
+// TargetHost returns the value of the "target_host" field in the mutation.
+func (m *TunnelMutation) TargetHost() (r string, exists bool) {
+	v := m.target_host
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldToken returns the old "token" field's value of the Tunnel entity.
+// OldTargetHost returns the old "target_host" field's value of the Tunnel entity.
 // If the Tunnel object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *TunnelMutation) OldToken(ctx context.Context) (v string, err error) {
+func (m *TunnelMutation) OldTargetHost(ctx context.Context) (v string, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldToken is only allowed on UpdateOne operations")
+		return v, errors.New("OldTargetHost is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldToken requires an ID field in the mutation")
+		return v, errors.New("OldTargetHost requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldToken: %w", err)
+		return v, fmt.Errorf("querying old value for OldTargetHost: %w", err)
 	}
-	return oldValue.Token, nil
+	return oldValue.TargetHost, nil
 }
 
-// ResetToken resets all changes to the "token" field.
-func (m *TunnelMutation) ResetToken() {
-	m.token = nil
+// ResetTargetHost resets all changes to the "target_host" field.
+func (m *TunnelMutation) ResetTargetHost() {
+	m.target_host = nil
 }
 
 // SetClientIP sets the "client_ip" field.
@@ -3787,8 +3787,8 @@ func (m *TunnelMutation) Fields() []string {
 	if m.domain != nil {
 		fields = append(fields, tunnel.FieldDomain)
 	}
-	if m.token != nil {
-		fields = append(fields, tunnel.FieldToken)
+	if m.target_host != nil {
+		fields = append(fields, tunnel.FieldTargetHost)
 	}
 	if m.client_ip != nil {
 		fields = append(fields, tunnel.FieldClientIP)
@@ -3819,8 +3819,8 @@ func (m *TunnelMutation) Field(name string) (ent.Value, bool) {
 		return m.UpdatedAt()
 	case tunnel.FieldDomain:
 		return m.Domain()
-	case tunnel.FieldToken:
-		return m.Token()
+	case tunnel.FieldTargetHost:
+		return m.TargetHost()
 	case tunnel.FieldClientIP:
 		return m.ClientIP()
 	case tunnel.FieldIsEnabled:
@@ -3846,8 +3846,8 @@ func (m *TunnelMutation) OldField(ctx context.Context, name string) (ent.Value, 
 		return m.OldUpdatedAt(ctx)
 	case tunnel.FieldDomain:
 		return m.OldDomain(ctx)
-	case tunnel.FieldToken:
-		return m.OldToken(ctx)
+	case tunnel.FieldTargetHost:
+		return m.OldTargetHost(ctx)
 	case tunnel.FieldClientIP:
 		return m.OldClientIP(ctx)
 	case tunnel.FieldIsEnabled:
@@ -3888,12 +3888,12 @@ func (m *TunnelMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetDomain(v)
 		return nil
-	case tunnel.FieldToken:
+	case tunnel.FieldTargetHost:
 		v, ok := value.(string)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetToken(v)
+		m.SetTargetHost(v)
 		return nil
 	case tunnel.FieldClientIP:
 		v, ok := value.(string)
@@ -4012,8 +4012,8 @@ func (m *TunnelMutation) ResetField(name string) error {
 	case tunnel.FieldDomain:
 		m.ResetDomain()
 		return nil
-	case tunnel.FieldToken:
-		m.ResetToken()
+	case tunnel.FieldTargetHost:
+		m.ResetTargetHost()
 		return nil
 	case tunnel.FieldClientIP:
 		m.ResetClientIP()

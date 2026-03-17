@@ -24,8 +24,8 @@ type Tunnel struct {
 	UpdatedAt time.Time `json:"updated_at,omitempty"`
 	// Domain holds the value of the "domain" field.
 	Domain string `json:"domain,omitempty"`
-	// Token holds the value of the "token" field.
-	Token string `json:"token,omitempty"`
+	// TargetHost holds the value of the "target_host" field.
+	TargetHost string `json:"target_host"`
 	// ClientIP holds the value of the "client_ip" field.
 	ClientIP string `json:"client_ip,omitempty"`
 	// IsEnabled holds the value of the "is_enabled" field.
@@ -71,7 +71,7 @@ func (*Tunnel) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case tunnel.FieldID, tunnel.FieldTargetPort, tunnel.FieldUserID:
 			values[i] = new(sql.NullInt64)
-		case tunnel.FieldDomain, tunnel.FieldToken, tunnel.FieldClientIP, tunnel.FieldDNSPropagationStatus:
+		case tunnel.FieldDomain, tunnel.FieldTargetHost, tunnel.FieldClientIP, tunnel.FieldDNSPropagationStatus:
 			values[i] = new(sql.NullString)
 		case tunnel.FieldCreatedAt, tunnel.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -114,11 +114,11 @@ func (t *Tunnel) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				t.Domain = value.String
 			}
-		case tunnel.FieldToken:
+		case tunnel.FieldTargetHost:
 			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field token", values[i])
+				return fmt.Errorf("unexpected type %T for field target_host", values[i])
 			} else if value.Valid {
-				t.Token = value.String
+				t.TargetHost = value.String
 			}
 		case tunnel.FieldClientIP:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -200,8 +200,8 @@ func (t *Tunnel) String() string {
 	builder.WriteString("domain=")
 	builder.WriteString(t.Domain)
 	builder.WriteString(", ")
-	builder.WriteString("token=")
-	builder.WriteString(t.Token)
+	builder.WriteString("target_host=")
+	builder.WriteString(t.TargetHost)
 	builder.WriteString(", ")
 	builder.WriteString("client_ip=")
 	builder.WriteString(t.ClientIP)

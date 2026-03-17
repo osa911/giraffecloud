@@ -145,10 +145,10 @@ func init() {
 	tunnelDescDomain := tunnelFields[0].Descriptor()
 	// tunnel.DomainValidator is a validator for the "domain" field. It is called by the builders before save.
 	tunnel.DomainValidator = tunnelDescDomain.Validators[0].(func(string) error)
-	// tunnelDescToken is the schema descriptor for token field.
-	tunnelDescToken := tunnelFields[1].Descriptor()
-	// tunnel.TokenValidator is a validator for the "token" field. It is called by the builders before save.
-	tunnel.TokenValidator = tunnelDescToken.Validators[0].(func(string) error)
+	// tunnelDescTargetHost is the schema descriptor for target_host field.
+	tunnelDescTargetHost := tunnelFields[1].Descriptor()
+	// tunnel.DefaultTargetHost holds the default value on creation for the target_host field.
+	tunnel.DefaultTargetHost = tunnelDescTargetHost.Default.(string)
 	// tunnelDescIsEnabled is the schema descriptor for is_enabled field.
 	tunnelDescIsEnabled := tunnelFields[3].Descriptor()
 	// tunnel.DefaultIsEnabled holds the default value on creation for the is_enabled field.

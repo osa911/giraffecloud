@@ -199,7 +199,7 @@ func (t *Tunnel) setState(state ConnectionState) {
 }
 
 // Connect establishes tunnel connections with retry logic
-func (t *Tunnel) Connect(ctx context.Context, serverAddr, token, domain string, localPort int, tlsConfig *tls.Config) error {
+func (t *Tunnel) Connect(ctx context.Context, serverAddr, token string, tlsConfig *tls.Config) error {
 	// Check singleton lock before connecting
 	if t.singletonManager != nil {
 		// Clean up any stale locks first
@@ -222,8 +222,6 @@ func (t *Tunnel) Connect(ctx context.Context, serverAddr, token, domain string, 
 	t.ctx, t.cancel = context.WithCancel(ctx)
 
 	t.token = token
-	t.domain = domain
-	t.localPort = localPort
 
 	// Start the connections with retry logic
 	return t.connectWithRetry(serverAddr, tlsConfig)
@@ -366,7 +364,7 @@ func (t *Tunnel) attemptDualConnections(serverAddr string, tlsConfig *tls.Config
 	// Reuse existing client if available, otherwise create
 	if t.grpcClient == nil {
 		grpcConfig := DefaultGRPCClientConfig()
-		t.grpcClient = NewGRPCTunnelClient(grpcServerAddr, t.domain, t.token, int32(t.localPort), grpcConfig)
+		t.grpcClient = NewGRPCTunnelClient(grpcServerAddr, t.token, grpcConfig)
 
 		// Set up tunnel establishment handler for demand-based tunnel creation
 		t.grpcClient.SetTunnelEstablishHandler(t.handleTunnelEstablishRequest)
@@ -446,22 +444,12 @@ func (t *Tunnel) establishConnection(serverAddr string, tlsConfig *tls.Config, c
 	}
 	conn.SetDeadline(time.Time{}) // Clear deadline
 
-	// Update local values with server response (only on first successful connection)
+	// Update domain from server response for backward compatibility (TCP path)
 	if t.domain == "" {
 		t.domain = resp.Domain
 	}
 	if t.localPort <= 0 {
 		t.localPort = resp.TargetPort
-	}
-
-	// Check if the local port is actually listening (only once)
-	if connType == "http" {
-		localConn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", t.localPort), 5*time.Second)
-		if err != nil {
-			conn.Close()
-			return nil, fmt.Errorf("no service found listening on port %d - make sure your service is running first", t.localPort)
-		}
-		localConn.Close()
 	}
 
 	t.logger.Info("%s tunnel connection established successfully", strings.Title(connType))
@@ -634,10 +622,12 @@ func (t *Tunnel) handleWebSocketConnection(conn net.Conn) {
 
 // handleWebSocketUpgradeOnDedicatedConnection handles WebSocket upgrade on the dedicated WebSocket tunnel
 func (t *Tunnel) handleWebSocketUpgradeOnDedicatedConnection(request *http.Request, tunnelConn net.Conn) {
-	t.logger.Info("[WEBSOCKET DEBUG] Handling WebSocket upgrade to local service on port %d", t.localPort)
+	// Resolve target from route table using Host header
+	targetAddr := t.resolveTargetAddr(request.Host)
+	t.logger.Info("[WEBSOCKET DEBUG] Handling WebSocket upgrade to local service at %s", targetAddr)
 
 	// Connect to local service for WebSocket upgrade
-	localConn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", t.localPort), 5*time.Second)
+	localConn, err := net.DialTimeout("tcp", targetAddr, 5*time.Second)
 	if err != nil {
 		t.logger.Error("[WEBSOCKET DEBUG] Failed to connect to local service: %v", err)
 		// Send error response back through tunnel
@@ -716,8 +706,11 @@ func (t *Tunnel) handleHTTPRequest(request *http.Request, tunnelConn net.Conn) {
 	// Check if this is a media request that needs optimized handling
 	isMediaRequest := t.isMediaRequest(request)
 
+	// Resolve target from route table using Host header
+	targetAddr := t.resolveTargetAddr(request.Host)
+
 	// Connect to local service for this request
-	localConn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", t.localPort), 5*time.Second)
+	localConn, err := net.DialTimeout("tcp", targetAddr, 5*time.Second)
 	if err != nil {
 		t.logger.Error("Failed to connect to local service: %v", err)
 		// Send error response back through tunnel
@@ -740,6 +733,34 @@ func (t *Tunnel) handleHTTPRequest(request *http.Request, tunnelConn net.Conn) {
 		t.logger.Info("Request forwarded to local service, reading response")
 		t.handleRegularResponse(request, localConn, tunnelConn)
 	}
+}
+
+// resolveTargetAddr resolves the local target address for a given host using the route table.
+// Falls back to localhost:localPort for backward compatibility with TCP tunnel path.
+func (t *Tunnel) resolveTargetAddr(host string) string {
+	// Strip port from host if present (e.g., "example.com:443" -> "example.com")
+	// Uses net.SplitHostPort for correct handling of IPv6 addresses like [::1]:8080
+	domain := host
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		domain = h
+	}
+
+	// Try route table from gRPC client first
+	if t.grpcClient != nil {
+		route := t.grpcClient.GetRouteTable().Resolve(domain)
+		if route != nil {
+			return route.Target()
+		}
+	}
+
+	// Fallback to legacy localPort for backward compatibility
+	if t.localPort > 0 {
+		return fmt.Sprintf("localhost:%d", t.localPort)
+	}
+
+	// Last resort default — log a warning so operators know the domain was unresolvable
+	t.logger.Warn("No route found for domain %q and no localPort configured; falling back to localhost:8080", domain)
+	return "localhost:8080"
 }
 
 // isMediaRequest checks if this is a media/video request
@@ -1382,7 +1403,7 @@ func (t *Tunnel) RestoreState(stateInterface interface{}) error {
 	serverAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 
 	t.logger.Info("Reconnecting tunnel with preserved state...")
-	err = t.Connect(t.ctx, serverAddr, t.token, t.domain, t.localPort, tlsConfig)
+	err = t.Connect(t.ctx, serverAddr, t.token, tlsConfig)
 	if err != nil {
 		return fmt.Errorf("failed to restore tunnel connection: %w", err)
 	}

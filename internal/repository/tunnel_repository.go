@@ -13,7 +13,6 @@ type TunnelRepository interface {
 	Create(ctx context.Context, tunnel *ent.Tunnel) (*ent.Tunnel, error)
 	GetByID(ctx context.Context, id uint32) (*ent.Tunnel, error)
 	GetByUserID(ctx context.Context, userID uint32) ([]*ent.Tunnel, error)
-	GetByToken(ctx context.Context, token string) (*ent.Tunnel, error)
 	GetByDomain(ctx context.Context, domain string) (*ent.Tunnel, error)
 	Update(ctx context.Context, id uint32, updates interface{}) (*ent.Tunnel, error)
 	Delete(ctx context.Context, id uint32) error
@@ -34,7 +33,7 @@ func NewTunnelRepository(client *ent.Client) TunnelRepository {
 func (r *tunnelRepository) Create(ctx context.Context, t *ent.Tunnel) (*ent.Tunnel, error) {
 	return r.client.Tunnel.Create().
 		SetDomain(t.Domain).
-		SetToken(t.Token).
+		SetTargetHost(t.TargetHost).
 		SetTargetPort(t.TargetPort).
 		SetIsEnabled(t.IsEnabled).
 		SetUserID(t.UserID).
@@ -63,20 +62,6 @@ func (r *tunnelRepository) GetByUserID(ctx context.Context, userID uint32) ([]*e
 		All(ctx)
 }
 
-// GetByToken retrieves a tunnel configuration by its token
-func (r *tunnelRepository) GetByToken(ctx context.Context, token string) (*ent.Tunnel, error) {
-	t, err := r.client.Tunnel.Query().
-		Where(tunnel.TokenEQ(token)).
-		Only(ctx)
-	if err != nil {
-		if ent.IsNotFound(err) {
-			return nil, fmt.Errorf("%w: tunnel not found", ErrNotFound)
-		}
-		return nil, err
-	}
-	return t, nil
-}
-
 // GetByDomain retrieves a tunnel by its domain
 func (r *tunnelRepository) GetByDomain(ctx context.Context, domain string) (*ent.Tunnel, error) {
 	t, err := r.client.Tunnel.Query().
@@ -94,6 +79,7 @@ func (r *tunnelRepository) GetByDomain(ctx context.Context, domain string) (*ent
 // TunnelUpdate represents the fields that can be updated
 // Domain is intentionally excluded - domains cannot be changed after creation
 type TunnelUpdate struct {
+	TargetHost           *string
 	IsEnabled            *bool
 	TargetPort           *int
 	DnsPropagationStatus *tunnel.DNSPropagationStatus
@@ -107,6 +93,9 @@ func (r *tunnelRepository) Update(ctx context.Context, id uint32, updates interf
 	}
 
 	update := r.client.Tunnel.UpdateOneID(int(id))
+	if u.TargetHost != nil {
+		update.SetTargetHost(*u.TargetHost)
+	}
 	if u.IsEnabled != nil {
 		update.SetIsEnabled(*u.IsEnabled)
 	}

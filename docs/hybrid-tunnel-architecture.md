@@ -184,6 +184,19 @@ make test-tunnel
 curl -H "Host: example.com" http://localhost:8081/
 ```
 
+## Multi-Target LAN Routing
+
+One CLI instance connects once and serves all tunnels configured for the account. Each tunnel maps a domain to a `target_host:port` inside the local network, allowing a single agent to route traffic to multiple machines.
+
+**How it works:**
+
+1. On connect, the server sends a `ConfigUpdate` message containing all tunnel configs for the authenticated user.
+2. The CLI builds a local route table: `domain → target_host:target_port`.
+3. When an inbound request arrives, the CLI looks up the domain in the route table and proxies the request to the correct LAN machine.
+4. If tunnels are added, removed, or updated in the web dashboard, the server pushes a new `ConfigUpdate` in real-time and the CLI reloads its route table without reconnecting.
+
+This means you can expose `nas.home:8080` via `nas.example.com`, `camera.home:80` via `cam.example.com`, and more — all with a single `giraffecloud connect`.
+
 ## Migration Guide
 
 ### From Old TCP-Only Architecture

@@ -111,7 +111,7 @@ var (
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "domain", Type: field.TypeString, Unique: true},
-		{Name: "token", Type: field.TypeString, Unique: true},
+		{Name: "target_host", Type: field.TypeString, Default: "localhost"},
 		{Name: "client_ip", Type: field.TypeString, Nullable: true},
 		{Name: "is_enabled", Type: field.TypeBool, Default: true},
 		{Name: "dns_propagation_status", Type: field.TypeEnum, Enums: []string{"verified", "pending_dns"}, Default: "verified"},
@@ -129,6 +129,13 @@ var (
 				Columns:    []*schema.Column{TunnelsColumns[9]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "tunnel_user_id_target_host_target_port",
+				Unique:  true,
+				Columns: []*schema.Column{TunnelsColumns[9], TunnelsColumns[4], TunnelsColumns[8]},
 			},
 		},
 	}

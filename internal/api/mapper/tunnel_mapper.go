@@ -5,7 +5,7 @@ import (
 	"github.com/osa911/giraffecloud/internal/db/ent"
 )
 
-// TunnelToCreateResponse converts an ent.Tunnel to a CreateResponse DTO (includes token)
+// TunnelToCreateResponse converts an ent.Tunnel to a CreateResponse DTO
 func TunnelToCreateResponse(t *ent.Tunnel) *tunnel.CreateResponse {
 	if t == nil {
 		return nil
@@ -14,7 +14,7 @@ func TunnelToCreateResponse(t *ent.Tunnel) *tunnel.CreateResponse {
 	return &tunnel.CreateResponse{
 		ID:         t.ID,
 		Domain:     t.Domain,
-		Token:      t.Token, // Include token only for create response
+		TargetHost: t.TargetHost,
 		TargetPort: t.TargetPort,
 		IsEnabled:  t.IsEnabled,
 		CreatedAt:  t.CreatedAt,
@@ -31,6 +31,7 @@ func TunnelToResponse(t *ent.Tunnel) *tunnel.Response {
 	return &tunnel.Response{
 		ID:         t.ID,
 		Domain:     t.Domain,
+		TargetHost: t.TargetHost,
 		TargetPort: t.TargetPort,
 		IsEnabled:  t.IsEnabled,
 		ClientIP:   t.ClientIP, // Show if tunnel client is connected

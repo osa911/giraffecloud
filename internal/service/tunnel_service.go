@@ -2,10 +2,9 @@ package service
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/osa911/giraffecloud/internal/config"
 	"github.com/osa911/giraffecloud/internal/db/ent"
@@ -23,6 +22,7 @@ type tunnelService struct {
 	repo         repository.TunnelRepository
 	caddyService CaddyService
 	config       *config.Config
+	configPusher interfaces.TunnelConfigPusher
 }
 
 // NewTunnelService creates a new tunnel service instance
@@ -34,13 +34,9 @@ func NewTunnelService(repo repository.TunnelRepository, caddyService CaddyServic
 	}
 }
 
-// generateToken generates a random token for tunnel authentication
-func generateToken() (string, error) {
-	bytes := make([]byte, 32)
-	if _, err := rand.Read(bytes); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(bytes), nil
+// SetConfigPusher wires a config pusher for live config updates to connected CLIs
+func (s *tunnelService) SetConfigPusher(pusher interfaces.TunnelConfigPusher) {
+	s.configPusher = pusher
 }
 
 // GetFreeSubdomain returns the auto-generated subdomain for a user
@@ -96,8 +92,17 @@ func (s *tunnelService) isReservedDomain(domain string) bool {
 }
 
 // CreateTunnel creates a new tunnel
-func (s *tunnelService) CreateTunnel(ctx context.Context, userID uint32, domain string, targetPort int) (*ent.Tunnel, error) {
+func (s *tunnelService) CreateTunnel(ctx context.Context, userID uint32, domain string, targetHost string, targetPort int) (*ent.Tunnel, error) {
 	logger := logging.GetGlobalLogger()
+
+	if targetHost == "" {
+		targetHost = "localhost"
+	}
+
+	// Validate target_host format
+	if strings.Contains(targetHost, "://") || strings.Contains(targetHost, "/") {
+		return nil, fmt.Errorf("%w: target_host must be a hostname or IP address without protocol or path", ErrValidation)
+	}
 
 	// Validate domain is not a reserved system domain
 	if s.isReservedDomain(domain) {
@@ -111,11 +116,11 @@ func (s *tunnelService) CreateTunnel(ctx context.Context, userID uint32, domain 
 		return nil, fmt.Errorf("failed to check existing tunnels: %w", err)
 	}
 
-	// Validate target port is not already in use by this user
-	for _, tunnel := range tunnels {
-		if tunnel.TargetPort == targetPort {
-			logger.Warn("User %d attempted to create tunnel with duplicate port %d", userID, targetPort)
-			return nil, fmt.Errorf("%w: you already have a tunnel using port %d", ErrConflict, targetPort)
+	// Validate target host+port is not already in use by this user
+	for _, t := range tunnels {
+		if t.TargetHost == targetHost && t.TargetPort == targetPort {
+			logger.Warn("User %d attempted to create tunnel with duplicate target %s:%d", userID, targetHost, targetPort)
+			return nil, fmt.Errorf("%w: you already have a tunnel targeting %s:%d", ErrConflict, targetHost, targetPort)
 		}
 	}
 
@@ -166,14 +171,9 @@ func (s *tunnelService) CreateTunnel(ctx context.Context, userID uint32, domain 
 		logger.Info("Creating custom domain tunnel for user %d: %s (Enabled: %v, Status: %s)", userID, domain, isEnabled, dnsPropagationStatus)
 	}
 
-	token, err := generateToken()
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate token: %w", err)
-	}
-
 	tunnel := &ent.Tunnel{
 		Domain:               domain,
-		Token:                token,
+		TargetHost:           targetHost,
 		TargetPort:           targetPort,
 		IsEnabled:            isEnabled,
 		DNSPropagationStatus: dnsPropagationStatus,
@@ -187,6 +187,18 @@ func (s *tunnelService) CreateTunnel(ctx context.Context, userID uint32, domain 
 	}
 
 	logger.Info("Successfully created tunnel ID %d with domain: %s", tunnel.ID, tunnel.Domain)
+
+	// Push config update to connected CLI
+	if s.configPusher != nil {
+		allTunnels, err := s.repo.GetByUserID(ctx, userID)
+		if err != nil {
+			logger.Warn("Failed to fetch tunnels for config push: %v", err)
+		} else {
+			s.configPusher.PushConfigUpdate(userID, allTunnels, 1) // TUNNEL_CREATED
+			s.configPusher.AddDomainToStream(userID, domain, uint32(tunnel.ID))
+		}
+	}
+
 	return tunnel, nil
 }
 
@@ -219,7 +231,23 @@ func (s *tunnelService) DeleteTunnel(ctx context.Context, userID uint32, tunnelI
 		}
 	}
 
-	return s.repo.Delete(ctx, tunnelID)
+	if err := s.repo.Delete(ctx, tunnelID); err != nil {
+		return err
+	}
+
+	// Push config update to connected CLI
+	if s.configPusher != nil {
+		logger := logging.GetGlobalLogger()
+		allTunnels, err := s.repo.GetByUserID(ctx, tunnel.UserID)
+		if err != nil {
+			logger.Warn("Failed to fetch tunnels for config push: %v", err)
+		} else {
+			s.configPusher.PushConfigUpdate(tunnel.UserID, allTunnels, 3) // TUNNEL_DELETED
+			s.configPusher.RemoveDomainFromStream(tunnel.UserID, tunnel.Domain)
+		}
+	}
+
+	return nil
 }
 
 // UpdateTunnel updates a tunnel's configuration
@@ -237,21 +265,25 @@ func (s *tunnelService) UpdateTunnel(ctx context.Context, userID uint32, tunnelI
 		return nil, fmt.Errorf("failed to get tunnel: %w", err)
 	}
 
-	// Validate port uniqueness if port is being updated
+	// Validate host+port uniqueness if host or port is being updated
 	if u, ok := updates.(*repository.TunnelUpdate); ok {
-		if u.TargetPort != nil {
-			newPort := *u.TargetPort
-			// Only validate if port is actually changing
-			if newPort != currentTunnel.TargetPort {
-				// Check if another tunnel for this user already uses this port
+		if u.TargetPort != nil || u.TargetHost != nil {
+			newPort := currentTunnel.TargetPort
+			newHost := currentTunnel.TargetHost
+			if u.TargetPort != nil {
+				newPort = *u.TargetPort
+			}
+			if u.TargetHost != nil {
+				newHost = *u.TargetHost
+			}
+			if newPort != currentTunnel.TargetPort || newHost != currentTunnel.TargetHost {
 				tunnels, err := s.repo.GetByUserID(ctx, userID)
 				if err != nil {
 					return nil, fmt.Errorf("failed to check existing tunnels: %w", err)
 				}
-				for _, tunnel := range tunnels {
-					if tunnel.ID != int(tunnelID) && tunnel.TargetPort == newPort {
-						logger.Warn("User %d attempted to update tunnel %d to duplicate port %d", userID, tunnelID, newPort)
-						return nil, fmt.Errorf("%w: you already have a tunnel using port %d", ErrConflict, newPort)
+				for _, t := range tunnels {
+					if t.ID != int(tunnelID) && t.TargetHost == newHost && t.TargetPort == newPort {
+						return nil, fmt.Errorf("%w: you already have a tunnel targeting %s:%d", ErrConflict, newHost, newPort)
 					}
 				}
 			}
@@ -318,12 +350,17 @@ func (s *tunnelService) UpdateTunnel(ctx context.Context, userID uint32, tunnelI
 		}
 	}
 
-	return tunnel, nil
-}
+	// Push config update to connected CLI
+	if s.configPusher != nil {
+		allTunnels, err := s.repo.GetByUserID(ctx, userID)
+		if err != nil {
+			logger.Warn("Failed to fetch tunnels for config push: %v", err)
+		} else {
+			s.configPusher.PushConfigUpdate(userID, allTunnels, 2) // TUNNEL_UPDATED
+		}
+	}
 
-// GetByToken gets a tunnel by its token
-func (s *tunnelService) GetByToken(ctx context.Context, token string) (*ent.Tunnel, error) {
-	return s.repo.GetByToken(ctx, token)
+	return tunnel, nil
 }
 
 // GetByDomain retrieves a tunnel by its domain
