@@ -8,7 +8,7 @@ import (
 
 // TunnelService defines the interface for tunnel operations
 type TunnelService interface {
-	CreateTunnel(ctx context.Context, userID uint32, domain string, targetPort int) (*ent.Tunnel, error)
+	CreateTunnel(ctx context.Context, userID uint32, domain string, targetHost string, targetPort int) (*ent.Tunnel, error)
 	ListTunnels(ctx context.Context, userID uint32) ([]*ent.Tunnel, error)
 	GetTunnel(ctx context.Context, userID uint32, tunnelID uint32) (*ent.Tunnel, error)
 	DeleteTunnel(ctx context.Context, userID uint32, tunnelID uint32) error

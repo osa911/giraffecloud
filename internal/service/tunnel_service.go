@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/osa911/giraffecloud/internal/config"
 	"github.com/osa911/giraffecloud/internal/db/ent"
@@ -96,8 +97,17 @@ func (s *tunnelService) isReservedDomain(domain string) bool {
 }
 
 // CreateTunnel creates a new tunnel
-func (s *tunnelService) CreateTunnel(ctx context.Context, userID uint32, domain string, targetPort int) (*ent.Tunnel, error) {
+func (s *tunnelService) CreateTunnel(ctx context.Context, userID uint32, domain string, targetHost string, targetPort int) (*ent.Tunnel, error) {
 	logger := logging.GetGlobalLogger()
+
+	if targetHost == "" {
+		targetHost = "localhost"
+	}
+
+	// Validate target_host format
+	if strings.Contains(targetHost, "://") || strings.Contains(targetHost, "/") {
+		return nil, fmt.Errorf("%w: target_host must be a hostname or IP address without protocol or path", ErrValidation)
+	}
 
 	// Validate domain is not a reserved system domain
 	if s.isReservedDomain(domain) {
@@ -111,11 +121,11 @@ func (s *tunnelService) CreateTunnel(ctx context.Context, userID uint32, domain 
 		return nil, fmt.Errorf("failed to check existing tunnels: %w", err)
 	}
 
-	// Validate target port is not already in use by this user
-	for _, tunnel := range tunnels {
-		if tunnel.TargetPort == targetPort {
-			logger.Warn("User %d attempted to create tunnel with duplicate port %d", userID, targetPort)
-			return nil, fmt.Errorf("%w: you already have a tunnel using port %d", ErrConflict, targetPort)
+	// Validate target host+port is not already in use by this user
+	for _, t := range tunnels {
+		if t.TargetHost == targetHost && t.TargetPort == targetPort {
+			logger.Warn("User %d attempted to create tunnel with duplicate target %s:%d", userID, targetHost, targetPort)
+			return nil, fmt.Errorf("%w: you already have a tunnel targeting %s:%d", ErrConflict, targetHost, targetPort)
 		}
 	}
 
@@ -173,6 +183,7 @@ func (s *tunnelService) CreateTunnel(ctx context.Context, userID uint32, domain 
 
 	tunnel := &ent.Tunnel{
 		Domain:               domain,
+		TargetHost:           targetHost,
 		Token:                token,
 		TargetPort:           targetPort,
 		IsEnabled:            isEnabled,
@@ -237,21 +248,25 @@ func (s *tunnelService) UpdateTunnel(ctx context.Context, userID uint32, tunnelI
 		return nil, fmt.Errorf("failed to get tunnel: %w", err)
 	}
 
-	// Validate port uniqueness if port is being updated
+	// Validate host+port uniqueness if host or port is being updated
 	if u, ok := updates.(*repository.TunnelUpdate); ok {
-		if u.TargetPort != nil {
-			newPort := *u.TargetPort
-			// Only validate if port is actually changing
-			if newPort != currentTunnel.TargetPort {
-				// Check if another tunnel for this user already uses this port
+		if u.TargetPort != nil || u.TargetHost != nil {
+			newPort := currentTunnel.TargetPort
+			newHost := currentTunnel.TargetHost
+			if u.TargetPort != nil {
+				newPort = *u.TargetPort
+			}
+			if u.TargetHost != nil {
+				newHost = *u.TargetHost
+			}
+			if newPort != currentTunnel.TargetPort || newHost != currentTunnel.TargetHost {
 				tunnels, err := s.repo.GetByUserID(ctx, userID)
 				if err != nil {
 					return nil, fmt.Errorf("failed to check existing tunnels: %w", err)
 				}
-				for _, tunnel := range tunnels {
-					if tunnel.ID != int(tunnelID) && tunnel.TargetPort == newPort {
-						logger.Warn("User %d attempted to update tunnel %d to duplicate port %d", userID, tunnelID, newPort)
-						return nil, fmt.Errorf("%w: you already have a tunnel using port %d", ErrConflict, newPort)
+				for _, t := range tunnels {
+					if t.ID != int(tunnelID) && t.TargetHost == newHost && t.TargetPort == newPort {
+						return nil, fmt.Errorf("%w: you already have a tunnel targeting %s:%d", ErrConflict, newHost, newPort)
 					}
 				}
 			}
