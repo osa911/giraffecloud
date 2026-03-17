@@ -190,9 +190,13 @@ func (s *tunnelService) CreateTunnel(ctx context.Context, userID uint32, domain 
 
 	// Push config update to connected CLI
 	if s.configPusher != nil {
-		allTunnels, _ := s.repo.GetByUserID(ctx, userID)
-		s.configPusher.PushConfigUpdate(userID, allTunnels, 1) // TUNNEL_CREATED
-		s.configPusher.AddDomainToStream(userID, domain)
+		allTunnels, err := s.repo.GetByUserID(ctx, userID)
+		if err != nil {
+			logger.Warn("Failed to fetch tunnels for config push: %v", err)
+		} else {
+			s.configPusher.PushConfigUpdate(userID, allTunnels, 1) // TUNNEL_CREATED
+			s.configPusher.AddDomainToStream(userID, domain, uint32(tunnel.ID))
+		}
 	}
 
 	return tunnel, nil
@@ -233,9 +237,14 @@ func (s *tunnelService) DeleteTunnel(ctx context.Context, userID uint32, tunnelI
 
 	// Push config update to connected CLI
 	if s.configPusher != nil {
-		allTunnels, _ := s.repo.GetByUserID(ctx, tunnel.UserID)
-		s.configPusher.PushConfigUpdate(tunnel.UserID, allTunnels, 3) // TUNNEL_DELETED
-		s.configPusher.RemoveDomainFromStream(tunnel.UserID, tunnel.Domain)
+		logger := logging.GetGlobalLogger()
+		allTunnels, err := s.repo.GetByUserID(ctx, tunnel.UserID)
+		if err != nil {
+			logger.Warn("Failed to fetch tunnels for config push: %v", err)
+		} else {
+			s.configPusher.PushConfigUpdate(tunnel.UserID, allTunnels, 3) // TUNNEL_DELETED
+			s.configPusher.RemoveDomainFromStream(tunnel.UserID, tunnel.Domain)
+		}
 	}
 
 	return nil
@@ -343,8 +352,12 @@ func (s *tunnelService) UpdateTunnel(ctx context.Context, userID uint32, tunnelI
 
 	// Push config update to connected CLI
 	if s.configPusher != nil {
-		allTunnels, _ := s.repo.GetByUserID(ctx, userID)
-		s.configPusher.PushConfigUpdate(userID, allTunnels, 2) // TUNNEL_UPDATED
+		allTunnels, err := s.repo.GetByUserID(ctx, userID)
+		if err != nil {
+			logger.Warn("Failed to fetch tunnels for config push: %v", err)
+		} else {
+			s.configPusher.PushConfigUpdate(userID, allTunnels, 2) // TUNNEL_UPDATED
+		}
 	}
 
 	return tunnel, nil

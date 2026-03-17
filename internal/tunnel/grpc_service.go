@@ -88,14 +88,19 @@ func (s *GRPCTunnelServer) SetTCPEstablishmentResponseCallback(callback func(dom
 	s.onTCPEstablishmentResponse = callback
 }
 
+// DomainMapping associates a domain with its tunnel ID
+type DomainMapping struct {
+	Domain   string
+	TunnelID uint32
+}
+
 // TunnelStream represents an active tunnel connection
 type TunnelStream struct {
-	Domain     string
-	TargetPort int32
-	TunnelID   uint32
-	Domains    []string // All domains served by this stream
-	TunnelIDs  []uint32 // All tunnel IDs served by this stream
-	Stream     proto.TunnelService_EstablishTunnelServer
+	Domain         string
+	TargetPort     int32
+	TunnelID       uint32
+	DomainMappings []DomainMapping // All domain->tunnelID mappings served by this stream
+	Stream         proto.TunnelService_EstablishTunnelServer
 	Context    context.Context
 	UserID     uint32
 
@@ -326,12 +331,12 @@ func (s *GRPCTunnelServer) EstablishTunnel(stream proto.TunnelService_EstablishT
 
 	s.logger.Info("Authenticated user %d with %d enabled tunnels", userID, len(tunnels))
 
-	// Build domains and tunnelIDs lists from tunnels
+	// Build domain mappings from tunnels
+	domainMappings := make([]DomainMapping, 0, len(tunnels))
 	domains := make([]string, 0, len(tunnels))
-	tunnelIDs := make([]uint32, 0, len(tunnels))
 	for _, t := range tunnels {
+		domainMappings = append(domainMappings, DomainMapping{Domain: t.Domain, TunnelID: uint32(t.ID)})
 		domains = append(domains, t.Domain)
-		tunnelIDs = append(tunnelIDs, uint32(t.ID))
 	}
 
 	// CRITICAL: Update client IP and trigger Caddy configuration for ALL tunnels
@@ -360,12 +365,11 @@ func (s *GRPCTunnelServer) EstablishTunnel(stream proto.TunnelService_EstablishT
 
 	// Create tunnel stream with multi-domain support
 	tunnelStream := &TunnelStream{
-		Domain:          primaryDomain,
-		TargetPort:      0, // No single port in multi-tunnel mode
-		TunnelID:        primaryTunnelID,
-		Domains:         domains,
-		TunnelIDs:       tunnelIDs,
-		Stream:          stream,
+		Domain:         primaryDomain,
+		TargetPort:     0, // No single port in multi-tunnel mode
+		TunnelID:       primaryTunnelID,
+		DomainMappings: domainMappings,
+		Stream:         stream,
 		Context:         ctx,
 		UserID:          userID,
 		pendingRequests: make(map[string]chan *proto.TunnelMessage),
@@ -383,8 +387,8 @@ func (s *GRPCTunnelServer) EstablishTunnel(stream proto.TunnelService_EstablishT
 
 	defer func() {
 		s.tunnelStreamsMux.Lock()
-		for _, d := range tunnelStream.Domains {
-			delete(s.tunnelStreams, d)
+		for _, dm := range tunnelStream.DomainMappings {
+			delete(s.tunnelStreams, dm.Domain)
 		}
 		delete(s.userStreams, userID)
 		s.tunnelStreamsMux.Unlock()
@@ -396,23 +400,23 @@ func (s *GRPCTunnelServer) EstablishTunnel(stream proto.TunnelService_EstablishT
 		// NOTE: Use background context for cleanup since the tunnel context is already cancelled
 		if s.tunnelService != nil {
 			cleanupCtx := context.Background()
-			for i, d := range tunnelStream.Domains {
-				s.logger.Info("Removing Caddy route for disconnected tunnel: %s", d)
-				var tid uint32
-				if i < len(tunnelStream.TunnelIDs) {
-					tid = tunnelStream.TunnelIDs[i]
-				}
-				if tid != 0 {
-					if err := s.tunnelService.UpdateClientIP(cleanupCtx, tid, ""); err != nil {
-						s.logger.Error("Failed to remove Caddy route for domain %s: %v", d, err)
+			for _, dm := range tunnelStream.DomainMappings {
+				s.logger.Info("Removing Caddy route for disconnected tunnel: %s", dm.Domain)
+				if dm.TunnelID != 0 {
+					if err := s.tunnelService.UpdateClientIP(cleanupCtx, dm.TunnelID, ""); err != nil {
+						s.logger.Error("Failed to remove Caddy route for domain %s: %v", dm.Domain, err)
 					} else {
-						s.logger.Info("Successfully removed Caddy route for domain: %s", d)
+						s.logger.Info("Successfully removed Caddy route for domain: %s", dm.Domain)
 					}
 				}
 			}
 		}
 
-		s.logger.Info("Tunnel disconnected for user %d, domains: %v (all state cleaned up)", userID, tunnelStream.Domains)
+		domainNames := make([]string, len(tunnelStream.DomainMappings))
+		for i, dm := range tunnelStream.DomainMappings {
+			domainNames[i] = dm.Domain
+		}
+		s.logger.Info("Tunnel disconnected for user %d, domains: %v (all state cleaned up)", userID, domainNames)
 	}()
 
 	// Build TunnelRouteConfig list for the handshake response
@@ -820,12 +824,12 @@ func (s *GRPCTunnelServer) PushConfigUpdate(userID uint32, tunnels []*ent.Tunnel
 }
 
 // AddDomainToStream adds a new domain to the active stream for a user
-func (s *GRPCTunnelServer) AddDomainToStream(userID uint32, domain string) {
+func (s *GRPCTunnelServer) AddDomainToStream(userID uint32, domain string, tunnelID uint32) {
 	s.tunnelStreamsMux.Lock()
 	defer s.tunnelStreamsMux.Unlock()
 	if stream, exists := s.userStreams[userID]; exists {
 		s.tunnelStreams[domain] = stream
-		stream.Domains = append(stream.Domains, domain)
+		stream.DomainMappings = append(stream.DomainMappings, DomainMapping{Domain: domain, TunnelID: tunnelID})
 	}
 }
 
@@ -835,9 +839,9 @@ func (s *GRPCTunnelServer) RemoveDomainFromStream(userID uint32, domain string) 
 	defer s.tunnelStreamsMux.Unlock()
 	delete(s.tunnelStreams, domain)
 	if stream, exists := s.userStreams[userID]; exists {
-		for i, d := range stream.Domains {
-			if d == domain {
-				stream.Domains = append(stream.Domains[:i], stream.Domains[i+1:]...)
+		for i, dm := range stream.DomainMappings {
+			if dm.Domain == domain {
+				stream.DomainMappings = append(stream.DomainMappings[:i], stream.DomainMappings[i+1:]...)
 				break
 			}
 		}

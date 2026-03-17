@@ -739,9 +739,10 @@ func (t *Tunnel) handleHTTPRequest(request *http.Request, tunnelConn net.Conn) {
 // Falls back to localhost:localPort for backward compatibility with TCP tunnel path.
 func (t *Tunnel) resolveTargetAddr(host string) string {
 	// Strip port from host if present (e.g., "example.com:443" -> "example.com")
+	// Uses net.SplitHostPort for correct handling of IPv6 addresses like [::1]:8080
 	domain := host
-	if idx := strings.LastIndex(host, ":"); idx != -1 {
-		domain = host[:idx]
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		domain = h
 	}
 
 	// Try route table from gRPC client first
@@ -757,7 +758,8 @@ func (t *Tunnel) resolveTargetAddr(host string) string {
 		return fmt.Sprintf("localhost:%d", t.localPort)
 	}
 
-	// Last resort default
+	// Last resort default — log a warning so operators know the domain was unresolvable
+	t.logger.Warn("No route found for domain %q and no localPort configured; falling back to localhost:8080", domain)
 	return "localhost:8080"
 }
 
