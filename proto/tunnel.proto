@@ -49,6 +49,7 @@ message ControlMessage {
         HealthCheckResponse health_response = 4;
         ControlPing ping = 5;
         ControlPong pong = 6;
+        ConfigUpdate config_update = 7;
     }
 
     string request_id = 10;
@@ -57,14 +58,21 @@ message ControlMessage {
 
 // ControlHandshake establishes the control channel
 message ControlHandshake {
+    // domain is deprecated in the multi-tunnel model; use token for identity
     string domain = 1;
     string client_version = 2;
+    string token = 3;
 }
 
 // TunnelHandshake initiates the tunnel connection
+// NOTE: In the multi-tunnel model, the server derives all routing config from
+// the token. The domain and target_port fields are deprecated and ignored by
+// the server; they are preserved here only for wire compatibility.
 message TunnelHandshake {
     string token = 1;
+    // deprecated: ignored by server in multi-tunnel model; routing is derived from token
     string domain = 2;
+    // deprecated: ignored by server in multi-tunnel model; routing is derived from token
     int32 target_port = 3;
     string client_version = 4;
     TunnelCapabilities capabilities = 5;
@@ -210,6 +218,28 @@ message ErrorMessage {
     bool retryable = 5;      // Whether the error is retryable
 }
 
+// TunnelRouteConfig represents a single tunnel's routing configuration
+message TunnelRouteConfig {
+    string domain = 1;
+    string target_host = 2;
+    int32 target_port = 3;
+    bool is_enabled = 4;
+}
+
+// ConfigUpdateReason describes why a config update was sent
+enum ConfigUpdateReason {
+    CONFIG_UPDATE_REASON_UNSPECIFIED = 0;
+    CONFIG_UPDATE_REASON_TUNNEL_CREATED = 1;
+    CONFIG_UPDATE_REASON_TUNNEL_UPDATED = 2;
+    CONFIG_UPDATE_REASON_TUNNEL_DELETED = 3;
+}
+
+// ConfigUpdate carries the full updated route table to the CLI
+message ConfigUpdate {
+    repeated TunnelRouteConfig routes = 1;
+    ConfigUpdateReason reason = 2;
+}
+
 // TunnelStatus provides tunnel state information
 message TunnelStatus {
     TunnelState state = 1;
@@ -219,6 +249,7 @@ message TunnelStatus {
     int32 active_connections = 5;
     int64 last_activity = 6;
     string error_message = 7;
+    repeated TunnelRouteConfig routes = 10;
 }
 
 // TunnelState enum
