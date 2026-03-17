@@ -255,6 +255,8 @@ func (s *Server) Init() error {
 
 	// Create the hybrid tunnel router
 	s.tunnelRouter = tunnel.NewHybridTunnelRouter(repos.Token, repos.Tunnel, tunnelService, routerConfig)
+	// Wire config pusher from gRPC server to tunnel service for live updates
+	tunnelService.SetConfigPusher(s.tunnelRouter.Grpc())
 	// Wire usage recorder into tunnel router and underlying servers
 	s.tunnelRouter.SetUsageRecorder(usageService)
 	// Adapt service.QuotaService to tunnel.QuotaChecker

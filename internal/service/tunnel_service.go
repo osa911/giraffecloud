@@ -22,6 +22,7 @@ type tunnelService struct {
 	repo         repository.TunnelRepository
 	caddyService CaddyService
 	config       *config.Config
+	configPusher interfaces.TunnelConfigPusher
 }
 
 // NewTunnelService creates a new tunnel service instance
@@ -31,6 +32,11 @@ func NewTunnelService(repo repository.TunnelRepository, caddyService CaddyServic
 		caddyService: caddyService,
 		config:       cfg,
 	}
+}
+
+// SetConfigPusher wires a config pusher for live config updates to connected CLIs
+func (s *tunnelService) SetConfigPusher(pusher interfaces.TunnelConfigPusher) {
+	s.configPusher = pusher
 }
 
 // GetFreeSubdomain returns the auto-generated subdomain for a user
@@ -181,6 +187,14 @@ func (s *tunnelService) CreateTunnel(ctx context.Context, userID uint32, domain 
 	}
 
 	logger.Info("Successfully created tunnel ID %d with domain: %s", tunnel.ID, tunnel.Domain)
+
+	// Push config update to connected CLI
+	if s.configPusher != nil {
+		allTunnels, _ := s.repo.GetByUserID(ctx, userID)
+		s.configPusher.PushConfigUpdate(userID, allTunnels, 1) // TUNNEL_CREATED
+		s.configPusher.AddDomainToStream(userID, domain)
+	}
+
 	return tunnel, nil
 }
 
@@ -213,7 +227,18 @@ func (s *tunnelService) DeleteTunnel(ctx context.Context, userID uint32, tunnelI
 		}
 	}
 
-	return s.repo.Delete(ctx, tunnelID)
+	if err := s.repo.Delete(ctx, tunnelID); err != nil {
+		return err
+	}
+
+	// Push config update to connected CLI
+	if s.configPusher != nil {
+		allTunnels, _ := s.repo.GetByUserID(ctx, tunnel.UserID)
+		s.configPusher.PushConfigUpdate(tunnel.UserID, allTunnels, 3) // TUNNEL_DELETED
+		s.configPusher.RemoveDomainFromStream(tunnel.UserID, tunnel.Domain)
+	}
+
+	return nil
 }
 
 // UpdateTunnel updates a tunnel's configuration
@@ -314,6 +339,12 @@ func (s *tunnelService) UpdateTunnel(ctx context.Context, userID uint32, tunnelI
 		if tunnel.ClientIP == "" {
 			logger.Info("[DEBUG] No client IP set, skipping Caddy configuration")
 		}
+	}
+
+	// Push config update to connected CLI
+	if s.configPusher != nil {
+		allTunnels, _ := s.repo.GetByUserID(ctx, userID)
+		s.configPusher.PushConfigUpdate(userID, allTunnels, 2) // TUNNEL_UPDATED
 	}
 
 	return tunnel, nil

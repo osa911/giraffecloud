@@ -17,4 +17,5 @@ type TunnelService interface {
 	UpdateClientIP(ctx context.Context, id uint32, clientIP string) error
 	GetActive(ctx context.Context) ([]*ent.Tunnel, error)
 	GetFreeSubdomain(ctx context.Context, userID uint32) (domain string, available bool, err error)
+	SetConfigPusher(pusher TunnelConfigPusher)
 }
