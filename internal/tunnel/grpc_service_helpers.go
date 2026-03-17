@@ -87,20 +87,13 @@ func getPeerIP(ctx context.Context) string {
 }
 
 // authenticateTunnel authenticates a tunnel handshake using shared authentication logic
-func (s *GRPCTunnelServer) authenticateTunnel(ctx context.Context, handshake *proto.TunnelHandshake) (*ent.Tunnel, error) {
-	tunnel, err := AuthenticateTunnelByToken(ctx, handshake.Token, handshake.Domain, s.tokenRepo, s.tunnelRepo)
+func (s *GRPCTunnelServer) authenticateTunnel(ctx context.Context, handshake *proto.TunnelHandshake) ([]*ent.Tunnel, uint32, error) {
+	tunnels, userID, err := AuthenticateTunnelByToken(ctx, handshake.Token, s.tokenRepo, s.tunnelRepo)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-
-	// Log successful authentication
-	if handshake.Domain != "" {
-		s.logger.Info("[gRPC AUTH] Matched active tunnel: domain=%s, target_port=%d", tunnel.Domain, tunnel.TargetPort)
-	} else {
-		s.logger.Info("[gRPC AUTH] Single active tunnel found, using: domain=%s, target_port=%d", tunnel.Domain, tunnel.TargetPort)
-	}
-
-	return tunnel, nil
+	s.logger.Info("[gRPC AUTH] Authenticated user %d with %d enabled tunnels", userID, len(tunnels))
+	return tunnels, userID, nil
 }
 
 // handleClientMessages handles incoming messages from the client tunnel

@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/osa911/giraffecloud/internal/db/ent"
 	"github.com/osa911/giraffecloud/internal/interfaces"
 	"github.com/osa911/giraffecloud/internal/logging"
 	"github.com/osa911/giraffecloud/internal/repository"
@@ -179,12 +180,29 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 	}
 
 	// Authenticate using shared authentication logic
-	tunnel, err := AuthenticateTunnelByToken(context.Background(), req.Token, req.Domain, s.tokenRepo, s.tunnelRepo)
+	tunnels, _, err := AuthenticateTunnelByToken(context.Background(), req.Token, s.tokenRepo, s.tunnelRepo)
 	if err != nil {
 		s.logger.Error("Failed to authenticate: %v", err)
 		encoder.Encode(TunnelHandshakeResponse{
 			Status:  "error",
 			Message: err.Error(),
+		})
+		return
+	}
+
+	// TCP server needs a specific domain — find matching tunnel
+	var tunnel *ent.Tunnel
+	for _, t := range tunnels {
+		if t.Domain == req.Domain {
+			tunnel = t
+			break
+		}
+	}
+	if tunnel == nil {
+		s.logger.Error("No enabled tunnel found for domain: %s", req.Domain)
+		encoder.Encode(TunnelHandshakeResponse{
+			Status:  "error",
+			Message: fmt.Sprintf("no enabled tunnel found for domain: %s", req.Domain),
 		})
 		return
 	}
