@@ -4,6 +4,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
+	"entgo.io/ent/schema/index"
 )
 
 // Tunnel holds the schema definition for the Tunnel entity.
@@ -17,6 +18,9 @@ func (Tunnel) Fields() []ent.Field {
 		field.String("domain").
 			NotEmpty().
 			Unique(),
+		field.String("target_host").
+			Default("localhost").
+			StructTag(`json:"target_host"`),
 		field.String("token").
 			NotEmpty().
 			Unique(),
@@ -43,6 +47,13 @@ func (Tunnel) Edges() []ent.Edge {
 			Field("user_id").
 			Unique().
 			Required(),
+	}
+}
+
+// Indexes of the Tunnel.
+func (Tunnel) Indexes() []ent.Index {
+	return []ent.Index{
+		index.Fields("user_id", "target_host", "target_port").Unique(),
 	}
 }
 

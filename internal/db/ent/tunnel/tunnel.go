@@ -21,6 +21,8 @@ const (
 	FieldUpdatedAt = "updated_at"
 	// FieldDomain holds the string denoting the domain field in the database.
 	FieldDomain = "domain"
+	// FieldTargetHost holds the string denoting the target_host field in the database.
+	FieldTargetHost = "target_host"
 	// FieldToken holds the string denoting the token field in the database.
 	FieldToken = "token"
 	// FieldClientIP holds the string denoting the client_ip field in the database.
@@ -52,6 +54,7 @@ var Columns = []string{
 	FieldCreatedAt,
 	FieldUpdatedAt,
 	FieldDomain,
+	FieldTargetHost,
 	FieldToken,
 	FieldClientIP,
 	FieldIsEnabled,
@@ -79,6 +82,8 @@ var (
 	UpdateDefaultUpdatedAt func() time.Time
 	// DomainValidator is a validator for the "domain" field. It is called by the builders before save.
 	DomainValidator func(string) error
+	// DefaultTargetHost holds the default value on creation for the "target_host" field.
+	DefaultTargetHost string
 	// TokenValidator is a validator for the "token" field. It is called by the builders before save.
 	TokenValidator func(string) error
 	// DefaultIsEnabled holds the default value on creation for the "is_enabled" field.
@@ -134,6 +139,11 @@ func ByUpdatedAt(opts ...sql.OrderTermOption) OrderOption {
 // ByDomain orders the results by the domain field.
 func ByDomain(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldDomain, opts...).ToFunc()
+}
+
+// ByTargetHost orders the results by the target_host field.
+func ByTargetHost(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldTargetHost, opts...).ToFunc()
 }
 
 // ByToken orders the results by the token field.

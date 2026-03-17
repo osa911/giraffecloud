@@ -3234,6 +3234,7 @@ type TunnelMutation struct {
 	created_at             *time.Time
 	updated_at             *time.Time
 	domain                 *string
+	target_host            *string
 	token                  *string
 	client_ip              *string
 	is_enabled             *bool
@@ -3452,6 +3453,42 @@ func (m *TunnelMutation) OldDomain(ctx context.Context) (v string, err error) {
 // ResetDomain resets all changes to the "domain" field.
 func (m *TunnelMutation) ResetDomain() {
 	m.domain = nil
+}
+
+// SetTargetHost sets the "target_host" field.
+func (m *TunnelMutation) SetTargetHost(s string) {
+	m.target_host = &s
+}
+
+// TargetHost returns the value of the "target_host" field in the mutation.
+func (m *TunnelMutation) TargetHost() (r string, exists bool) {
+	v := m.target_host
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTargetHost returns the old "target_host" field's value of the Tunnel entity.
+// If the Tunnel object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TunnelMutation) OldTargetHost(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTargetHost is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTargetHost requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTargetHost: %w", err)
+	}
+	return oldValue.TargetHost, nil
+}
+
+// ResetTargetHost resets all changes to the "target_host" field.
+func (m *TunnelMutation) ResetTargetHost() {
+	m.target_host = nil
 }
 
 // SetToken sets the "token" field.
@@ -3777,7 +3814,7 @@ func (m *TunnelMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *TunnelMutation) Fields() []string {
-	fields := make([]string, 0, 9)
+	fields := make([]string, 0, 10)
 	if m.created_at != nil {
 		fields = append(fields, tunnel.FieldCreatedAt)
 	}
@@ -3786,6 +3823,9 @@ func (m *TunnelMutation) Fields() []string {
 	}
 	if m.domain != nil {
 		fields = append(fields, tunnel.FieldDomain)
+	}
+	if m.target_host != nil {
+		fields = append(fields, tunnel.FieldTargetHost)
 	}
 	if m.token != nil {
 		fields = append(fields, tunnel.FieldToken)
@@ -3819,6 +3859,8 @@ func (m *TunnelMutation) Field(name string) (ent.Value, bool) {
 		return m.UpdatedAt()
 	case tunnel.FieldDomain:
 		return m.Domain()
+	case tunnel.FieldTargetHost:
+		return m.TargetHost()
 	case tunnel.FieldToken:
 		return m.Token()
 	case tunnel.FieldClientIP:
@@ -3846,6 +3888,8 @@ func (m *TunnelMutation) OldField(ctx context.Context, name string) (ent.Value, 
 		return m.OldUpdatedAt(ctx)
 	case tunnel.FieldDomain:
 		return m.OldDomain(ctx)
+	case tunnel.FieldTargetHost:
+		return m.OldTargetHost(ctx)
 	case tunnel.FieldToken:
 		return m.OldToken(ctx)
 	case tunnel.FieldClientIP:
@@ -3887,6 +3931,13 @@ func (m *TunnelMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetDomain(v)
+		return nil
+	case tunnel.FieldTargetHost:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTargetHost(v)
 		return nil
 	case tunnel.FieldToken:
 		v, ok := value.(string)
@@ -4011,6 +4062,9 @@ func (m *TunnelMutation) ResetField(name string) error {
 		return nil
 	case tunnel.FieldDomain:
 		m.ResetDomain()
+		return nil
+	case tunnel.FieldTargetHost:
+		m.ResetTargetHost()
 		return nil
 	case tunnel.FieldToken:
 		m.ResetToken()

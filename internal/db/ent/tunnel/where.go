@@ -70,6 +70,11 @@ func Domain(v string) predicate.Tunnel {
 	return predicate.Tunnel(sql.FieldEQ(FieldDomain, v))
 }
 
+// TargetHost applies equality check predicate on the "target_host" field. It's identical to TargetHostEQ.
+func TargetHost(v string) predicate.Tunnel {
+	return predicate.Tunnel(sql.FieldEQ(FieldTargetHost, v))
+}
+
 // Token applies equality check predicate on the "token" field. It's identical to TokenEQ.
 func Token(v string) predicate.Tunnel {
 	return predicate.Tunnel(sql.FieldEQ(FieldToken, v))
@@ -238,6 +243,71 @@ func DomainEqualFold(v string) predicate.Tunnel {
 // DomainContainsFold applies the ContainsFold predicate on the "domain" field.
 func DomainContainsFold(v string) predicate.Tunnel {
 	return predicate.Tunnel(sql.FieldContainsFold(FieldDomain, v))
+}
+
+// TargetHostEQ applies the EQ predicate on the "target_host" field.
+func TargetHostEQ(v string) predicate.Tunnel {
+	return predicate.Tunnel(sql.FieldEQ(FieldTargetHost, v))
+}
+
+// TargetHostNEQ applies the NEQ predicate on the "target_host" field.
+func TargetHostNEQ(v string) predicate.Tunnel {
+	return predicate.Tunnel(sql.FieldNEQ(FieldTargetHost, v))
+}
+
+// TargetHostIn applies the In predicate on the "target_host" field.
+func TargetHostIn(vs ...string) predicate.Tunnel {
+	return predicate.Tunnel(sql.FieldIn(FieldTargetHost, vs...))
+}
+
+// TargetHostNotIn applies the NotIn predicate on the "target_host" field.
+func TargetHostNotIn(vs ...string) predicate.Tunnel {
+	return predicate.Tunnel(sql.FieldNotIn(FieldTargetHost, vs...))
+}
+
+// TargetHostGT applies the GT predicate on the "target_host" field.
+func TargetHostGT(v string) predicate.Tunnel {
+	return predicate.Tunnel(sql.FieldGT(FieldTargetHost, v))
+}
+
+// TargetHostGTE applies the GTE predicate on the "target_host" field.
+func TargetHostGTE(v string) predicate.Tunnel {
+	return predicate.Tunnel(sql.FieldGTE(FieldTargetHost, v))
+}
+
+// TargetHostLT applies the LT predicate on the "target_host" field.
+func TargetHostLT(v string) predicate.Tunnel {
+	return predicate.Tunnel(sql.FieldLT(FieldTargetHost, v))
+}
+
+// TargetHostLTE applies the LTE predicate on the "target_host" field.
+func TargetHostLTE(v string) predicate.Tunnel {
+	return predicate.Tunnel(sql.FieldLTE(FieldTargetHost, v))
+}
+
+// TargetHostContains applies the Contains predicate on the "target_host" field.
+func TargetHostContains(v string) predicate.Tunnel {
+	return predicate.Tunnel(sql.FieldContains(FieldTargetHost, v))
+}
+
+// TargetHostHasPrefix applies the HasPrefix predicate on the "target_host" field.
+func TargetHostHasPrefix(v string) predicate.Tunnel {
+	return predicate.Tunnel(sql.FieldHasPrefix(FieldTargetHost, v))
+}
+
+// TargetHostHasSuffix applies the HasSuffix predicate on the "target_host" field.
+func TargetHostHasSuffix(v string) predicate.Tunnel {
+	return predicate.Tunnel(sql.FieldHasSuffix(FieldTargetHost, v))
+}
+
+// TargetHostEqualFold applies the EqualFold predicate on the "target_host" field.
+func TargetHostEqualFold(v string) predicate.Tunnel {
+	return predicate.Tunnel(sql.FieldEqualFold(FieldTargetHost, v))
+}
+
+// TargetHostContainsFold applies the ContainsFold predicate on the "target_host" field.
+func TargetHostContainsFold(v string) predicate.Tunnel {
+	return predicate.Tunnel(sql.FieldContainsFold(FieldTargetHost, v))
 }
 
 // TokenEQ applies the EQ predicate on the "token" field.

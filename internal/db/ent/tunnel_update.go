@@ -49,6 +49,20 @@ func (tu *TunnelUpdate) SetNillableDomain(s *string) *TunnelUpdate {
 	return tu
 }
 
+// SetTargetHost sets the "target_host" field.
+func (tu *TunnelUpdate) SetTargetHost(s string) *TunnelUpdate {
+	tu.mutation.SetTargetHost(s)
+	return tu
+}
+
+// SetNillableTargetHost sets the "target_host" field if the given value is not nil.
+func (tu *TunnelUpdate) SetNillableTargetHost(s *string) *TunnelUpdate {
+	if s != nil {
+		tu.SetTargetHost(*s)
+	}
+	return tu
+}
+
 // SetToken sets the "token" field.
 func (tu *TunnelUpdate) SetToken(s string) *TunnelUpdate {
 	tu.mutation.SetToken(s)
@@ -250,6 +264,9 @@ func (tu *TunnelUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if value, ok := tu.mutation.Domain(); ok {
 		_spec.SetField(tunnel.FieldDomain, field.TypeString, value)
 	}
+	if value, ok := tu.mutation.TargetHost(); ok {
+		_spec.SetField(tunnel.FieldTargetHost, field.TypeString, value)
+	}
 	if value, ok := tu.mutation.Token(); ok {
 		_spec.SetField(tunnel.FieldToken, field.TypeString, value)
 	}
@@ -336,6 +353,20 @@ func (tuo *TunnelUpdateOne) SetDomain(s string) *TunnelUpdateOne {
 func (tuo *TunnelUpdateOne) SetNillableDomain(s *string) *TunnelUpdateOne {
 	if s != nil {
 		tuo.SetDomain(*s)
+	}
+	return tuo
+}
+
+// SetTargetHost sets the "target_host" field.
+func (tuo *TunnelUpdateOne) SetTargetHost(s string) *TunnelUpdateOne {
+	tuo.mutation.SetTargetHost(s)
+	return tuo
+}
+
+// SetNillableTargetHost sets the "target_host" field if the given value is not nil.
+func (tuo *TunnelUpdateOne) SetNillableTargetHost(s *string) *TunnelUpdateOne {
+	if s != nil {
+		tuo.SetTargetHost(*s)
 	}
 	return tuo
 }
@@ -570,6 +601,9 @@ func (tuo *TunnelUpdateOne) sqlSave(ctx context.Context) (_node *Tunnel, err err
 	}
 	if value, ok := tuo.mutation.Domain(); ok {
 		_spec.SetField(tunnel.FieldDomain, field.TypeString, value)
+	}
+	if value, ok := tuo.mutation.TargetHost(); ok {
+		_spec.SetField(tunnel.FieldTargetHost, field.TypeString, value)
 	}
 	if value, ok := tuo.mutation.Token(); ok {
 		_spec.SetField(tunnel.FieldToken, field.TypeString, value)
