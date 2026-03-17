@@ -13,7 +13,6 @@ type TunnelRepository interface {
 	Create(ctx context.Context, tunnel *ent.Tunnel) (*ent.Tunnel, error)
 	GetByID(ctx context.Context, id uint32) (*ent.Tunnel, error)
 	GetByUserID(ctx context.Context, userID uint32) ([]*ent.Tunnel, error)
-	GetByToken(ctx context.Context, token string) (*ent.Tunnel, error)
 	GetByDomain(ctx context.Context, domain string) (*ent.Tunnel, error)
 	Update(ctx context.Context, id uint32, updates interface{}) (*ent.Tunnel, error)
 	Delete(ctx context.Context, id uint32) error
@@ -35,7 +34,6 @@ func (r *tunnelRepository) Create(ctx context.Context, t *ent.Tunnel) (*ent.Tunn
 	return r.client.Tunnel.Create().
 		SetDomain(t.Domain).
 		SetTargetHost(t.TargetHost).
-		SetToken(t.Token).
 		SetTargetPort(t.TargetPort).
 		SetIsEnabled(t.IsEnabled).
 		SetUserID(t.UserID).
@@ -62,20 +60,6 @@ func (r *tunnelRepository) GetByUserID(ctx context.Context, userID uint32) ([]*e
 		Where(tunnel.UserIDEQ(userID)).
 		Order(ent.Asc(tunnel.FieldID)).
 		All(ctx)
-}
-
-// GetByToken retrieves a tunnel configuration by its token
-func (r *tunnelRepository) GetByToken(ctx context.Context, token string) (*ent.Tunnel, error) {
-	t, err := r.client.Tunnel.Query().
-		Where(tunnel.TokenEQ(token)).
-		Only(ctx)
-	if err != nil {
-		if ent.IsNotFound(err) {
-			return nil, fmt.Errorf("%w: tunnel not found", ErrNotFound)
-		}
-		return nil, err
-	}
-	return t, nil
 }
 
 // GetByDomain retrieves a tunnel by its domain

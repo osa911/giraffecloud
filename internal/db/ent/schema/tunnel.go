@@ -21,9 +21,6 @@ func (Tunnel) Fields() []ent.Field {
 		field.String("target_host").
 			Default("localhost").
 			StructTag(`json:"target_host"`),
-		field.String("token").
-			NotEmpty().
-			Unique(),
 		field.String("client_ip").
 			Optional(),
 		field.Bool("is_enabled").

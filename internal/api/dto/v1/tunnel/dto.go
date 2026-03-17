@@ -9,12 +9,11 @@ type CreateRequest struct {
 	TargetPort int    `json:"target_port" binding:"required,min=1,max=65535"`
 }
 
-// CreateResponse includes the tunnel token (only returned on creation)
+// CreateResponse represents the response when creating a tunnel
 type CreateResponse struct {
 	ID         int       `json:"id"`
 	Domain     string    `json:"domain"`
 	TargetHost string    `json:"target_host"`
-	Token      string    `json:"token"` // ⚠️ Only included on creation
 	TargetPort int       `json:"target_port"`
 	IsEnabled  bool      `json:"is_enabled"`
 	CreatedAt  time.Time `json:"created_at"`

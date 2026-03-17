@@ -112,7 +112,6 @@ var (
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "domain", Type: field.TypeString, Unique: true},
 		{Name: "target_host", Type: field.TypeString, Default: "localhost"},
-		{Name: "token", Type: field.TypeString, Unique: true},
 		{Name: "client_ip", Type: field.TypeString, Nullable: true},
 		{Name: "is_enabled", Type: field.TypeBool, Default: true},
 		{Name: "dns_propagation_status", Type: field.TypeEnum, Enums: []string{"verified", "pending_dns"}, Default: "verified"},
@@ -127,7 +126,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "tunnels_users_tunnels",
-				Columns:    []*schema.Column{TunnelsColumns[10]},
+				Columns:    []*schema.Column{TunnelsColumns[9]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -136,7 +135,7 @@ var (
 			{
 				Name:    "tunnel_user_id_target_host_target_port",
 				Unique:  true,
-				Columns: []*schema.Column{TunnelsColumns[10], TunnelsColumns[4], TunnelsColumns[9]},
+				Columns: []*schema.Column{TunnelsColumns[9], TunnelsColumns[4], TunnelsColumns[8]},
 			},
 		},
 	}

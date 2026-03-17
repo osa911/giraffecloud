@@ -189,7 +189,7 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 		return
 	}
 
-	s.logger.Info("User %d connected with token %s for domain %s", tunnel.UserID, tunnel.Token, tunnel.Domain)
+	s.logger.Info("User %d connected for domain %s", tunnel.UserID, tunnel.Domain)
 
 	// Get client IP from connection
 	clientIP, _, err := net.SplitHostPort(conn.RemoteAddr().String())

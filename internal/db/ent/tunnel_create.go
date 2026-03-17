@@ -69,12 +69,6 @@ func (tc *TunnelCreate) SetNillableTargetHost(s *string) *TunnelCreate {
 	return tc
 }
 
-// SetToken sets the "token" field.
-func (tc *TunnelCreate) SetToken(s string) *TunnelCreate {
-	tc.mutation.SetToken(s)
-	return tc
-}
-
 // SetClientIP sets the "client_ip" field.
 func (tc *TunnelCreate) SetClientIP(s string) *TunnelCreate {
 	tc.mutation.SetClientIP(s)
@@ -216,14 +210,6 @@ func (tc *TunnelCreate) check() error {
 	if _, ok := tc.mutation.TargetHost(); !ok {
 		return &ValidationError{Name: "target_host", err: errors.New(`ent: missing required field "Tunnel.target_host"`)}
 	}
-	if _, ok := tc.mutation.Token(); !ok {
-		return &ValidationError{Name: "token", err: errors.New(`ent: missing required field "Tunnel.token"`)}
-	}
-	if v, ok := tc.mutation.Token(); ok {
-		if err := tunnel.TokenValidator(v); err != nil {
-			return &ValidationError{Name: "token", err: fmt.Errorf(`ent: validator failed for field "Tunnel.token": %w`, err)}
-		}
-	}
 	if _, ok := tc.mutation.IsEnabled(); !ok {
 		return &ValidationError{Name: "is_enabled", err: errors.New(`ent: missing required field "Tunnel.is_enabled"`)}
 	}
@@ -290,10 +276,6 @@ func (tc *TunnelCreate) createSpec() (*Tunnel, *sqlgraph.CreateSpec) {
 	if value, ok := tc.mutation.TargetHost(); ok {
 		_spec.SetField(tunnel.FieldTargetHost, field.TypeString, value)
 		_node.TargetHost = value
-	}
-	if value, ok := tc.mutation.Token(); ok {
-		_spec.SetField(tunnel.FieldToken, field.TypeString, value)
-		_node.Token = value
 	}
 	if value, ok := tc.mutation.ClientIP(); ok {
 		_spec.SetField(tunnel.FieldClientIP, field.TypeString, value)

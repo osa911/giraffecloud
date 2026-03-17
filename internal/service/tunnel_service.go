@@ -2,8 +2,6 @@ package service
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -33,15 +31,6 @@ func NewTunnelService(repo repository.TunnelRepository, caddyService CaddyServic
 		caddyService: caddyService,
 		config:       cfg,
 	}
-}
-
-// generateToken generates a random token for tunnel authentication
-func generateToken() (string, error) {
-	bytes := make([]byte, 32)
-	if _, err := rand.Read(bytes); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(bytes), nil
 }
 
 // GetFreeSubdomain returns the auto-generated subdomain for a user
@@ -176,15 +165,9 @@ func (s *tunnelService) CreateTunnel(ctx context.Context, userID uint32, domain 
 		logger.Info("Creating custom domain tunnel for user %d: %s (Enabled: %v, Status: %s)", userID, domain, isEnabled, dnsPropagationStatus)
 	}
 
-	token, err := generateToken()
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate token: %w", err)
-	}
-
 	tunnel := &ent.Tunnel{
 		Domain:               domain,
 		TargetHost:           targetHost,
-		Token:                token,
 		TargetPort:           targetPort,
 		IsEnabled:            isEnabled,
 		DNSPropagationStatus: dnsPropagationStatus,
@@ -334,11 +317,6 @@ func (s *tunnelService) UpdateTunnel(ctx context.Context, userID uint32, tunnelI
 	}
 
 	return tunnel, nil
-}
-
-// GetByToken gets a tunnel by its token
-func (s *tunnelService) GetByToken(ctx context.Context, token string) (*ent.Tunnel, error) {
-	return s.repo.GetByToken(ctx, token)
 }
 
 // GetByDomain retrieves a tunnel by its domain
