@@ -34,6 +34,7 @@ func NewTunnelRepository(client *ent.Client) TunnelRepository {
 func (r *tunnelRepository) Create(ctx context.Context, t *ent.Tunnel) (*ent.Tunnel, error) {
 	return r.client.Tunnel.Create().
 		SetDomain(t.Domain).
+		SetTargetHost(t.TargetHost).
 		SetToken(t.Token).
 		SetTargetPort(t.TargetPort).
 		SetIsEnabled(t.IsEnabled).
@@ -94,6 +95,7 @@ func (r *tunnelRepository) GetByDomain(ctx context.Context, domain string) (*ent
 // TunnelUpdate represents the fields that can be updated
 // Domain is intentionally excluded - domains cannot be changed after creation
 type TunnelUpdate struct {
+	TargetHost           *string
 	IsEnabled            *bool
 	TargetPort           *int
 	DnsPropagationStatus *tunnel.DNSPropagationStatus
@@ -107,6 +109,9 @@ func (r *tunnelRepository) Update(ctx context.Context, id uint32, updates interf
 	}
 
 	update := r.client.Tunnel.UpdateOneID(int(id))
+	if u.TargetHost != nil {
+		update.SetTargetHost(*u.TargetHost)
+	}
 	if u.IsEnabled != nil {
 		update.SetIsEnabled(*u.IsEnabled)
 	}
