@@ -134,16 +134,34 @@ func (s *caddyService) ConfigureRoute(domain string, targetIP string, targetPort
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
-	// Send config to Caddy
-	url := fmt.Sprintf("%s/config/apps/http/servers/srv0/routes", s.baseURL)
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(jsonConfig))
+	// Try to update existing route by ID first (PUT), fall back to POST if not found
+	idURL := fmt.Sprintf("%s/id/%s", s.baseURL, domain)
+	req, err := http.NewRequest(http.MethodPut, idURL, bytes.NewBuffer(jsonConfig))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
-
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := s.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	resp.Body.Close()
+
+	if resp.StatusCode == http.StatusOK {
+		s.logger.Info("Successfully updated existing route for domain: %s (tunnel proxy)", domain)
+		return nil
+	}
+
+	// Route doesn't exist yet — POST a new one
+	postURL := fmt.Sprintf("%s/config/apps/http/servers/srv0/routes", s.baseURL)
+	req, err = http.NewRequest(http.MethodPost, postURL, bytes.NewBuffer(jsonConfig))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err = s.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}

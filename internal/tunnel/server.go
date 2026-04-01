@@ -220,14 +220,9 @@ func (s *TunnelServer) handleConnection(conn net.Conn) {
 		return
 	}
 
-	// Update client IP using tunnel service
+	// Update client IP using tunnel service (non-fatal — tunnel should still work)
 	if err := s.tunnelService.UpdateClientIP(context.Background(), uint32(tunnel.ID), clientIP); err != nil {
-		s.logger.Error("Failed to update client IP: %v", err)
-		encoder.Encode(TunnelHandshakeResponse{
-			Status:  "error",
-			Message: "Failed to update client IP",
-		})
-		return
+		s.logger.Warn("Failed to update client IP (continuing anyway): %v", err)
 	}
 
 	// Determine connection type based on request
