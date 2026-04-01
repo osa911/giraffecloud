@@ -49,7 +49,7 @@ const formSchema = z.object({
   domain: z.string()
     .min(1, "Domain is required")
     .regex(domainRegex, "Invalid domain format (e.g., example.com)"),
-  target_host: z.string().default("localhost"),
+  target_host: z.string().min(1, "Target host is required"),
   target_port: z.number()
     .int("Port must be an integer")
     .min(1, "Port must be at least 1")
