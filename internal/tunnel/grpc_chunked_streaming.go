@@ -335,6 +335,9 @@ func (s *GRPCTunnelServer) handleLargeFileUploadWithStreaming(domain string, htt
 			headers[k] = v[0]
 		}
 	}
+	if httpReq.Host != "" {
+		headers["Host"] = httpReq.Host
+	}
 	requestID := generateRequestID()
 
 	// Register response channel first

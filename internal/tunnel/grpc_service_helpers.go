@@ -424,6 +424,11 @@ func (s *GRPCTunnelServer) httpToGRPC(req *http.Request, clientIP string) (*prot
 			headers[key] = values[0] // Take first value for simplicity
 		}
 	}
+	// Go promotes Host header to req.Host and removes it from req.Header,
+	// so we must set it explicitly for the CLI route table to resolve the domain.
+	if req.Host != "" {
+		headers["Host"] = req.Host
+	}
 
 	// Determine request type
 	reqType := proto.RequestType_REQUEST_TYPE_API
