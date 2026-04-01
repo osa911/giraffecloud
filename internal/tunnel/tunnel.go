@@ -423,8 +423,9 @@ func (t *Tunnel) startWebSocketReconnectLoop(serverAddr string, tlsConfig *tls.C
 	// No need for automatic reconnection loops
 }
 
-// establishConnection establishes a single tunnel connection of specified type
-func (t *Tunnel) establishConnection(serverAddr string, tlsConfig *tls.Config, connType string) (net.Conn, error) {
+// establishConnection establishes a single tunnel connection of specified type.
+// domain is optional — if provided, it overrides t.domain for the handshake (used for on-demand multi-tunnel).
+func (t *Tunnel) establishConnection(serverAddr string, tlsConfig *tls.Config, connType string, domain ...string) (net.Conn, error) {
 	// Connect to server with TLS and timeout
 	dialer := &net.Dialer{
 		Timeout: 10 * time.Second,
@@ -435,9 +436,15 @@ func (t *Tunnel) establishConnection(serverAddr string, tlsConfig *tls.Config, c
 		return nil, fmt.Errorf("failed to connect to server: %w", err)
 	}
 
+	// Use explicit domain if provided, otherwise fall back to t.domain
+	handshakeDomain := t.domain
+	if len(domain) > 0 && domain[0] != "" {
+		handshakeDomain = domain[0]
+	}
+
 	// Perform handshake with timeout and connection type
 	conn.SetDeadline(time.Now().Add(15 * time.Second))
-	resp, err := t.performHandshake(conn, t.token, connType)
+	resp, err := t.performHandshakeWithDomain(conn, t.token, connType, handshakeDomain)
 	if err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("handshake failed: %w", err)
@@ -458,6 +465,11 @@ func (t *Tunnel) establishConnection(serverAddr string, tlsConfig *tls.Config, c
 
 // performHandshake performs the handshake for a specific connection type
 func (t *Tunnel) performHandshake(conn net.Conn, token, connType string) (*TunnelHandshakeResponse, error) {
+	return t.performHandshakeWithDomain(conn, token, connType, t.domain)
+}
+
+// performHandshakeWithDomain performs the handshake with an explicit domain
+func (t *Tunnel) performHandshakeWithDomain(conn net.Conn, token, connType, domain string) (*TunnelHandshakeResponse, error) {
 	// Create JSON encoder/decoder
 	encoder := json.NewEncoder(conn)
 	decoder := json.NewDecoder(conn)
@@ -465,7 +477,7 @@ func (t *Tunnel) performHandshake(conn net.Conn, token, connType string) (*Tunne
 	// Send handshake request with connection type and domain (for multi-tunnel support)
 	req := TunnelHandshakeRequest{
 		Token:          token,
-		Domain:         t.domain, // Include domain so server knows which tunnel to match
+		Domain:         domain, // Include domain so server knows which tunnel to match
 		ConnectionType: connType,
 	}
 
@@ -1544,8 +1556,8 @@ func (t *Tunnel) establishTCPTunnelOnDemand(establishReq *proto.TunnelEstablishR
 	// Determine server address for TCP tunnel (port 4443)
 	serverAddr := strings.Replace(t.grpcClient.serverAddr, ":4444", ":4443", 1)
 
-	// Establish WebSocket tunnel connection
-	wsConn, err := t.establishConnection(serverAddr, tlsConfig, "websocket")
+	// Establish WebSocket tunnel connection with the specific domain from the server request
+	wsConn, err := t.establishConnection(serverAddr, tlsConfig, "websocket", establishReq.Domain)
 	if err != nil {
 		return fmt.Errorf("failed to establish WebSocket tunnel: %w", err)
 	}
