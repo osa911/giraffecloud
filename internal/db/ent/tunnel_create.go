@@ -55,9 +55,17 @@ func (tc *TunnelCreate) SetDomain(s string) *TunnelCreate {
 	return tc
 }
 
-// SetToken sets the "token" field.
-func (tc *TunnelCreate) SetToken(s string) *TunnelCreate {
-	tc.mutation.SetToken(s)
+// SetTargetHost sets the "target_host" field.
+func (tc *TunnelCreate) SetTargetHost(s string) *TunnelCreate {
+	tc.mutation.SetTargetHost(s)
+	return tc
+}
+
+// SetNillableTargetHost sets the "target_host" field if the given value is not nil.
+func (tc *TunnelCreate) SetNillableTargetHost(s *string) *TunnelCreate {
+	if s != nil {
+		tc.SetTargetHost(*s)
+	}
 	return tc
 }
 
@@ -169,6 +177,10 @@ func (tc *TunnelCreate) defaults() {
 		v := tunnel.DefaultUpdatedAt()
 		tc.mutation.SetUpdatedAt(v)
 	}
+	if _, ok := tc.mutation.TargetHost(); !ok {
+		v := tunnel.DefaultTargetHost
+		tc.mutation.SetTargetHost(v)
+	}
 	if _, ok := tc.mutation.IsEnabled(); !ok {
 		v := tunnel.DefaultIsEnabled
 		tc.mutation.SetIsEnabled(v)
@@ -195,13 +207,8 @@ func (tc *TunnelCreate) check() error {
 			return &ValidationError{Name: "domain", err: fmt.Errorf(`ent: validator failed for field "Tunnel.domain": %w`, err)}
 		}
 	}
-	if _, ok := tc.mutation.Token(); !ok {
-		return &ValidationError{Name: "token", err: errors.New(`ent: missing required field "Tunnel.token"`)}
-	}
-	if v, ok := tc.mutation.Token(); ok {
-		if err := tunnel.TokenValidator(v); err != nil {
-			return &ValidationError{Name: "token", err: fmt.Errorf(`ent: validator failed for field "Tunnel.token": %w`, err)}
-		}
+	if _, ok := tc.mutation.TargetHost(); !ok {
+		return &ValidationError{Name: "target_host", err: errors.New(`ent: missing required field "Tunnel.target_host"`)}
 	}
 	if _, ok := tc.mutation.IsEnabled(); !ok {
 		return &ValidationError{Name: "is_enabled", err: errors.New(`ent: missing required field "Tunnel.is_enabled"`)}
@@ -266,9 +273,9 @@ func (tc *TunnelCreate) createSpec() (*Tunnel, *sqlgraph.CreateSpec) {
 		_spec.SetField(tunnel.FieldDomain, field.TypeString, value)
 		_node.Domain = value
 	}
-	if value, ok := tc.mutation.Token(); ok {
-		_spec.SetField(tunnel.FieldToken, field.TypeString, value)
-		_node.Token = value
+	if value, ok := tc.mutation.TargetHost(); ok {
+		_spec.SetField(tunnel.FieldTargetHost, field.TypeString, value)
+		_node.TargetHost = value
 	}
 	if value, ok := tc.mutation.ClientIP(); ok {
 		_spec.SetField(tunnel.FieldClientIP, field.TypeString, value)

@@ -133,7 +133,11 @@ func (h *TunnelHandler) CreateTunnel(c *gin.Context) {
 	}
 
 	userID := c.MustGet(constants.ContextKeyUserID).(uint32)
-	tunnel, err := h.tunnelService.CreateTunnel(c.Request.Context(), userID, req.Domain, req.TargetPort)
+	targetHost := req.TargetHost
+	if targetHost == "" {
+		targetHost = "localhost"
+	}
+	tunnel, err := h.tunnelService.CreateTunnel(c.Request.Context(), userID, req.Domain, targetHost, req.TargetPort)
 	if err != nil {
 		if errors.Is(err, service.ErrValidation) {
 			utils.HandleAPIError(c, err, common.ErrCodeValidation, err.Error())
@@ -234,6 +238,7 @@ func (h *TunnelHandler) UpdateTunnel(c *gin.Context) {
 
 	// Convert to repository.TunnelUpdate type
 	updates := &repository.TunnelUpdate{
+		TargetHost: req.TargetHost,
 		IsEnabled:  req.IsEnabled,
 		TargetPort: req.TargetPort,
 	}

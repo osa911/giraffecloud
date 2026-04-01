@@ -15,6 +15,7 @@ GiraffeCloud is an open-source reverse proxy and tunneling platform. It exposes 
 - Web dashboard for tunnel management
 - CLI client with auto-update support
 - DNS propagation monitoring for custom domains
+- LAN routing — one CLI agent serves all tunnels; each tunnel specifies a `target_host:port` to route traffic to a different machine on the local network
 
 ## Architecture
 

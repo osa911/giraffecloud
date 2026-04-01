@@ -60,8 +60,8 @@ func TestIsTimeoutError(t *testing.T) {
 
 func TestGRPCTunnelClientMetrics(t *testing.T) {
 	client := &GRPCTunnelClient{
-		clientID: "test-client",
-		domain:   "test.com",
+		clientID:   "test-client",
+		routeTable: NewRouteTable(),
 	}
 
 	// Test initial metrics

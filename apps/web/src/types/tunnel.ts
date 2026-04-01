@@ -7,6 +7,7 @@ export enum DnsPropagationStatus {
 export interface Tunnel {
   id: number;
   domain: string;
+  target_host: string;
   target_port: number;
   is_enabled: boolean;
   dns_propagation_status: DnsPropagationStatus;
@@ -15,11 +16,11 @@ export interface Tunnel {
   updated_at: string;
 }
 
-// Tunnel create response (includes token)
+// Tunnel create response (no token)
 export interface TunnelCreateResponse {
   id: number;
   domain: string;
-  token: string;
+  target_host: string;
   target_port: number;
   is_enabled: boolean;
   created_at: string;
@@ -28,6 +29,7 @@ export interface TunnelCreateResponse {
 
 export interface TunnelFormData {
   domain: string;
+  target_host: string;
   target_port: number;
   is_enabled?: boolean;
 }

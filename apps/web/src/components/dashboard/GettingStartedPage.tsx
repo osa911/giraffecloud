@@ -225,24 +225,6 @@ export default function GettingStartedPage() {
                 <h5 className="text-sm font-medium">Option 1: Direct Connection (Foreground)</h5>
                 <p className="text-xs text-muted-foreground">Run the tunnel directly in your terminal:</p>
                 <CodeBlock code="giraffecloud connect" step={5} />
-                <div className="text-xs text-muted-foreground mt-2">
-                  <span className="mr-1">💡 <strong>Tip:</strong> If you have multiple tunnels, specify which one with</span>
-                  <div className="mt-1 inline-flex items-center gap-2 rounded bg-muted px-2 py-1">
-                    <code className="font-mono">giraffecloud connect --domain your-domain.com</code>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-4 w-4 hover:bg-background/50"
-                      onClick={() => handleCopy("giraffecloud connect --domain your-domain.com", "tip-connect")}
-                    >
-                      {copiedStep === "tip-connect" ? (
-                        <Check className="h-3 w-3 text-green-500" />
-                      ) : (
-                        <Copy className="h-3 w-3" />
-                      )}
-                    </Button>
-                  </div>
-                </div>
               </div>
 
               <div className="space-y-2">
@@ -252,6 +234,18 @@ export default function GettingStartedPage() {
                 <CodeBlock code="giraffecloud service start" step={7} />
               </div>
             </div>
+          </div>
+
+          <Separator />
+
+          <div className="space-y-2">
+            <h4 className="font-medium">Exposing LAN Services</h4>
+            <p className="text-sm text-muted-foreground">
+              You can route different domains to different machines in your local network.
+              Configure each tunnel&apos;s target host in the dashboard — for example,
+              point one domain to 192.168.1.5:8080 and another to 192.168.1.10:3000.
+              One CLI instance serves them all.
+            </p>
           </div>
         </CardContent>
       </Card>

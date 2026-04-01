@@ -150,7 +150,7 @@ export default function TunnelList() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Domain</TableHead>
-                  <TableHead>Target Port</TableHead>
+                  <TableHead>Target</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Created</TableHead>
                   <TableHead>Updated</TableHead>
@@ -171,7 +171,11 @@ export default function TunnelList() {
                         <ExternalLink className="ml-1 h-3 w-3" />
                       </Link>
                     </TableCell>
-                    <TableCell>{tunnel.target_port}</TableCell>
+                    <TableCell>
+                      {tunnel.target_host === "localhost"
+                        ? `:${tunnel.target_port}`
+                        : `${tunnel.target_host}:${tunnel.target_port}`}
+                    </TableCell>
                     <TableCell>
                       <div className="flex items-center space-x-2">
                         <Switch

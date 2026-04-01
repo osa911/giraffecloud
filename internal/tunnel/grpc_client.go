@@ -35,9 +35,10 @@ type GRPCTunnelClient struct {
 
 	// Connection details
 	serverAddr string
-	domain     string
-	targetPort int32
 	token      string
+
+	// Multi-target routing
+	routeTable *RouteTable
 
 	// gRPC connection
 	conn          *grpc.ClientConn
@@ -122,7 +123,7 @@ func DefaultGRPCClientConfig() *GRPCClientConfig {
 }
 
 // NewGRPCTunnelClient creates a new gRPC tunnel client
-func NewGRPCTunnelClient(serverAddr, domain, token string, targetPort int32, config *GRPCClientConfig) *GRPCTunnelClient {
+func NewGRPCTunnelClient(serverAddr, token string, config *GRPCClientConfig) *GRPCTunnelClient {
 	if config == nil {
 		config = DefaultGRPCClientConfig()
 	}
@@ -138,9 +139,8 @@ func NewGRPCTunnelClient(serverAddr, domain, token string, targetPort int32, con
 	client := &GRPCTunnelClient{
 		clientID:         clientID,
 		serverAddr:       serverAddr,
-		domain:           domain,
-		targetPort:       targetPort,
 		token:            token,
+		routeTable:       NewRouteTable(),
 		stopChan:         make(chan struct{}),
 		ctx:              ctx,
 		cancel:           cancel,
@@ -191,7 +191,7 @@ func (c *GRPCTunnelClient) Start() error {
 	}
 
 	c.connected = true
-	c.logger.Info("[%s] gRPC tunnel established for domain: %s", c.clientID, c.domain)
+	c.logger.Info("[%s] gRPC tunnel established (multi-target mode)", c.clientID)
 
 	// Start message handling
 	go c.handleIncomingMessages()
@@ -209,7 +209,7 @@ func (c *GRPCTunnelClient) Stop() error {
 		return nil
 	}
 
-	c.logger.Info("[%s] Stopping gRPC tunnel for domain: %s", c.clientID, c.domain)
+	c.logger.Info("[%s] Stopping gRPC tunnel", c.clientID)
 
 	// CRITICAL: Set stopping flag to prevent auto-reconnection race conditions
 	c.stopping = true
@@ -229,7 +229,7 @@ func (c *GRPCTunnelClient) Stop() error {
 	}
 
 	c.connected = false
-	c.logger.Info("[%s] gRPC tunnel stopped for domain: %s", c.clientID, c.domain)
+	c.logger.Info("[%s] gRPC tunnel stopped", c.clientID)
 
 	return nil
 }
@@ -393,7 +393,7 @@ func (c *GRPCTunnelClient) establishControlChannel() error {
 		Timestamp: time.Now().Unix(),
 		MessageType: &proto.ControlMessage_Handshake{
 			Handshake: &proto.ControlHandshake{
-				Domain:        c.domain,
+				Token:         c.token,
 				ClientVersion: "1.0.0",
 			},
 		},
@@ -463,6 +463,12 @@ func (c *GRPCTunnelClient) handleControlMessages() {
 			c.activeStreamsMu.Unlock()
 		}
 
+		// Handle config update messages
+		if configUpdate := msg.GetConfigUpdate(); configUpdate != nil {
+			c.routeTable.Update(configUpdate.Routes)
+			c.logger.Info("[%s] [CONTROL] Config update received: now serving %d tunnels", c.clientID, c.routeTable.Count())
+		}
+
 		// Handle ping requests
 		if ping := msg.GetPing(); ping != nil {
 			pong := &proto.ControlMessage{
@@ -491,9 +497,7 @@ func (c *GRPCTunnelClient) sendHandshake() error {
 			Control: &proto.TunnelControl{
 				ControlType: &proto.TunnelControl_Handshake{
 					Handshake: &proto.TunnelHandshake{
-						Token:      c.token,
-						Domain:     c.domain,
-						TargetPort: c.targetPort,
+						Token: c.token,
 						Capabilities: &proto.TunnelCapabilities{
 							SupportsChunkedStreaming: true,
 							SupportsCompression:      true,
@@ -534,12 +538,11 @@ func (c *GRPCTunnelClient) waitForHandshakeResponse() error {
 		if control := msg.GetControl(); control != nil {
 			if status := control.GetStatus(); status != nil {
 				if status.State == proto.TunnelState_TUNNEL_STATE_CONNECTED {
-					c.logger.Info("[%s] Handshake successful for domain: %s", c.clientID, c.domain)
+					c.logger.Info("[%s] Handshake successful", c.clientID)
 
-					// CRITICAL: Save domain and port to config like old handshake (RESTORED FUNCTIONALITY)
-					if err := c.saveHandshakeResponseToConfig(status); err != nil {
-						c.logger.Warn("Failed to save handshake response to config: %v", err)
-						// Don't fail handshake if config save fails (like old handshake)
+					// Populate route table from server-provided routes
+					if len(status.Routes) > 0 {
+						c.routeTable.Update(status.Routes)
 					}
 
 					return nil
@@ -560,53 +563,9 @@ func (c *GRPCTunnelClient) waitForHandshakeResponse() error {
 	}
 }
 
-// saveHandshakeResponseToConfig saves domain and port from handshake response to config (RESTORED FROM OLD HANDSHAKE)
-func (c *GRPCTunnelClient) saveHandshakeResponseToConfig(status *proto.TunnelStatus) error {
-	// Load current config
-	cfg, err := LoadConfig()
-	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
-	}
-
-	c.logger.Info("🔐 PRODUCTION-GRADE: Saving handshake response to config")
-	if path, err := GetConfigPath(); err == nil {
-		c.logger.Info("Config path: %s", path)
-	}
-	c.logger.Info("domain: %s", status.Domain)
-	c.logger.Info("config domain: %s", cfg.Domain)
-	c.logger.Info("target port: %d", status.TargetPort)
-	c.logger.Info("config target port: %d", cfg.LocalPort)
-
-	// Update only if server provided the values (like old handshake)
-	updated := false
-	if status.Domain != "" && status.Domain != cfg.Domain {
-		c.logger.Info("Updating domain in config: %s -> %s", cfg.Domain, status.Domain)
-		cfg.Domain = status.Domain
-		updated = true
-	}
-	if status.TargetPort != 0 && status.TargetPort != int32(cfg.LocalPort) {
-		c.logger.Info("Updating target port in config: %d -> %d", cfg.LocalPort, status.TargetPort)
-		cfg.LocalPort = int(status.TargetPort)
-		updated = true
-	}
-
-	// CRITICAL: Update client's targetPort if server provided one
-	if status.TargetPort != 0 && status.TargetPort != c.targetPort {
-		c.logger.Info("Updating client target port: %d -> %d", c.targetPort, status.TargetPort)
-		c.targetPort = status.TargetPort
-	}
-
-	// Save config if updated (like old handshake)
-	if updated {
-		if err := SaveConfig(cfg); err != nil {
-			return fmt.Errorf("failed to save config: %w", err)
-		}
-		c.logger.Info("✅ Successfully updated local config with server values")
-	} else {
-		c.logger.Info("✅ Config already up to date")
-	}
-
-	return nil
+// GetRouteTable returns the client's route table for shared access
+func (c *GRPCTunnelClient) GetRouteTable() *RouteTable {
+	return c.routeTable
 }
 
 // handleIncomingMessages handles messages from the server
@@ -714,10 +673,17 @@ func (c *GRPCTunnelClient) handleUploadStart(msg *proto.TunnelMessage) error {
 		return nil
 	}
 
+	// Resolve route from Host header
+	domain := start.Headers["Host"]
+	route := c.routeTable.Resolve(domain)
+	if route == nil {
+		return c.sendErrorResponse(msg.RequestId, fmt.Sprintf("no route found for domain: %s", domain))
+	}
+
 	pr, pw := io.Pipe()
 
 	// Build local request without Content-Length
-	url := fmt.Sprintf("http://127.0.0.1:%d%s", c.targetPort, start.Path)
+	url := fmt.Sprintf("http://%s%s", route.Target(), start.Path)
 	req, err := http.NewRequest(start.Method, url, pr)
 	if err != nil {
 		pw.Close()
@@ -949,8 +915,15 @@ func (c *GRPCTunnelClient) forwardRegularRequest(msg *proto.TunnelMessage, httpR
 
 // makeLocalServiceRequest makes the actual HTTP request to the local service
 func (c *GRPCTunnelClient) makeLocalServiceRequest(httpReq *proto.HTTPRequest) (*http.Response, error) {
+	// Resolve route from Host header
+	domain := httpReq.Headers["Host"]
+	route := c.routeTable.Resolve(domain)
+	if route == nil {
+		return nil, fmt.Errorf("no route found for domain: %s", domain)
+	}
+
 	// Build URL for local service
-	url := fmt.Sprintf("http://127.0.0.1:%d%s", c.targetPort, httpReq.Path)
+	url := fmt.Sprintf("http://%s%s", route.Target(), httpReq.Path)
 
 	// Create HTTP request
 	req, err := http.NewRequest(httpReq.Method, url, strings.NewReader(string(httpReq.Body)))
@@ -1149,7 +1122,7 @@ func (c *GRPCTunnelClient) streamResponseInChunksWithContext(ctx context.Context
 // resetChunkedStreamingState resets any chunked streaming state on reconnection
 // This prevents stale state from interfering with new connections
 func (c *GRPCTunnelClient) resetChunkedStreamingState() {
-	c.logger.Info("[CLEANUP] 🧹 Resetting chunked streaming state for domain: %s", c.domain)
+	c.logger.Info("[CLEANUP] 🧹 Resetting chunked streaming state")
 
 	// Reset any client-side chunked streaming counters or state
 	// Currently our client is stateless for chunked streaming, but this is future-proof
@@ -1301,8 +1274,8 @@ func (c *GRPCTunnelClient) reportMetrics() {
 	reconnects := atomic.LoadInt64(&c.reconnectCount)
 	timeoutReconnects := atomic.LoadInt64(&c.timeoutReconnects)
 
-	c.logger.Info("[gRPC CLIENT] ID: %s, Domain: %s, Requests: %d, Responses: %d, Errors: %d (Timeout: %d), Reconnects: %d (Timeout: %d)",
-		c.clientID, c.domain, total, responses, errors, timeoutErrors, reconnects, timeoutReconnects)
+	c.logger.Info("[gRPC CLIENT] ID: %s, Routes: %d, Requests: %d, Responses: %d, Errors: %d (Timeout: %d), Reconnects: %d (Timeout: %d)",
+		c.clientID, c.routeTable.Count(), total, responses, errors, timeoutErrors, reconnects, timeoutReconnects)
 }
 
 // reconnect attempts to reconnect the tunnel
@@ -1326,7 +1299,7 @@ func (c *GRPCTunnelClient) reconnect() {
 		return // Already disconnected or being stopped
 	}
 
-	c.logger.Warn("[%s] Attempting to reconnect gRPC tunnel for domain: %s", c.clientID, c.domain)
+	c.logger.Warn("[%s] Attempting to reconnect gRPC tunnel", c.clientID)
 
 	// Close existing connections
 	if c.stream != nil {
@@ -1346,7 +1319,7 @@ func (c *GRPCTunnelClient) reconnect() {
 	// Reset any stale chunked streaming state
 	c.resetChunkedStreamingState()
 
-	c.logger.Info("[CLEANUP] 🧹 Resetting chunked streaming state for domain: %s", c.domain)
+	c.logger.Info("[CLEANUP] 🧹 Resetting chunked streaming state")
 
 	// Retry connection with exponential backoff
 	delay := c.config.ReconnectDelay
@@ -1365,11 +1338,11 @@ func (c *GRPCTunnelClient) reconnect() {
 
 		attempts++
 		if c.config.MaxReconnectAttempts > 0 && attempts > c.config.MaxReconnectAttempts {
-			c.logger.Error("[%s] Max reconnection attempts reached for domain: %s", c.clientID, c.domain)
+			c.logger.Error("[%s] Max reconnection attempts reached", c.clientID)
 			return
 		}
 
-		c.logger.Info("[%s] Reconnection attempt #%d for domain: %s", c.clientID, attempts, c.domain)
+		c.logger.Info("[%s] Reconnection attempt #%d", c.clientID, attempts)
 
 		if err := c.connect(); err != nil {
 			consecutiveFailures++
@@ -1420,7 +1393,7 @@ func (c *GRPCTunnelClient) reconnect() {
 		// SUCCESS: Reset failure counter
 		consecutiveFailures = 0
 		c.connected = true
-		c.logger.Info("[%s] Successfully reconnected gRPC tunnel for domain: %s", c.clientID, c.domain)
+		c.logger.Info("[%s] Successfully reconnected gRPC tunnel", c.clientID)
 
 		// Ensure clean state for new connection
 		c.resetChunkedStreamingState()
@@ -1475,8 +1448,7 @@ func (c *GRPCTunnelClient) GetMetrics() map[string]interface{} {
 		"timeout_errors":     atomic.LoadInt64(&c.timeoutErrors),
 		"reconnect_count":    atomic.LoadInt64(&c.reconnectCount),
 		"timeout_reconnects": atomic.LoadInt64(&c.timeoutReconnects),
-		"domain":             c.domain,
-		"target_port":        c.targetPort,
+		"active_routes":      c.routeTable.Count(),
 	}
 }
 
@@ -1525,7 +1497,6 @@ func (c *GRPCTunnelClient) sendTunnelEstablishResponse(requestId string, success
 					ControlType: &proto.TunnelControl_Status{
 						Status: &proto.TunnelStatus{
 							State:       proto.TunnelState_TUNNEL_STATE_ACTIVE,
-							Domain:      c.domain,
 							ConnectedAt: time.Now().Unix(),
 						},
 					},

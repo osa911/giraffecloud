@@ -49,16 +49,16 @@ func (tu *TunnelUpdate) SetNillableDomain(s *string) *TunnelUpdate {
 	return tu
 }
 
-// SetToken sets the "token" field.
-func (tu *TunnelUpdate) SetToken(s string) *TunnelUpdate {
-	tu.mutation.SetToken(s)
+// SetTargetHost sets the "target_host" field.
+func (tu *TunnelUpdate) SetTargetHost(s string) *TunnelUpdate {
+	tu.mutation.SetTargetHost(s)
 	return tu
 }
 
-// SetNillableToken sets the "token" field if the given value is not nil.
-func (tu *TunnelUpdate) SetNillableToken(s *string) *TunnelUpdate {
+// SetNillableTargetHost sets the "target_host" field if the given value is not nil.
+func (tu *TunnelUpdate) SetNillableTargetHost(s *string) *TunnelUpdate {
 	if s != nil {
-		tu.SetToken(*s)
+		tu.SetTargetHost(*s)
 	}
 	return tu
 }
@@ -211,11 +211,6 @@ func (tu *TunnelUpdate) check() error {
 			return &ValidationError{Name: "domain", err: fmt.Errorf(`ent: validator failed for field "Tunnel.domain": %w`, err)}
 		}
 	}
-	if v, ok := tu.mutation.Token(); ok {
-		if err := tunnel.TokenValidator(v); err != nil {
-			return &ValidationError{Name: "token", err: fmt.Errorf(`ent: validator failed for field "Tunnel.token": %w`, err)}
-		}
-	}
 	if v, ok := tu.mutation.DNSPropagationStatus(); ok {
 		if err := tunnel.DNSPropagationStatusValidator(v); err != nil {
 			return &ValidationError{Name: "dns_propagation_status", err: fmt.Errorf(`ent: validator failed for field "Tunnel.dns_propagation_status": %w`, err)}
@@ -250,8 +245,8 @@ func (tu *TunnelUpdate) sqlSave(ctx context.Context) (n int, err error) {
 	if value, ok := tu.mutation.Domain(); ok {
 		_spec.SetField(tunnel.FieldDomain, field.TypeString, value)
 	}
-	if value, ok := tu.mutation.Token(); ok {
-		_spec.SetField(tunnel.FieldToken, field.TypeString, value)
+	if value, ok := tu.mutation.TargetHost(); ok {
+		_spec.SetField(tunnel.FieldTargetHost, field.TypeString, value)
 	}
 	if value, ok := tu.mutation.ClientIP(); ok {
 		_spec.SetField(tunnel.FieldClientIP, field.TypeString, value)
@@ -340,16 +335,16 @@ func (tuo *TunnelUpdateOne) SetNillableDomain(s *string) *TunnelUpdateOne {
 	return tuo
 }
 
-// SetToken sets the "token" field.
-func (tuo *TunnelUpdateOne) SetToken(s string) *TunnelUpdateOne {
-	tuo.mutation.SetToken(s)
+// SetTargetHost sets the "target_host" field.
+func (tuo *TunnelUpdateOne) SetTargetHost(s string) *TunnelUpdateOne {
+	tuo.mutation.SetTargetHost(s)
 	return tuo
 }
 
-// SetNillableToken sets the "token" field if the given value is not nil.
-func (tuo *TunnelUpdateOne) SetNillableToken(s *string) *TunnelUpdateOne {
+// SetNillableTargetHost sets the "target_host" field if the given value is not nil.
+func (tuo *TunnelUpdateOne) SetNillableTargetHost(s *string) *TunnelUpdateOne {
 	if s != nil {
-		tuo.SetToken(*s)
+		tuo.SetTargetHost(*s)
 	}
 	return tuo
 }
@@ -515,11 +510,6 @@ func (tuo *TunnelUpdateOne) check() error {
 			return &ValidationError{Name: "domain", err: fmt.Errorf(`ent: validator failed for field "Tunnel.domain": %w`, err)}
 		}
 	}
-	if v, ok := tuo.mutation.Token(); ok {
-		if err := tunnel.TokenValidator(v); err != nil {
-			return &ValidationError{Name: "token", err: fmt.Errorf(`ent: validator failed for field "Tunnel.token": %w`, err)}
-		}
-	}
 	if v, ok := tuo.mutation.DNSPropagationStatus(); ok {
 		if err := tunnel.DNSPropagationStatusValidator(v); err != nil {
 			return &ValidationError{Name: "dns_propagation_status", err: fmt.Errorf(`ent: validator failed for field "Tunnel.dns_propagation_status": %w`, err)}
@@ -571,8 +561,8 @@ func (tuo *TunnelUpdateOne) sqlSave(ctx context.Context) (_node *Tunnel, err err
 	if value, ok := tuo.mutation.Domain(); ok {
 		_spec.SetField(tunnel.FieldDomain, field.TypeString, value)
 	}
-	if value, ok := tuo.mutation.Token(); ok {
-		_spec.SetField(tunnel.FieldToken, field.TypeString, value)
+	if value, ok := tuo.mutation.TargetHost(); ok {
+		_spec.SetField(tunnel.FieldTargetHost, field.TypeString, value)
 	}
 	if value, ok := tuo.mutation.ClientIP(); ok {
 		_spec.SetField(tunnel.FieldClientIP, field.TypeString, value)

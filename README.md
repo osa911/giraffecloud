@@ -15,6 +15,7 @@ Similar to Cloudflare Tunnel or Ngrok — but fully open-source and self-hosted.
 - 🔐 **Automatic HTTPS** - Let's Encrypt certificates handled automatically via Caddy
 - 🔄 **Auto-Reconnect** - Intelligent retry logic with exponential backoff
 - 📊 **Web Dashboard** - Manage tunnels through a modern Next.js interface
+- 🏠 **LAN Routing** - One CLI agent serves all your tunnels, each routing to a different `target_host:port` in your local network
 
 ---
 

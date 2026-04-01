@@ -36,6 +36,17 @@ After installation, you can verify:
 giraffecloud version
 ```
 
+### Connecting
+
+Once installed, authenticate and start the tunnel agent:
+
+```bash
+giraffecloud login --token YOUR_API_TOKEN
+giraffecloud connect
+```
+
+The agent connects once and serves all tunnels configured for your account. Each tunnel is set up in the web dashboard with a domain and a `target_host:port` pointing to a machine on your local network.
+
 ### Optional parameters
 
 macOS/Linux script (`install.sh`):
