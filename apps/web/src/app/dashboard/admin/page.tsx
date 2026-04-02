@@ -191,129 +191,115 @@ export default function AdminPage() {
           </CardContent>
         </Card>
 
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {configs.map((config) => (
-            <Card key={config.id}>
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base capitalize">{config.channel}</CardTitle>
-                  <Badge variant={config.force_update ? "destructive" : "secondary"}>
-                    {config.force_update ? "Force Update" : "Optional"}
-                  </Badge>
-                </div>
-                <CardDescription>
-                  {config.platform} / {config.arch}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  <div>
-                    <span className="text-muted-foreground">Latest:</span>
-                    <span className="ml-2 font-mono">{config.latest_version}</span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Minimum:</span>
-                    <span className="ml-2 font-mono">{config.minimum_version}</span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 text-sm">
-                  <Switch checked={config.auto_update_enabled} disabled />
-                  <span className="text-muted-foreground">Auto-update</span>
-                </div>
-                <Dialog>
-                  <DialogTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full"
-                      onClick={() => setEditingConfig({ ...config })}
-                    >
-                      <Settings className="h-4 w-4 mr-2" />
-                      Edit Config
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="sm:max-w-[425px]">
-                    <DialogHeader>
-                      <DialogTitle>Edit Version Config</DialogTitle>
-                      <DialogDescription>
-                        Update version settings for {editingConfig?.channel} channel.
-                      </DialogDescription>
-                    </DialogHeader>
-                    {editingConfig && (
-                      <div className="grid gap-4 py-4">
-                        <div className="grid grid-cols-4 items-center gap-4">
-                          <Label htmlFor="min-version" className="text-right">
-                            Minimum
-                          </Label>
-                          <Input
-                            id="min-version"
-                            value={editingConfig.minimum_version}
-                            onChange={(e) =>
-                              setEditingConfig({ ...editingConfig, minimum_version: e.target.value })
-                            }
-                            className="col-span-3"
-                          />
-                        </div>
-                        <div className="grid grid-cols-4 items-center gap-4">
-                          <Label htmlFor="latest-version" className="text-right">
-                            Latest
-                          </Label>
-                          <Input
-                            id="latest-version"
-                            value={editingConfig.latest_version}
-                            onChange={(e) =>
-                              setEditingConfig({ ...editingConfig, latest_version: e.target.value })
-                            }
-                            className="col-span-3"
-                          />
-                        </div>
-                        <div className="grid grid-cols-4 items-center gap-4">
-                          <Label htmlFor="download-url" className="text-right">
-                            Download
-                          </Label>
-                          <Input
-                            id="download-url"
-                            value={editingConfig.download_url}
-                            onChange={(e) =>
-                              setEditingConfig({ ...editingConfig, download_url: e.target.value })
-                            }
-                            className="col-span-3"
-                          />
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <Label htmlFor="force-update">Force Update</Label>
-                          <Switch
-                            id="force-update"
-                            checked={editingConfig.force_update}
-                            onCheckedChange={(checked) =>
-                              setEditingConfig({ ...editingConfig, force_update: checked })
-                            }
-                          />
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <Label htmlFor="auto-update">Auto Update</Label>
-                          <Switch
-                            id="auto-update"
-                            checked={editingConfig.auto_update_enabled}
-                            onCheckedChange={(checked) =>
-                              setEditingConfig({ ...editingConfig, auto_update_enabled: checked })
-                            }
-                          />
-                        </div>
-                      </div>
-                    )}
-                    <DialogFooter>
-                      <Button onClick={handleSaveConfig} disabled={saving}>
-                        <Save className="h-4 w-4 mr-2" />
-                        {saving ? "Saving..." : "Save Changes"}
-                      </Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+        <Card>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Channel</TableHead>
+                <TableHead>Platform / Arch</TableHead>
+                <TableHead>Latest</TableHead>
+                <TableHead>Minimum</TableHead>
+                <TableHead>Auto-update</TableHead>
+                <TableHead>Force</TableHead>
+                <TableHead></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {configs.map((config) => (
+                <TableRow key={config.id}>
+                  <TableCell className="font-medium capitalize">{config.channel}</TableCell>
+                  <TableCell className="text-sm">{config.platform} / {config.arch}</TableCell>
+                  <TableCell className="font-mono text-sm">{config.latest_version}</TableCell>
+                  <TableCell className="font-mono text-sm">{config.minimum_version}</TableCell>
+                  <TableCell>
+                    <Badge variant={config.auto_update_enabled ? "default" : "secondary"}>
+                      {config.auto_update_enabled ? "On" : "Off"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={config.force_update ? "destructive" : "secondary"}>
+                      {config.force_update ? "Yes" : "No"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Dialog>
+                      <DialogTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setEditingConfig({ ...config })}
+                        >
+                          <Settings className="h-4 w-4" />
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="sm:max-w-[425px]">
+                        <DialogHeader>
+                          <DialogTitle>Edit Version Config</DialogTitle>
+                          <DialogDescription>
+                            {editingConfig?.channel} — {editingConfig?.platform} / {editingConfig?.arch}
+                          </DialogDescription>
+                        </DialogHeader>
+                        {editingConfig && (
+                          <div className="grid gap-4 py-4">
+                            <div className="grid grid-cols-4 items-center gap-4">
+                              <Label htmlFor="min-version" className="text-right">Minimum</Label>
+                              <Input
+                                id="min-version"
+                                value={editingConfig.minimum_version}
+                                onChange={(e) => setEditingConfig({ ...editingConfig, minimum_version: e.target.value })}
+                                className="col-span-3"
+                              />
+                            </div>
+                            <div className="grid grid-cols-4 items-center gap-4">
+                              <Label htmlFor="latest-version" className="text-right">Latest</Label>
+                              <Input
+                                id="latest-version"
+                                value={editingConfig.latest_version}
+                                onChange={(e) => setEditingConfig({ ...editingConfig, latest_version: e.target.value })}
+                                className="col-span-3"
+                              />
+                            </div>
+                            <div className="grid grid-cols-4 items-center gap-4">
+                              <Label htmlFor="download-url" className="text-right">Download</Label>
+                              <Input
+                                id="download-url"
+                                value={editingConfig.download_url}
+                                onChange={(e) => setEditingConfig({ ...editingConfig, download_url: e.target.value })}
+                                className="col-span-3"
+                              />
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <Label htmlFor="force-update">Force Update</Label>
+                              <Switch
+                                id="force-update"
+                                checked={editingConfig.force_update}
+                                onCheckedChange={(checked) => setEditingConfig({ ...editingConfig, force_update: checked })}
+                              />
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <Label htmlFor="auto-update">Auto Update</Label>
+                              <Switch
+                                id="auto-update"
+                                checked={editingConfig.auto_update_enabled}
+                                onCheckedChange={(checked) => setEditingConfig({ ...editingConfig, auto_update_enabled: checked })}
+                              />
+                            </div>
+                          </div>
+                        )}
+                        <DialogFooter>
+                          <Button onClick={handleSaveConfig} disabled={saving}>
+                            <Save className="h-4 w-4 mr-2" />
+                            {saving ? "Saving..." : "Save Changes"}
+                          </Button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </Card>
 
         {configs.length === 0 && !loading && (
           <Card>
