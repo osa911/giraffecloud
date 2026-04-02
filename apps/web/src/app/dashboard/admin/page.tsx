@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { getVersionConfigs, getAdminUsers, updateVersionConfig, updateAdminUser } from "@/lib/actions/admin.actions";
-import { VersionConfig, AdminUser, UpdateVersionConfigRequest } from "@/lib/actions/admin.types";
+import { getVersionConfigs, getAdminUsers, updateVersionConfig, updateAdminUser, getAdminUserTunnels, bulkUpdateMinVersion } from "@/lib/actions/admin.actions";
+import { VersionConfig, AdminUser, AdminTunnel, UpdateVersionConfigRequest } from "@/lib/actions/admin.types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { RefreshCw, Settings, Users, Package, Save, UserCheck, UserX } from "lucide-react";
+import { RefreshCw, Settings, Users, Package, Save, UserCheck, UserX, ChevronDown, ChevronRight, Globe, Zap } from "lucide-react";
 
 export default function AdminPage() {
   const [configs, setConfigs] = useState<VersionConfig[]>([]);
@@ -23,6 +23,15 @@ export default function AdminPage() {
   const [saving, setSaving] = useState(false);
   const [userPage, setUserPage] = useState(1);
   const [totalUsers, setTotalUsers] = useState(0);
+
+  // User tunnels expand state
+  const [expandedUser, setExpandedUser] = useState<number | null>(null);
+  const [userTunnels, setUserTunnels] = useState<AdminTunnel[]>([]);
+  const [tunnelsLoading, setTunnelsLoading] = useState(false);
+
+  // Bulk min version state
+  const [bulkMinVersion, setBulkMinVersion] = useState("");
+  const [bulkUpdating, setBulkUpdating] = useState(false);
 
   // Filtering and Sorting State
   const [search, setSearch] = useState("");
@@ -107,6 +116,38 @@ export default function AdminPage() {
     }
   };
 
+  const handleExpandUser = async (userId: number) => {
+    if (expandedUser === userId) {
+      setExpandedUser(null);
+      return;
+    }
+    setExpandedUser(userId);
+    setTunnelsLoading(true);
+    try {
+      const tunnels = await getAdminUserTunnels(userId);
+      setUserTunnels(tunnels || []);
+    } catch (error) {
+      console.error("Failed to fetch user tunnels:", error);
+      setUserTunnels([]);
+    } finally {
+      setTunnelsLoading(false);
+    }
+  };
+
+  const handleBulkUpdateMinVersion = async () => {
+    if (!bulkMinVersion) return;
+    setBulkUpdating(true);
+    try {
+      await bulkUpdateMinVersion({ minimum_version: bulkMinVersion });
+      await fetchConfigs();
+      setBulkMinVersion("");
+    } catch (error) {
+      console.error("Failed to bulk update min version:", error);
+    } finally {
+      setBulkUpdating(false);
+    }
+  };
+
   return (
     <Tabs defaultValue="versions" className="space-y-4">
       <TabsList>
@@ -129,6 +170,26 @@ export default function AdminPage() {
             Refresh
           </Button>
         </div>
+
+        <Card>
+          <CardContent className="flex items-center gap-3 py-3">
+            <Zap className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm font-medium">Set Minimum Version for All:</span>
+            <Input
+              placeholder="e.g. v1.0.629"
+              value={bulkMinVersion}
+              onChange={(e) => setBulkMinVersion(e.target.value)}
+              className="w-[160px]"
+            />
+            <Button
+              size="sm"
+              onClick={handleBulkUpdateMinVersion}
+              disabled={!bulkMinVersion || bulkUpdating}
+            >
+              {bulkUpdating ? "Updating..." : "Apply to All"}
+            </Button>
+          </CardContent>
+        </Card>
 
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {configs.map((config) => (
@@ -316,42 +377,84 @@ export default function AdminPage() {
             </TableHeader>
             <TableBody>
               {users.map((user) => (
-                <TableRow key={user.id}>
-                  <TableCell>
-                    <div>
-                      <div className="font-medium">{user.name || "No name"}</div>
-                      <div className="text-sm text-muted-foreground">{user.email}</div>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={user.role === "admin" ? "default" : "secondary"}>
-                      {user.role}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={user.is_active ? "default" : "destructive"}>
-                      {user.is_active ? "Active" : "Inactive"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {user.last_login
-                      ? new Date(user.last_login).toLocaleDateString()
-                      : "Never"}
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleToggleUserActive(user)}
-                    >
-                      {user.is_active ? (
-                        <UserX className="h-4 w-4 text-red-500" />
-                      ) : (
-                        <UserCheck className="h-4 w-4 text-green-500" />
-                      )}
-                    </Button>
-                  </TableCell>
-                </TableRow>
+                <>
+                  <TableRow key={user.id} className="cursor-pointer" onClick={() => handleExpandUser(user.id)}>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        {expandedUser === user.id ? (
+                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                        )}
+                        <div>
+                          <div className="font-medium">{user.name || "No name"}</div>
+                          <div className="text-sm text-muted-foreground">{user.email}</div>
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={user.role === "admin" ? "default" : "secondary"}>
+                        {user.role}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={user.is_active ? "default" : "destructive"}>
+                        {user.is_active ? "Active" : "Inactive"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {user.last_login
+                        ? new Date(user.last_login).toLocaleDateString()
+                        : "Never"}
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => { e.stopPropagation(); handleToggleUserActive(user); }}
+                      >
+                        {user.is_active ? (
+                          <UserX className="h-4 w-4 text-red-500" />
+                        ) : (
+                          <UserCheck className="h-4 w-4 text-green-500" />
+                        )}
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                  {expandedUser === user.id && (
+                    <TableRow key={`${user.id}-tunnels`}>
+                      <TableCell colSpan={5} className="bg-muted/50 p-4">
+                        {tunnelsLoading ? (
+                          <div className="text-sm text-muted-foreground">Loading tunnels...</div>
+                        ) : userTunnels.length === 0 ? (
+                          <div className="text-sm text-muted-foreground">No tunnels configured</div>
+                        ) : (
+                          <div className="space-y-2">
+                            <div className="text-sm font-medium mb-2">Tunnels ({userTunnels.length})</div>
+                            <div className="grid gap-2">
+                              {userTunnels.map((t) => (
+                                <div key={t.id} className="flex items-center gap-4 text-sm bg-background rounded-md px-3 py-2 border">
+                                  <Globe className="h-4 w-4 text-muted-foreground shrink-0" />
+                                  <span className="font-mono font-medium">{t.domain}</span>
+                                  <span className="text-muted-foreground">→</span>
+                                  <span className="font-mono">{t.target_host === "localhost" ? "" : t.target_host + ":"}{t.target_port}</span>
+                                  <Badge variant={t.is_enabled ? "default" : "secondary"} className="ml-auto">
+                                    {t.is_enabled ? "Enabled" : "Disabled"}
+                                  </Badge>
+                                  {t.client_ip && (
+                                    <Badge variant="outline" className="text-green-600">
+                                      Connected ({t.client_ip})
+                                    </Badge>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </>
               ))}
             </TableBody>
           </Table>

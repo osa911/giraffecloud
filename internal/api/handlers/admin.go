@@ -2,7 +2,10 @@ package handlers
 
 import (
 	"net/http"
+	"strconv"
 
+	"github.com/osa911/giraffecloud/internal/api/mapper"
+	"github.com/osa911/giraffecloud/internal/interfaces"
 	"github.com/osa911/giraffecloud/internal/logging"
 	"github.com/osa911/giraffecloud/internal/service"
 	"github.com/osa911/giraffecloud/internal/utils"
@@ -14,13 +17,15 @@ import (
 type AdminHandler struct {
 	logger         *logging.Logger
 	versionService *service.VersionService
+	tunnelService  interfaces.TunnelService
 }
 
 // NewAdminHandler creates a new admin handler instance
-func NewAdminHandler(versionService *service.VersionService) *AdminHandler {
+func NewAdminHandler(versionService *service.VersionService, tunnelService interfaces.TunnelService) *AdminHandler {
 	return &AdminHandler{
 		logger:         logging.GetGlobalLogger(),
 		versionService: versionService,
+		tunnelService:  tunnelService,
 	}
 }
 
@@ -114,4 +119,70 @@ func (h *AdminHandler) GetVersionConfig(c *gin.Context) {
 	}
 
 	utils.HandleSuccess(c, versionInfo)
+}
+
+// ListUserTunnels returns all tunnels for a specific user (admin readonly)
+func (h *AdminHandler) ListUserTunnels(c *gin.Context) {
+	userID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user ID"})
+		return
+	}
+
+	tunnels, err := h.tunnelService.ListTunnels(c.Request.Context(), uint32(userID))
+	if err != nil {
+		h.logger.Error("Failed to list tunnels for user %d: %v", userID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list tunnels"})
+		return
+	}
+
+	response := mapper.TunnelsToResponses(tunnels)
+	utils.HandleSuccess(c, response)
+}
+
+// BulkUpdateMinVersion updates minimum version across all version configs
+func (h *AdminHandler) BulkUpdateMinVersion(c *gin.Context) {
+	var req struct {
+		MinimumVersion string `json:"minimum_version" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "minimum_version is required"})
+		return
+	}
+
+	configs, err := h.versionService.ListAllVersionConfigs(c.Request.Context())
+	if err != nil {
+		h.logger.Error("Failed to list version configs: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list version configs"})
+		return
+	}
+
+	updated := 0
+	for _, cfg := range configs {
+		err := h.versionService.UpdateClientVersionConfig(c.Request.Context(), service.ClientVersionConfigUpdate{
+			Channel:           cfg.Channel,
+			Platform:          cfg.Platform,
+			Arch:              cfg.Arch,
+			LatestVersion:     cfg.LatestVersion,
+			MinimumVersion:    req.MinimumVersion,
+			DownloadURL:       cfg.DownloadURL,
+			ReleaseNotes:      cfg.ReleaseNotes,
+			AutoUpdateEnabled: cfg.AutoUpdateEnabled,
+			ForceUpdate:       cfg.ForceUpdate,
+			Metadata:          cfg.Metadata,
+		})
+		if err != nil {
+			h.logger.Error("Failed to update config %s: %v", cfg.ID, err)
+			continue
+		}
+		updated++
+	}
+
+	h.logger.Info("Bulk updated minimum version to %s across %d configs", req.MinimumVersion, updated)
+	utils.HandleSuccess(c, gin.H{
+		"message":         "Minimum version updated",
+		"minimum_version": req.MinimumVersion,
+		"updated_count":   updated,
+	})
 }

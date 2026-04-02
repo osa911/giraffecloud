@@ -296,7 +296,7 @@ func (s *Server) Init() error {
 		Tunnel:            handlers.NewTunnelHandler(tunnelService, versionService),
 		TunnelCertificate: handlers.NewTunnelCertificateHandler(),
 		Webhook:           handlers.NewWebhookHandler(),
-		Admin:             handlers.NewAdminHandler(versionService),
+		Admin:             handlers.NewAdminHandler(versionService, tunnelService),
 		Usage:             handlers.NewUsageHandler(repos.Usage, quotaService),
 		Contact:           handlers.NewContactHandler(),
 		Caddy:             handlers.NewCaddyHandler(repos.Tunnel),

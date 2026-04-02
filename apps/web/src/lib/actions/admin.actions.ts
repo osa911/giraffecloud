@@ -8,6 +8,9 @@ import {
   UpdateVersionConfigResponse,
   AdminUsersResponse,
   AdminUser,
+  AdminTunnel,
+  BulkUpdateMinVersionRequest,
+  BulkUpdateMinVersionResponse,
   AdminApiError,
 } from "./admin.types";
 
@@ -100,6 +103,37 @@ export async function deleteAdminUser(id: number): Promise<void> {
   } catch (error) {
     const apiError = error as AdminApiError;
     console.error("Error deleting admin user:", apiError);
+    throw apiError;
+  }
+}
+
+// Admin Tunnel Actions
+
+export async function getAdminUserTunnels(userId: number): Promise<AdminTunnel[]> {
+  try {
+    await getAuthUser();
+    return await serverApi().get<AdminTunnel[]>(`/admin/users/${userId}/tunnels`);
+  } catch (error) {
+    const apiError = error as AdminApiError;
+    console.error("Error fetching user tunnels:", apiError);
+    throw apiError;
+  }
+}
+
+// Bulk Version Actions
+
+export async function bulkUpdateMinVersion(
+  data: BulkUpdateMinVersionRequest
+): Promise<BulkUpdateMinVersionResponse> {
+  try {
+    await getAuthUser();
+    return await serverApi().post<BulkUpdateMinVersionResponse>(
+      "/admin/version/bulk-update-min",
+      data
+    );
+  } catch (error) {
+    const apiError = error as AdminApiError;
+    console.error("Error bulk updating min version:", apiError);
     throw apiError;
   }
 }

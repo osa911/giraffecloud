@@ -19,6 +19,7 @@ func SetupAdminRoutes(v1Group *gin.RouterGroup, admin *handlers.AdminHandler, us
 	version := adminGroup.Group("/version")
 	{
 		version.POST("/update", admin.UpdateVersionConfig)
+		version.POST("/bulk-update-min", admin.BulkUpdateMinVersion)
 		version.GET("/configs", admin.GetVersionConfigs)
 		version.GET("/config", admin.GetVersionConfig)
 	}
@@ -28,6 +29,7 @@ func SetupAdminRoutes(v1Group *gin.RouterGroup, admin *handlers.AdminHandler, us
 	{
 		users.GET("", user.ListUsers)
 		users.GET("/:id", user.GetUser)
+		users.GET("/:id/tunnels", admin.ListUserTunnels)
 		users.PUT("/:id", user.UpdateUser)
 		users.DELETE("/:id", user.DeleteUser)
 	}

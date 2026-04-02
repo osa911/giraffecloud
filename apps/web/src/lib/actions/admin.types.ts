@@ -62,6 +62,29 @@ export type AdminUsersResponse = {
   page_size: number;
 };
 
+// Tunnel type for admin view
+export type AdminTunnel = {
+  id: number;
+  domain: string;
+  target_host: string;
+  target_port: number;
+  is_enabled: boolean;
+  client_ip?: string;
+  created_at: string;
+  updated_at: string;
+};
+
+// Bulk update min version
+export type BulkUpdateMinVersionRequest = {
+  minimum_version: string;
+};
+
+export type BulkUpdateMinVersionResponse = {
+  message: string;
+  minimum_version: string;
+  updated_count: number;
+};
+
 // Error type
 export type AdminApiError = {
   message: string;
