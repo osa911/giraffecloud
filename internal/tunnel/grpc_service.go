@@ -487,32 +487,23 @@ func (s *GRPCTunnelServer) ControlChannel(stream proto.TunnelService_ControlChan
 	var exists bool
 	var logIdentifier string
 
-	if handshake.Token != "" {
-		// New path: validate token → get userID → look up userStreams
-		apiToken, err := s.tokenRepo.GetByToken(ctx, handshake.Token)
-		if err != nil {
-			s.logger.Error("[CONTROL] Invalid token: %v", err)
-			return status.Errorf(codes.Unauthenticated, "invalid token")
-		}
-
-		s.tunnelStreamsMux.RLock()
-		tunnelStream, exists = s.userStreams[apiToken.UserID]
-		s.tunnelStreamsMux.RUnlock()
-
-		logIdentifier = fmt.Sprintf("user %d", apiToken.UserID)
-		s.logger.Info("[CONTROL] Token-based handshake for %s", logIdentifier)
-	} else if handshake.Domain != "" {
-		// Legacy path: domain-based lookup
-		s.tunnelStreamsMux.RLock()
-		tunnelStream, exists = s.tunnelStreams[handshake.Domain]
-		s.tunnelStreamsMux.RUnlock()
-
-		logIdentifier = fmt.Sprintf("domain %s", handshake.Domain)
-		s.logger.Info("[CONTROL] Domain-based handshake for %s", logIdentifier)
-	} else {
-		s.logger.Error("[CONTROL] Invalid handshake - missing token and domain")
-		return status.Errorf(codes.InvalidArgument, "invalid handshake: token or domain required")
+	if handshake.Token == "" {
+		s.logger.Error("[CONTROL] Invalid handshake - missing token")
+		return status.Errorf(codes.InvalidArgument, "invalid handshake: token required")
 	}
+
+	apiToken, err := s.tokenRepo.GetByToken(ctx, handshake.Token)
+	if err != nil {
+		s.logger.Error("[CONTROL] Invalid token: %v", err)
+		return status.Errorf(codes.Unauthenticated, "invalid token")
+	}
+
+	s.tunnelStreamsMux.RLock()
+	tunnelStream, exists = s.userStreams[apiToken.UserID]
+	s.tunnelStreamsMux.RUnlock()
+
+	logIdentifier = fmt.Sprintf("user %d", apiToken.UserID)
+	s.logger.Info("[CONTROL] Token-based handshake for %s", logIdentifier)
 
 	if !exists {
 		s.logger.Error("[CONTROL] No data tunnel found for %s", logIdentifier)
