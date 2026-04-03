@@ -21,7 +21,7 @@
           "listen": [":80", ":443"],
           "routes": [
             {
-              "match": [{ "path": ["/health"] }],
+              "match": [{ "host": ["api.giraffecloud.xyz"], "path": ["/health"] }],
               "handle": [
                 {
                   "handler": "static_response",
@@ -33,6 +33,7 @@
             {
               "match": [
                 {
+                  "host": ["api.giraffecloud.xyz"],
                   "path": [
                     "/.env*",
                     "/config*",
