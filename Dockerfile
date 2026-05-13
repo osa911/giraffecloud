@@ -53,4 +53,4 @@ RUN mkdir -p /app/logs /app/certs && \
 # The entrypoint script handles switching to appuser
 USER root
 
-ENTRYPOINT ["/bin/sh", "-c", "[ -f /app/certs/tunnel.crt ] || /app/scripts/generate-tunnel-certs.sh && chown -R appuser:appgroup /app/certs && exec su-exec appuser /app/scripts/docker-entrypoint.sh"]
+ENTRYPOINT ["/bin/sh", "-c", "/app/scripts/ensure-tunnel-certs.sh && chown -R appuser:appgroup /app/certs && exec su-exec appuser /app/scripts/docker-entrypoint.sh"]
