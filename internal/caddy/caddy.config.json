@@ -107,7 +107,20 @@
                   },
                   {
                     "match": [{ "protocol": "https" }],
-                    "handle": [{ "handler": "reverse_proxy", "upstreams": [{ "dial": "172.20.0.1:13000" }] }],
+                    "handle": [{
+                      "handler": "reverse_proxy",
+                      "upstreams": [{ "dial": "172.20.0.1:13000" }],
+                      "headers": { "request": { "set": { "Host": ["fofi-staging-edge.internal"] } } },
+                      "transport": {
+                        "protocol": "http",
+                        "tls": {
+                          "ca": { "provider": "file", "pem_files": ["/data/fofi-staging-mtls/ca.crt"] },
+                          "client_certificate_file": "/data/fofi-staging-mtls/client.crt",
+                          "client_certificate_key_file": "/data/fofi-staging-mtls/client.key",
+                          "server_name": "fofi-staging-edge.internal"
+                        }
+                      }
+                    }],
                     "terminal": true
                   }
                 ]
