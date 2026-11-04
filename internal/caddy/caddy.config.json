@@ -96,25 +96,6 @@
               ]
             },
             {
-              "match": [{ "host": ["fofi.osa911.com"] }],
-              "handle": [{
-                "handler": "subroute",
-                "routes": [
-                  {
-                    "match": [{ "protocol": "http" }],
-                    "handle": [{ "handler": "static_response", "status_code": 308, "headers": { "Location": ["https://fofi.osa911.com{http.request.uri}"] } }],
-                    "terminal": true
-                  },
-                  {
-                    "match": [{ "protocol": "https" }],
-                    "handle": [{ "handler": "reverse_proxy", "upstreams": [{ "dial": "172.20.0.1:13000" }] }],
-                    "terminal": true
-                  }
-                ]
-              }],
-              "terminal": true
-            },
-            {
               "match": [{ "host": ["*"] }],
               "handle": [
                 {
